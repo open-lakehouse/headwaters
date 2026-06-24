@@ -56,15 +56,16 @@ stand. "Interpreted" = promoted into the relational model, not just retained.
 |---|---|---|
 | `schema` | one `dataset_fields` row per column | ✓ per-column `dataset_fields` rows (+ the `datasets.fields` cache) |
 | `columnLineage` | `column_lineage` edge table (output datasets) | ✓ `column_lineage_edges` table; per-output-field latest-wins |
-| `documentation` | `description` on job/dataset | job description ✓ (dataset: Phase 3) |
+| `documentation` | `description` on job/dataset | ✓ job + dataset `description` |
 | `tags` | tag tables (via REST, not ingest) | job tags ✓ (catalog + assignments + propagation: Phase 4) |
-| `dataSource` | a `sources` row (name + connection_url) | **pass-through** (Phase 3) |
-| `sourceCodeLocation` | job `location` | **pass-through** (Phase 3) |
-| `parent` (ParentRunFacet) | creates parent run/job rows, links them | **pass-through** (Phase 3) |
-| `nominalTime` | run nominal_* columns + args | **pass-through** (verbatim facet) |
-| `lifecycleStateChange` | `DROP` soft-deletes the dataset | **pass-through** (Phase 3) |
+| `dataSource` | a `sources` row (name + connection_url) | ✓ `sources` row + dataset `source_name` |
+| `sourceCodeLocation` | job `location` | ✓ job `location` |
+| `parent` (ParentRunFacet) | creates parent run/job rows, links them | ✓ run `parent_run_id` + job `parent_namespace`/`parent_name` (we link, but do not synthesize standalone parent run/job rows) |
+| `nominalTime` | run nominal_* columns + args | ✓ run `nominal_start`/`nominal_end` (we also keep the verbatim facet) |
+| `lifecycleStateChange` | `DROP` soft-deletes the dataset | ✓ `DROP` sets dataset `deleted` |
 | `ownership` | not interpreted on ingest | **pass-through** |
-| `sql`, `errorMessage` | not interpreted (stored as facet rows) | **pass-through** |
+| `errorMessage` | not interpreted (stored as facet rows) | ✓ run `error_message` (a step beyond Marquez, which derives failure from `eventType`) |
+| `sql` | not interpreted (stored as facet rows) | **pass-through** |
 
 ## Capabilities beyond Marquez
 

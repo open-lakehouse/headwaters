@@ -616,6 +616,88 @@ async fn column_lineage_facet_populates_edges() {
     assert!(!ids.contains(&"datasetField:raw:customers:id"));
 }
 
+// --- Phase 3: parent / nominalTime / documentation / dataSource / lifecycle ---
+
+#[tokio::test]
+async fn facet_metadata_populates_run_job_dataset() {
+    let db = start_postgres().await;
+    ingest(
+        &db.pool,
+        r#"{"eventType":"COMPLETE","eventTime":"2023-11-14T22:13:20Z","producer":"p",
+            "run":{"runId":"r1","facets":{
+                "nominalTime":{"nominalStartTime":"2023-11-14T22:00:00Z","nominalEndTime":"2023-11-14T23:00:00Z"},
+                "parent":{"run":{"runId":"parent-run"},"job":{"namespace":"airflow","name":"dag.task"}},
+                "errorMessage":{"message":"boom"}}},
+            "job":{"namespace":"etl","name":"build","facets":{
+                "sourceCodeLocation":{"type":"git","url":"https://git/repo"},
+                "jobType":{"processingType":"BATCH","integration":"SPARK","jobType":"QUERY"}}},
+            "outputs":[{"namespace":"warehouse","name":"gold","facets":{
+                "documentation":{"description":"the gold table"},
+                "dataSource":{"name":"warehouse-db","uri":"postgres://h/db"},
+                "lifecycleStateChange":{"lifecycleStateChange":"DROP"}}}]}"#,
+    )
+    .await;
+    let store = LineageStore::new(db.pool.clone());
+
+    // Job: location + parent job name.
+    let job = store.job("etl", "build").await.unwrap();
+    assert_eq!(job.location.as_deref(), Some("https://git/repo"));
+    assert_eq!(job.parent_job_name.as_deref(), Some("dag.task"));
+
+    // Run: nominal window surfaced on the latest run.
+    let run = &job.latest_runs[0];
+    assert!(
+        run.nominal_start_time.is_some(),
+        "nominal start surfaced: {run:?}"
+    );
+
+    // Dataset: description, source_name (from dataSource facet), deleted.
+    let ds = store.dataset("warehouse", "gold").await.unwrap();
+    assert_eq!(ds.description.as_deref(), Some("the gold table"));
+    assert_eq!(ds.source_name, "warehouse-db");
+    assert!(ds.deleted, "lifecycleStateChange DROP soft-deleted it");
+
+    // sources catalog row created.
+    let src: Option<String> =
+        sqlx::query_scalar("SELECT connection_url FROM sources WHERE name = 'warehouse-db'")
+            .fetch_optional(&db.pool)
+            .await
+            .unwrap()
+            .flatten();
+    assert_eq!(src.as_deref(), Some("postgres://h/db"));
+}
+
+#[tokio::test]
+async fn facet_metadata_survives_rebuild() {
+    let db = start_postgres().await;
+    ingest(
+        &db.pool,
+        r#"{"eventType":"COMPLETE","eventTime":"2023-11-14T22:13:20Z","producer":"p",
+            "run":{"runId":"r1"},"job":{"namespace":"etl","name":"build","facets":{
+                "sourceCodeLocation":{"url":"https://git/repo"}}},
+            "outputs":[{"namespace":"w","name":"d","facets":{
+                "documentation":{"description":"doc"}}}]}"#,
+    )
+    .await;
+    lineage_service::projection::rebuild(&db.pool)
+        .await
+        .unwrap();
+    let store = LineageStore::new(db.pool.clone());
+    assert_eq!(
+        store.job("etl", "build").await.unwrap().location.as_deref(),
+        Some("https://git/repo")
+    );
+    assert_eq!(
+        store
+            .dataset("w", "d")
+            .await
+            .unwrap()
+            .description
+            .as_deref(),
+        Some("doc")
+    );
+}
+
 // --- Phase 2: dataset versioning ---------------------------------------------
 
 #[tokio::test]
