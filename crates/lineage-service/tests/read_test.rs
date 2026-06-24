@@ -509,3 +509,26 @@ async fn rebuild_reproduces_the_same_model() {
     assert_eq!(after.jobs[0].name, "build_daily");
     assert_eq!(after.jobs[0].latest_runs[0].state, "COMPLETED");
 }
+
+#[tokio::test]
+async fn jobs_and_datasets_carry_current_version_uuid() {
+    let db = start_postgres().await;
+    let store = seeded_store(&db).await;
+    let job = store.job("etl", "build_daily").await.unwrap();
+    // A real UUID (uuidv7 is 36 chars with hyphens), not an empty placeholder.
+    assert_eq!(
+        job.current_version.len(),
+        36,
+        "job currentVersion is a uuid"
+    );
+    let ds = store.dataset("marts", "daily_orders").await.unwrap();
+    assert_eq!(
+        ds.current_version.len(),
+        36,
+        "dataset currentVersion is a uuid"
+    );
+
+    // Stable while the shape is unchanged: re-fetching yields the same version.
+    let job2 = store.job("etl", "build_daily").await.unwrap();
+    assert_eq!(job.current_version, job2.current_version);
+}

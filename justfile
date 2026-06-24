@@ -26,6 +26,13 @@ lineage *args:
 postgres-it:
     cargo nextest run -p lineage-service --features postgres-it --test read_test
 
+# the differential conformance harness: brings up the real Marquez reference
+# implementation alongside our service, posts identical events to both, and
+# asserts they reconstruct equivalent lineage (table + column level + facets).
+# Needs Docker. On colima/Docker Desktop, point DOCKER_HOST at the right socket.
+conformance-it:
+    cargo nextest run -p lineage-service --features conformance-it --test conformance_test
+
 # the live Marquez reference-backend acceptance test (needs Docker; pulls
 # marquezproject/marquez + postgres via testcontainers)
 marquez-it:

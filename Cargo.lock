@@ -2565,6 +2565,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
+ "webpki-roots 1.0.7",
 ]
 
 [[package]]
@@ -3081,6 +3082,7 @@ dependencies = [
  "futures",
  "http-body",
  "http-body-util",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sqlx",
@@ -4126,6 +4128,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams",
  "web-sys",
+ "webpki-roots 1.0.7",
 ]
 
 [[package]]
