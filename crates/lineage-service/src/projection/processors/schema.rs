@@ -28,25 +28,45 @@ impl FacetProcessor for SchemaProcessor {
         let at = ev
             .event_time
             .unwrap_or_else(|| DateTime::<Utc>::from_timestamp_nanos(0));
+        let run_id = ev.run_id.clone();
 
         // Datasets can carry a schema on inputs, outputs, or a standalone
         // `dataset` (DatasetEvent). Process whichever are present.
         for key in ["inputs", "outputs"] {
             if let Some(arr) = raw.get(key).and_then(|v| v.as_array()) {
                 for ds in arr {
-                    emit_fields_for(ds, at, out);
+                    emit_fields_for(ds, at, run_id.as_deref(), out);
                 }
             }
         }
         if let Some(ds) = raw.get("dataset") {
-            emit_fields_for(ds, at, out);
+            emit_fields_for(ds, at, run_id.as_deref(), out);
         }
     }
 }
 
-/// Emit `UpsertDatasetField` mutations for one dataset object that carries a
+/// The OpenLineage dataset-version namespace UUID (a fixed, arbitrary v5 root)
+/// under which we derive deterministic per-schema version ids.
+const DATASET_VERSION_NS: uuid::Uuid = uuid::uuid!("6f9619ff-8b86-d011-b42d-00c04fc964ff");
+
+/// A deterministic version UUID for a dataset's schema snapshot: UUIDv5 over
+/// `namespace/name` + the JSON-serialized field list. The same schema always
+/// yields the same id, so re-emitting it is a no-op and replay is idempotent.
+pub(crate) fn schema_version_uuid(namespace: &str, name: &str, fields: &[JsonValue]) -> uuid::Uuid {
+    let mut key = format!("{namespace}/{name}\u{1}");
+    key.push_str(&serde_json::to_string(fields).unwrap_or_default());
+    uuid::Uuid::new_v5(&DATASET_VERSION_NS, key.as_bytes())
+}
+
+/// Emit `UpsertDatasetField` mutations (one per column) plus an
+/// `EmitDatasetVersion` snapshot for one dataset object carrying a
 /// `facets.schema` facet.
-fn emit_fields_for(ds: &JsonValue, at: DateTime<Utc>, out: &mut Vec<Mutation>) {
+fn emit_fields_for(
+    ds: &JsonValue,
+    at: DateTime<Utc>,
+    run_id: Option<&str>,
+    out: &mut Vec<Mutation>,
+) {
     let (Some(namespace), Some(name)) = (
         ds.get("namespace").and_then(|v| v.as_str()),
         ds.get("name").and_then(|v| v.as_str()),
@@ -61,6 +81,9 @@ fn emit_fields_for(ds: &JsonValue, at: DateTime<Utc>, out: &mut Vec<Mutation>) {
     let Ok(schema) = serde_json::from_value::<SchemaDatasetFacet>(schema_val.clone()) else {
         return;
     };
+
+    // Per-column rows.
+    let mut field_values = Vec::with_capacity(schema.fields.len());
     for (ordinal, field) in schema.fields.iter().enumerate() {
         if field.name.is_empty() {
             continue;
@@ -74,7 +97,30 @@ fn emit_fields_for(ds: &JsonValue, at: DateTime<Utc>, out: &mut Vec<Mutation>) {
             ordinal: ordinal as i32,
             at,
         });
+        // The fields snapshot for the version, in the `datasets.fields` cache
+        // shape (name/type, matching what the read path serializes).
+        let mut fv = serde_json::Map::new();
+        fv.insert("name".into(), JsonValue::String(field.name.clone()));
+        if !field.r#type.is_empty() {
+            fv.insert("type".into(), JsonValue::String(field.r#type.clone()));
+        }
+        field_values.push(JsonValue::Object(fv));
     }
+
+    if field_values.is_empty() {
+        return;
+    }
+
+    // A version snapshot keyed to the producing run, deduped by a deterministic
+    // schema hash (the applier inserts ON CONFLICT DO NOTHING).
+    out.push(Mutation::EmitDatasetVersion {
+        namespace: namespace.to_string(),
+        name: name.to_string(),
+        version: schema_version_uuid(namespace, name, &field_values),
+        run_id: run_id.map(str::to_string),
+        fields: field_values,
+        at,
+    });
 }
 
 #[cfg(test)]
@@ -113,8 +159,20 @@ mod tests {
     fn emits_one_field_per_column_with_ordinal() {
         let mut out = Vec::new();
         SchemaProcessor.process(&event_with_output_schema(), &mut out);
-        assert_eq!(out.len(), 2);
-        match &out[0] {
+        // Two field rows + one dataset-version snapshot.
+        let fields: Vec<&Mutation> = out
+            .iter()
+            .filter(|m| matches!(m, Mutation::UpsertDatasetField { .. }))
+            .collect();
+        assert_eq!(fields.len(), 2);
+        assert_eq!(
+            out.iter()
+                .filter(|m| matches!(m, Mutation::EmitDatasetVersion { .. }))
+                .count(),
+            1,
+            "one version snapshot emitted"
+        );
+        match fields[0] {
             Mutation::UpsertDatasetField {
                 namespace,
                 dataset,
@@ -131,7 +189,7 @@ mod tests {
             }
             other => panic!("expected UpsertDatasetField, got {other:?}"),
         }
-        match &out[1] {
+        match fields[1] {
             Mutation::UpsertDatasetField {
                 field,
                 description,
@@ -144,6 +202,17 @@ mod tests {
             }
             other => panic!("expected UpsertDatasetField, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn version_uuid_is_deterministic_per_schema() {
+        let a = json!([{"name": "id", "type": "BIGINT"}]);
+        let b = json!([{"name": "id", "type": "STRING"}]); // type changed
+        let va = schema_version_uuid("ns", "d", a.as_array().unwrap());
+        let va2 = schema_version_uuid("ns", "d", a.as_array().unwrap());
+        let vb = schema_version_uuid("ns", "d", b.as_array().unwrap());
+        assert_eq!(va, va2, "same schema -> same version");
+        assert_ne!(va, vb, "different schema -> different version");
     }
 
     #[test]
