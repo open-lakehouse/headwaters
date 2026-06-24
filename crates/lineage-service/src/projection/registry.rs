@@ -12,6 +12,9 @@ use super::mutation::Mutation;
 use super::processor::FacetProcessor;
 use super::processors::column_lineage::ColumnLineageProcessor;
 use super::processors::core::{DatasetRefProcessor, JobEdgeProcessor, RunStateProcessor};
+use super::processors::dataset_meta::DatasetMetaProcessor;
+use super::processors::job_meta::JobMetaProcessor;
+use super::processors::run_meta::RunMetaProcessor;
 use super::processors::schema::SchemaProcessor;
 
 pub struct ProcessorRegistry {
@@ -27,16 +30,19 @@ impl ProcessorRegistry {
     }
 
     /// The built-in processors, in a deterministic order: namespaces/jobs/runs
-    /// and the datasets they imply, then per-column schema and column-lineage
-    /// edges. (Further facet processors — sources, parent, tags — are added in
-    /// later phases.)
+    /// and the datasets they imply, per-column schema and column-lineage edges,
+    /// then the metadata folds (run/job/dataset facets). (Tag processors are
+    /// added in the next phase.)
     pub fn with_well_known() -> Self {
         let mut r = Self::new();
         r.register(Box::new(RunStateProcessor))
             .register(Box::new(JobEdgeProcessor))
             .register(Box::new(DatasetRefProcessor))
             .register(Box::new(SchemaProcessor))
-            .register(Box::new(ColumnLineageProcessor));
+            .register(Box::new(ColumnLineageProcessor))
+            .register(Box::new(RunMetaProcessor))
+            .register(Box::new(JobMetaProcessor))
+            .register(Box::new(DatasetMetaProcessor));
         r
     }
 

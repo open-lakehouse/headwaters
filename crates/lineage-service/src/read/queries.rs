@@ -73,7 +73,7 @@ impl LineageStore {
 
         let rows = sqlx::query(
             "SELECT namespace, name, created_at, updated_at, description, tags, inputs, outputs, \
-                    current_version \
+                    current_version, location, parent_namespace, parent_name \
              FROM jobs \
              WHERE ($1::text IS NULL OR namespace = $1) \
              ORDER BY name LIMIT $2 OFFSET $3",
@@ -98,7 +98,7 @@ impl LineageStore {
     pub async fn job(&self, namespace: &str, name: &str) -> Result<Job, ReadError> {
         let row = sqlx::query(
             "SELECT namespace, name, created_at, updated_at, description, tags, inputs, outputs, \
-                    current_version \
+                    current_version, location, parent_namespace, parent_name \
              FROM jobs WHERE namespace = $1 AND name = $2",
         )
         .bind(namespace)
@@ -130,13 +130,16 @@ impl LineageStore {
         let inputs: JsonValue = r.get("inputs");
         let outputs: JsonValue = r.get("outputs");
         let current_version: uuid::Uuid = r.get("current_version");
+        let location: Option<String> = r.get("location");
+        let parent_name: Option<String> = r.get("parent_name");
 
         let node_id = job_node_id(&namespace, &name);
         let updated = rfc3339(updated_at);
 
         // Runs newest-first.
         let run_rows = sqlx::query(
-            "SELECT run_id, state, created_at, updated_at, started_at, ended_at \
+            "SELECT run_id, state, created_at, updated_at, started_at, ended_at, \
+                    nominal_start, nominal_end \
              FROM runs WHERE job_namespace = $1 AND job_name = $2 \
              ORDER BY updated_at DESC, created_at DESC",
         )
@@ -165,12 +168,12 @@ impl LineageStore {
             updated_at: updated,
             inputs: entity_ids(&inputs),
             outputs: entity_ids(&outputs),
-            location: None,
+            location,
             description,
             latest_run,
             latest_runs,
             tags: string_vec(&tags),
-            parent_job_name: None,
+            parent_job_name: parent_name,
             parent_job_uuid: None,
             current_version: current_version.to_string(),
         })
@@ -198,7 +201,8 @@ impl LineageStore {
             }
         };
         let rows = sqlx::query(
-            "SELECT namespace, name, created_at, updated_at, fields, current_version FROM datasets \
+            "SELECT namespace, name, created_at, updated_at, fields, current_version, \
+                    description, source_name, deleted FROM datasets \
              WHERE ($1::text IS NULL OR namespace = $1) \
              ORDER BY name LIMIT $2 OFFSET $3",
         )
@@ -217,7 +221,8 @@ impl LineageStore {
     /// `GET /api/v1/namespaces/{ns}/datasets/{name}`
     pub async fn dataset(&self, namespace: &str, name: &str) -> Result<Dataset, ReadError> {
         let row = sqlx::query(
-            "SELECT namespace, name, created_at, updated_at, fields, current_version FROM datasets \
+            "SELECT namespace, name, created_at, updated_at, fields, current_version, \
+                    description, source_name, deleted FROM datasets \
              WHERE namespace = $1 AND name = $2",
         )
         .bind(namespace)
@@ -639,13 +644,15 @@ fn build_run(r: &sqlx::postgres::PgRow) -> LatestRun {
         (Some(s), Some(e)) if e >= s => (e - s).num_milliseconds().max(0) as u64,
         _ => 0,
     };
+    let nominal_start: Option<DateTime<Utc>> = r.get("nominal_start");
+    let nominal_end: Option<DateTime<Utc>> = r.get("nominal_end");
     LatestRun {
         id: r.get("run_id"),
         created_at: rfc3339(r.get("created_at")),
         updated_at: rfc3339(r.get("updated_at")),
         state: r.get("state"),
-        nominal_start_time: None,
-        nominal_end_time: None,
+        nominal_start_time: opt_rfc3339(nominal_start),
+        nominal_end_time: opt_rfc3339(nominal_end),
         started_at: opt_rfc3339(started_at),
         ended_at: opt_rfc3339(ended_at),
         duration_ms,
@@ -660,12 +667,18 @@ fn build_dataset(r: &sqlx::postgres::PgRow) -> Dataset {
     let updated_at: DateTime<Utc> = r.get("updated_at");
     let fields_json: JsonValue = r.get("fields");
     let current_version: uuid::Uuid = r.get("current_version");
+    let description: Option<String> = r.get("description");
+    let source_name: Option<String> = r.get("source_name");
+    let deleted: bool = r.get("deleted");
     let fields = fields_json.as_array().cloned().unwrap_or_default();
     let facets = if fields.is_empty() {
         json!({})
     } else {
         json!({ "schema": { "fields": fields } })
     };
+    // Prefer the dataSource-facet source name; fall back to the namespace
+    // (Marquez derives a default source from the namespace too).
+    let source = source_name.unwrap_or_else(|| namespace.clone());
     Dataset {
         id: EntityId {
             namespace: namespace.clone(),
@@ -674,15 +687,15 @@ fn build_dataset(r: &sqlx::postgres::PgRow) -> Dataset {
         dataset_type: "DB_TABLE".into(),
         name: name.clone(),
         physical_name: name,
-        source_name: namespace.clone(),
+        source_name: source,
         namespace,
         created_at: rfc3339(created_at),
         updated_at: rfc3339(updated_at),
-        description: None,
+        description,
         fields,
         facets,
         tags: Vec::new(),
-        deleted: false,
+        deleted,
         current_version: current_version.to_string(),
     }
 }
