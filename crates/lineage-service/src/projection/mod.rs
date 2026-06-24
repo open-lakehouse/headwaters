@@ -14,14 +14,21 @@
 //! event after a crash mid-batch — reproduces the same read tables. That is
 //! what makes [`rebuild`] (truncate + reset cursor + re-fold) safe.
 
-mod apply;
+pub mod applier;
+pub mod backend;
+pub mod mutation;
+pub mod processor;
+pub mod processors;
+pub mod registry;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use sqlx::PgPool;
 use tokio::task::JoinHandle;
 
-use apply::apply_event;
+use backend::postgres::PgApplier;
+use registry::ProcessorRegistry;
 
 /// The projector's cursor name in `projection_state`.
 const CURSOR: &str = "marquez";
@@ -36,10 +43,25 @@ pub struct Projector {
 }
 
 impl Projector {
-    /// Spawn the projection task, polling every `interval`.
+    /// Spawn the projection task with the built-in processors, polling every
+    /// `interval`.
     pub fn spawn(pool: PgPool, interval: Duration) -> Self {
+        Self::spawn_with(pool, interval, Vec::new())
+    }
+
+    /// Spawn the projection task with the built-in processors plus `extra`
+    /// custom processors (appended after the built-ins).
+    pub fn spawn_with(
+        pool: PgPool,
+        interval: Duration,
+        extra: Vec<Box<dyn processor::FacetProcessor>>,
+    ) -> Self {
+        let mut registry = ProcessorRegistry::with_well_known();
+        for p in extra {
+            registry.register(p);
+        }
         let (shutdown, rx) = tokio::sync::watch::channel(false);
-        let task = tokio::spawn(run(pool, interval, rx));
+        let task = tokio::spawn(run(pool, interval, Arc::new(registry), rx));
         Self { task, shutdown }
     }
 
@@ -50,7 +72,12 @@ impl Projector {
     }
 }
 
-async fn run(pool: PgPool, interval: Duration, mut shutdown: tokio::sync::watch::Receiver<bool>) {
+async fn run(
+    pool: PgPool,
+    interval: Duration,
+    registry: Arc<ProcessorRegistry>,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) {
     let mut tick = tokio::time::interval(interval);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
@@ -58,7 +85,7 @@ async fn run(pool: PgPool, interval: Duration, mut shutdown: tokio::sync::watch:
             _ = tick.tick() => {
                 // Drain everything currently available, then go back to sleep.
                 loop {
-                    match project_once(&pool).await {
+                    match project_once(&pool, &registry).await {
                         Ok(0) => break,
                         Ok(_) => continue,
                         Err(e) => {
@@ -71,7 +98,7 @@ async fn run(pool: PgPool, interval: Duration, mut shutdown: tokio::sync::watch:
             _ = shutdown.changed() => {
                 if *shutdown.borrow() {
                     // Final drain before exit.
-                    while let Ok(n) = project_once(&pool).await {
+                    while let Ok(n) = project_once(&pool, &registry).await {
                         if n == 0 {
                             break;
                         }
@@ -86,7 +113,8 @@ async fn run(pool: PgPool, interval: Duration, mut shutdown: tokio::sync::watch:
 /// Fold one batch of up to [`BATCH`] events after the cursor into the read
 /// tables, in a single transaction, advancing the cursor. Returns the number of
 /// events applied (0 when the log has caught up).
-async fn project_once(pool: &PgPool) -> Result<usize, sqlx::Error> {
+async fn project_once(pool: &PgPool, registry: &ProcessorRegistry) -> Result<usize, sqlx::Error> {
+    let applier = PgApplier;
     let mut tx = pool.begin().await?;
 
     let last_seq: i64 = sqlx::query_scalar("SELECT last_seq FROM projection_state WHERE name = $1")
@@ -97,7 +125,7 @@ async fn project_once(pool: &PgPool) -> Result<usize, sqlx::Error> {
     let rows = sqlx::query_as::<_, RawEvent>(
         "SELECT seq, event_kind, event_type, event_time, run_id, \
                 job_namespace, job_name, dataset_namespace, dataset_name, \
-                raw, inputs, outputs \
+                raw, inputs, outputs, column_lineage \
          FROM events WHERE seq > $1 ORDER BY seq ASC LIMIT $2",
     )
     .bind(last_seq)
@@ -113,7 +141,10 @@ async fn project_once(pool: &PgPool) -> Result<usize, sqlx::Error> {
     let n = rows.len();
     for ev in rows {
         max_seq = max_seq.max(ev.seq);
-        apply_event(&mut tx, &ev).await?;
+        // Parse (backend-agnostic) then apply (backend-specific) — the seam.
+        for m in registry.process(&ev) {
+            applier.apply(&mut tx, &m).await?;
+        }
     }
 
     sqlx::query("UPDATE projection_state SET last_seq = $1 WHERE name = $2")
@@ -131,9 +162,10 @@ async fn project_once(pool: &PgPool) -> Result<usize, sqlx::Error> {
 /// the background task uses; handy for tests and one-shot replays where waiting
 /// on the poll interval is undesirable.
 pub async fn project_all(pool: &PgPool) -> Result<usize, sqlx::Error> {
+    let registry = ProcessorRegistry::with_well_known();
     let mut total = 0;
     loop {
-        let n = project_once(pool).await?;
+        let n = project_once(pool, &registry).await?;
         if n == 0 {
             return Ok(total);
         }
@@ -144,6 +176,7 @@ pub async fn project_all(pool: &PgPool) -> Result<usize, sqlx::Error> {
 /// Truncate the read tables and reset the cursor, then re-fold the entire event
 /// log. Used to rebuild the projection after a schema or logic change.
 pub async fn rebuild(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let registry = ProcessorRegistry::with_well_known();
     let mut tx = pool.begin().await?;
     sqlx::query(
         "TRUNCATE namespaces, jobs, runs, datasets, lineage_edges RESTART IDENTITY CASCADE",
@@ -156,14 +189,15 @@ pub async fn rebuild(pool: &PgPool) -> Result<(), sqlx::Error> {
         .await?;
     tx.commit().await?;
 
-    while project_once(pool).await? > 0 {}
+    while project_once(pool, &registry).await? > 0 {}
     Ok(())
 }
 
 /// One row of the projection's source query — the promoted columns plus the
-/// JSON blobs the fold needs.
+/// JSON blobs the processors read. Public because it is the input type of the
+/// [`FacetProcessor`](processor::FacetProcessor) extension point.
 #[derive(sqlx::FromRow)]
-pub(crate) struct RawEvent {
+pub struct RawEvent {
     pub seq: i64,
     pub event_kind: String,
     pub event_type: Option<String>,
@@ -176,4 +210,9 @@ pub(crate) struct RawEvent {
     pub raw: Option<serde_json::Value>,
     pub inputs: Option<serde_json::Value>,
     pub outputs: Option<serde_json::Value>,
+    /// The writer-lifted per-event column-lineage document
+    /// (`{inputs:[...], outputs:[...]}`); consumed by the column-lineage
+    /// processor (Phase 1). Selected now so the projector query is stable.
+    #[allow(dead_code)]
+    pub column_lineage: Option<serde_json::Value>,
 }

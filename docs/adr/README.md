@@ -17,3 +17,9 @@ links point back to `open-lakehouse`.
 | [0012](0012-client-forwarded-lineage-metadata.md) | Client-forwarded lineage metadata (gRPC headers) |
 | [0013](0013-column-level-lineage-positional-resolution.md) | Column-level lineage via positional resolution |
 | [0014](0014-openlineage-planner-vs-rule.md) | OpenLineage planner vs rule (plan-carried marker) |
+| [0015](0015-hybrid-cqrs-postgres-storage.md) | Hybrid-CQRS Postgres storage (raw event log + async projection) |
+| [0016](0016-mutation-ir-projection-pipeline.md) | Facet processing as a backend-agnostic Mutation IR |
+
+See also [`docs/marquez-compatibility.md`](../marquez-compatibility.md) — a
+living reference for where the service matches, diverges from, and goes beyond
+the Marquez reference implementation.
