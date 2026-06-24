@@ -21,6 +21,40 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
+  # Detect whether a PR touches anything that affects the build. A docs-only
+  # change (Markdown, docs/, repo-meta files) can't break compilation or move
+  # coverage, so the expensive `test` and `coverage` jobs gate on this and skip
+  # when `code == 'false'`. On push to main / merge_group there is no PR diff to
+  # filter against, so the filter falls through and `code` is 'true' (everything
+  # runs). fmt and clippy are cheap and always run regardless.
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          # `code` is true when ANY changed path is NOT one of these docs/meta
+          # patterns (negations are anchored at the repo root). Keep this list in
+          # sync with the set of files that genuinely can't affect the build.
+          filters: |
+            code:
+              - '!**/*.md'
+              - '!docs/**'
+              - '!LICENSE'
+              - '!.gitignore'
+              - '!.editorconfig'
+
   # fmt, clippy, test and coverage are independent jobs that run in parallel.
   # Splitting them (rather than one sequential job) means a clippy or fmt failure
   # no longer prevents the test job from running — you still get full test
@@ -91,6 +125,9 @@ jobs:
 
   test:
     name: test
+    # Skip on docs-only PRs (no code change can move test results).
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -157,6 +194,9 @@ jobs:
 
   coverage:
     name: coverage
+    # Skip on docs-only PRs (no code change can move coverage).
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -236,6 +276,9 @@ jobs:
   # (continue-on-error) while the live harness beds in; flip off once stable.
   marquez-acceptance:
     name: marquez reference acceptance
+    # Skip on docs-only PRs — no code change to validate against Marquez.
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     continue-on-error: true
@@ -262,3 +305,35 @@ jobs:
       # the default socket. The test pulls marquezproject/marquez + postgres.
       - name: Marquez acceptance test
         run: cargo test -p datafusion-open-lineage --features marquez-it --test marquez_acceptance -- --ignored --nocapture
+
+  # Single roll-up status. Because `test`/`coverage` are conditionally skipped on
+  # docs-only PRs, the individual checks aren't a stable name to require in branch
+  # protection. This job always runs and turns red only if a job that *did* run
+  # failed — a skipped job is a pass. Make THIS the one required check, so docs
+  # PRs stay green without leaving a required check forever "pending".
+  ci:
+    name: ci
+    if: ${{ always() }}
+    needs: [fmt, clippy, test, coverage]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Verify required jobs succeeded or were skipped
+        run: |
+          # `needs.*.result` is one of: success | failure | cancelled | skipped.
+          # Skipped is acceptable (docs-only path filtering); anything else that
+          # isn't success fails the gate.
+          for r in \
+            "fmt:${{ needs.fmt.result }}" \
+            "clippy:${{ needs.clippy.result }}" \
+            "test:${{ needs.test.result }}" \
+            "coverage:${{ needs.coverage.result }}"; do
+            name="${r%%:*}"; result="${r##*:}"
+            echo "$name -> $result"
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "::error::required job '$name' did not succeed ($result)"
+              exit 1
+            fi
+          done
+          echo "All required jobs passed (or were skipped)."
