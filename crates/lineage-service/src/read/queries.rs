@@ -72,7 +72,8 @@ impl LineageStore {
         };
 
         let rows = sqlx::query(
-            "SELECT namespace, name, created_at, updated_at, description, tags, inputs, outputs \
+            "SELECT namespace, name, created_at, updated_at, description, tags, inputs, outputs, \
+                    current_version \
              FROM jobs \
              WHERE ($1::text IS NULL OR namespace = $1) \
              ORDER BY name LIMIT $2 OFFSET $3",
@@ -96,7 +97,8 @@ impl LineageStore {
     /// `GET /api/v1/namespaces/{ns}/jobs/{job}`
     pub async fn job(&self, namespace: &str, name: &str) -> Result<Job, ReadError> {
         let row = sqlx::query(
-            "SELECT namespace, name, created_at, updated_at, description, tags, inputs, outputs \
+            "SELECT namespace, name, created_at, updated_at, description, tags, inputs, outputs, \
+                    current_version \
              FROM jobs WHERE namespace = $1 AND name = $2",
         )
         .bind(namespace)
@@ -127,6 +129,7 @@ impl LineageStore {
         let tags: JsonValue = r.get("tags");
         let inputs: JsonValue = r.get("inputs");
         let outputs: JsonValue = r.get("outputs");
+        let current_version: uuid::Uuid = r.get("current_version");
 
         let node_id = job_node_id(&namespace, &name);
         let updated = rfc3339(updated_at);
@@ -169,6 +172,7 @@ impl LineageStore {
             tags: string_vec(&tags),
             parent_job_name: None,
             parent_job_uuid: None,
+            current_version: current_version.to_string(),
         })
     }
 
@@ -194,7 +198,7 @@ impl LineageStore {
             }
         };
         let rows = sqlx::query(
-            "SELECT namespace, name, created_at, updated_at, fields FROM datasets \
+            "SELECT namespace, name, created_at, updated_at, fields, current_version FROM datasets \
              WHERE ($1::text IS NULL OR namespace = $1) \
              ORDER BY name LIMIT $2 OFFSET $3",
         )
@@ -213,7 +217,7 @@ impl LineageStore {
     /// `GET /api/v1/namespaces/{ns}/datasets/{name}`
     pub async fn dataset(&self, namespace: &str, name: &str) -> Result<Dataset, ReadError> {
         let row = sqlx::query(
-            "SELECT namespace, name, created_at, updated_at, fields FROM datasets \
+            "SELECT namespace, name, created_at, updated_at, fields, current_version FROM datasets \
              WHERE namespace = $1 AND name = $2",
         )
         .bind(namespace)
@@ -615,6 +619,7 @@ fn build_dataset(r: &sqlx::postgres::PgRow) -> Dataset {
     let created_at: DateTime<Utc> = r.get("created_at");
     let updated_at: DateTime<Utc> = r.get("updated_at");
     let fields_json: JsonValue = r.get("fields");
+    let current_version: uuid::Uuid = r.get("current_version");
     let fields = fields_json.as_array().cloned().unwrap_or_default();
     let facets = if fields.is_empty() {
         json!({})
@@ -638,6 +643,7 @@ fn build_dataset(r: &sqlx::postgres::PgRow) -> Dataset {
         facets,
         tags: Vec::new(),
         deleted: false,
+        current_version: current_version.to_string(),
     }
 }
 

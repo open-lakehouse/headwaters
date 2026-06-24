@@ -74,6 +74,9 @@ async fn apply_run_or_job(
     let outputs_json = JsonValue::Array(out_refs.iter().map(ref_to_json).collect());
     let tags_json = JsonValue::Array(tags.into_iter().map(JsonValue::String).collect());
 
+    // `current_version` is refreshed (to a fresh UUIDv7) only when the edges
+    // actually change — a new input/output shape — mirroring Marquez's
+    // per-version job model; otherwise it is preserved.
     sqlx::query(
         "INSERT INTO jobs (namespace, name, created_at, updated_at, \
                            description, tags, inputs, outputs, edges_at, meta_at) \
@@ -98,7 +101,11 @@ async fn apply_run_or_job(
             tags = CASE WHEN $9 AND ($3 >= jobs.meta_at OR jobs.meta_at IS NULL) \
                         THEN $5 ELSE jobs.tags END, \
             meta_at = CASE WHEN $9 AND ($3 >= jobs.meta_at OR jobs.meta_at IS NULL) \
-                           THEN $3 ELSE jobs.meta_at END",
+                           THEN $3 ELSE jobs.meta_at END, \
+            current_version = CASE WHEN $8 AND ($3 >= jobs.edges_at OR jobs.edges_at IS NULL) \
+                                       AND (jobs.inputs IS DISTINCT FROM $6 \
+                                            OR jobs.outputs IS DISTINCT FROM $7) \
+                                   THEN uuidv7() ELSE jobs.current_version END",
     )
     .bind(ns)
     .bind(name)
@@ -248,6 +255,8 @@ async fn note_dataset(
     let has_schema = schema.is_some_and(|f| !f.is_empty());
     let fields_json = JsonValue::Array(schema.cloned().unwrap_or_default());
 
+    // `current_version` is refreshed only when the schema actually changes,
+    // mirroring Marquez's per-version dataset model; otherwise preserved.
     sqlx::query(
         "INSERT INTO datasets (namespace, name, created_at, updated_at, fields, schema_at) \
          VALUES ($1, $2, $3, $3, \
@@ -259,7 +268,10 @@ async fn note_dataset(
             fields = CASE WHEN $5 AND ($3 >= datasets.schema_at OR datasets.schema_at IS NULL) \
                           THEN $4 ELSE datasets.fields END, \
             schema_at = CASE WHEN $5 AND ($3 >= datasets.schema_at OR datasets.schema_at IS NULL) \
-                             THEN $3 ELSE datasets.schema_at END",
+                             THEN $3 ELSE datasets.schema_at END, \
+            current_version = CASE WHEN $5 AND ($3 >= datasets.schema_at OR datasets.schema_at IS NULL) \
+                                       AND datasets.fields IS DISTINCT FROM $4 \
+                                   THEN uuidv7() ELSE datasets.current_version END",
     )
     .bind(namespace)
     .bind(name)
