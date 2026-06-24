@@ -53,8 +53,8 @@ stand. "Interpreted" = promoted into the relational model, not just retained.
 
 | Facet | Marquez interprets into | Our status |
 |---|---|---|
-| `schema` | one `dataset_fields` row per column | dataset fields cache (per-column rows: Phase 1) |
-| `columnLineage` | `column_lineage` edge table (output datasets) | column-lineage graph from the lifted facet (edge table: Phase 1) |
+| `schema` | one `dataset_fields` row per column | ✓ per-column `dataset_fields` rows (+ the `datasets.fields` cache) |
+| `columnLineage` | `column_lineage` edge table (output datasets) | ✓ `column_lineage_edges` table; per-output-field latest-wins |
 | `documentation` | `description` on job/dataset | job description ✓ (dataset: Phase 3) |
 | `tags` | tag tables (via REST, not ingest) | job tags ✓ (catalog + assignments + propagation: Phase 4) |
 | `dataSource` | a `sources` row (name + connection_url) | **pass-through** (Phase 3) |

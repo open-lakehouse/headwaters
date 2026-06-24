@@ -532,3 +532,96 @@ async fn jobs_and_datasets_carry_current_version_uuid() {
     let job2 = store.job("etl", "build_daily").await.unwrap();
     assert_eq!(job.current_version, job2.current_version);
 }
+
+// --- Phase 1: schema + column-lineage projection tables -----------------------
+
+use sqlx::Row;
+
+#[tokio::test]
+async fn schema_facet_populates_dataset_fields() {
+    let db = start_postgres().await;
+    ingest(
+        &db.pool,
+        r#"{"eventType":"COMPLETE","eventTime":"2023-11-14T22:13:20Z","producer":"p",
+            "run":{"runId":"r1"},"job":{"namespace":"etl","name":"j"},
+            "outputs":[{"namespace":"warehouse","name":"silver","facets":{"schema":{"fields":[
+                {"name":"id","type":"BIGINT"},
+                {"name":"email","type":"STRING","description":"addr"}]}}}]}"#,
+    )
+    .await;
+    let rows = sqlx::query(
+        "SELECT field, type, description, ordinal FROM dataset_fields \
+         WHERE namespace = 'warehouse' AND dataset = 'silver' ORDER BY ordinal",
+    )
+    .fetch_all(&db.pool)
+    .await
+    .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].get::<String, _>("field"), "id");
+    assert_eq!(
+        rows[0].get::<Option<String>, _>("type").as_deref(),
+        Some("BIGINT")
+    );
+    assert_eq!(rows[1].get::<String, _>("field"), "email");
+    assert_eq!(
+        rows[1].get::<Option<String>, _>("description").as_deref(),
+        Some("addr")
+    );
+}
+
+#[tokio::test]
+async fn column_lineage_facet_populates_edges() {
+    let db = start_postgres().await;
+    let store = column_lineage_seeded_store(&db).await;
+
+    // The projected edge table holds the latest mapping (id <- customer_key).
+    let rows = sqlx::query(
+        "SELECT in_field, out_field FROM column_lineage_edges \
+         WHERE out_namespace = 'warehouse' AND out_dataset = 'silver.customers' \
+         ORDER BY out_field, in_field",
+    )
+    .fetch_all(&db.pool)
+    .await
+    .unwrap();
+    let edges: Vec<(String, String)> = rows
+        .iter()
+        .map(|r| (r.get("in_field"), r.get("out_field")))
+        .collect();
+    // Latest facet: id <- customer_key, email_hash <- email. The older id <- id
+    // must have been superseded.
+    assert!(edges.contains(&("customer_key".into(), "id".into())));
+    assert!(edges.contains(&("email".into(), "email_hash".into())));
+    assert!(
+        !edges.iter().any(|(i, o)| i == "id" && o == "id"),
+        "older id<-id mapping superseded: {edges:?}"
+    );
+
+    // The read endpoint reflects the same.
+    let graph = store
+        .column_lineage("dataset:warehouse:silver.customers")
+        .await
+        .unwrap()
+        .graph;
+    let ids: Vec<&str> = graph.iter().map(|n| n.id.as_str()).collect();
+    assert!(ids.contains(&"datasetField:raw:customers:customer_key"));
+    assert!(!ids.contains(&"datasetField:raw:customers:id"));
+}
+
+#[tokio::test]
+async fn column_edges_survive_rebuild_with_latest_wins() {
+    let db = start_postgres().await;
+    let _ = column_lineage_seeded_store(&db).await;
+    lineage_service::projection::rebuild(&db.pool)
+        .await
+        .unwrap();
+    let rows = sqlx::query(
+        "SELECT in_field, out_field FROM column_lineage_edges \
+         WHERE out_field = 'id'",
+    )
+    .fetch_all(&db.pool)
+    .await
+    .unwrap();
+    // After a full replay, still exactly the latest mapping for `id`.
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<String, _>("in_field"), "customer_key");
+}
