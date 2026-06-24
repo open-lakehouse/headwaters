@@ -390,6 +390,52 @@ fn scheme_authority_end(s: &str) -> Option<usize> {
     Some(auth_start + auth_len)
 }
 
+// --- /tags ---
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tag {
+    pub name: String,
+    pub description: Option<String>,
+}
+
+/// `GET /api/v1/tags` envelope — the UI reads `payload.tags`.
+#[derive(Debug, Clone, Serialize)]
+pub struct Tags {
+    pub tags: Vec<Tag>,
+}
+
+// --- /stats/* ---
+
+/// One time bucket of a stats series: `{ date, count }` (Marquez's shape).
+#[derive(Debug, Clone, Serialize)]
+pub struct StatBucket {
+    pub date: String,
+    pub count: i64,
+}
+
+// --- /tags/{tag}/downstream ---
+
+/// One dataset field reached by tag/PII propagation.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaggedField {
+    pub namespace: String,
+    pub dataset: String,
+    pub field: String,
+    /// The `datasetField:` nodeId, for linking into the column-lineage view.
+    pub node_id: String,
+}
+
+/// `GET /api/v1/tags/{tag}/downstream` — the fields reachable downstream from
+/// anything tagged `tag` (the tagged seeds themselves are included).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagPropagation {
+    pub tag: String,
+    pub fields: Vec<TaggedField>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

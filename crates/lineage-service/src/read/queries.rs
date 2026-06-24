@@ -230,7 +230,9 @@ impl LineageStore {
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| ReadError::NotFound(format!("dataset {namespace}/{name}")))?;
-        Ok(build_dataset(&row))
+        let mut dataset = build_dataset(&row);
+        dataset.tags = self.dataset_tags(namespace, name).await?;
+        Ok(dataset)
     }
 
     /// `GET /api/v1/search?q=`
@@ -633,6 +635,164 @@ impl LineageStore {
             })
             .collect();
         Ok(ColumnLineageGraph { graph })
+    }
+
+    /// `GET /api/v1/tags` — the tag catalog.
+    pub async fn tags(&self) -> Result<Tags, ReadError> {
+        let rows = sqlx::query("SELECT name, description FROM tags ORDER BY name")
+            .fetch_all(&self.pool)
+            .await?;
+        let tags = rows
+            .iter()
+            .map(|r| Tag {
+                name: r.get("name"),
+                description: r.get("description"),
+            })
+            .collect();
+        Ok(Tags { tags })
+    }
+
+    /// `GET /api/v1/stats/lineage-events` — event counts bucketed by `period`.
+    pub async fn stats_lineage_events(
+        &self,
+        period: &str,
+        limit: usize,
+    ) -> Result<Vec<StatBucket>, ReadError> {
+        let period = normalize_period(period)?;
+        // `period` is whitelisted (not user text) so interpolating it into
+        // date_trunc is safe; the limit is bound.
+        let rows = sqlx::query(&format!(
+            "SELECT to_char(date_trunc('{period}', event_time), 'YYYY-MM-DD\"T\"HH24:MI:SSOF') \
+                    AS bucket, COUNT(*) AS n \
+             FROM events WHERE event_time IS NOT NULL \
+             GROUP BY 1 ORDER BY 1 DESC LIMIT $1",
+        ))
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| StatBucket {
+                date: r.get("bucket"),
+                count: r.get("n"),
+            })
+            .collect())
+    }
+
+    /// `GET /api/v1/stats/:asset` — first-seen counts for `jobs` or `datasets`,
+    /// bucketed by `period`.
+    pub async fn stats_asset(
+        &self,
+        asset: &str,
+        period: &str,
+        limit: usize,
+    ) -> Result<Vec<StatBucket>, ReadError> {
+        let period = normalize_period(period)?;
+        let table = match asset {
+            "jobs" | "job" => "jobs",
+            "datasets" | "dataset" => "datasets",
+            other => {
+                return Err(ReadError::NotFound(format!("unknown stats asset {other}")));
+            }
+        };
+        let rows = sqlx::query(&format!(
+            "SELECT to_char(date_trunc('{period}', created_at), 'YYYY-MM-DD\"T\"HH24:MI:SSOF') \
+                    AS bucket, COUNT(*) AS n \
+             FROM {table} GROUP BY 1 ORDER BY 1 DESC LIMIT $1",
+        ))
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| StatBucket {
+                date: r.get("bucket"),
+                count: r.get("n"),
+            })
+            .collect())
+    }
+
+    /// `GET /api/v1/tags/{tag}/downstream` — the dataset fields reachable
+    /// downstream from anything currently tagged `tag`.
+    ///
+    /// A `WITH RECURSIVE` transitive closure over `column_lineage_edges`
+    /// (field-granularity), seeded from `tag_assignments`: directly-tagged
+    /// fields, plus every field of a tagged dataset. Bounded by `MAX_DEPTH`.
+    /// "PII" is just a conventional tag name — nothing is special-cased.
+    pub async fn tag_downstream(&self, tag: &str) -> Result<TagPropagation, ReadError> {
+        let rows = sqlx::query(
+            "WITH RECURSIVE seed(namespace, dataset, field) AS ( \
+                 SELECT namespace, name, field FROM tag_assignments \
+                 WHERE tag = $1 AND target_type = 'dataset_field' \
+               UNION \
+                 SELECT ta.namespace, ta.name, f.field \
+                 FROM tag_assignments ta \
+                 JOIN dataset_fields f ON f.namespace = ta.namespace AND f.dataset = ta.name \
+                 WHERE ta.tag = $1 AND ta.target_type = 'dataset' \
+             ), \
+             reach(namespace, dataset, field, depth) AS ( \
+                 SELECT namespace, dataset, field, 0 FROM seed \
+               UNION \
+                 SELECT e.out_namespace, e.out_dataset, e.out_field, r.depth + 1 \
+                 FROM reach r \
+                 JOIN column_lineage_edges e \
+                   ON e.in_namespace = r.namespace AND e.in_dataset = r.dataset \
+                      AND e.in_field = r.field \
+                 WHERE r.depth < $2 \
+             ) \
+             SELECT DISTINCT namespace, dataset, field FROM reach \
+             ORDER BY namespace, dataset, field",
+        )
+        .bind(tag)
+        .bind(MAX_DEPTH)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let fields = rows
+            .iter()
+            .map(|r| {
+                let namespace: String = r.get("namespace");
+                let dataset: String = r.get("dataset");
+                let field: String = r.get("field");
+                let node_id = dataset_field_node_id(&namespace, &dataset, &field);
+                TaggedField {
+                    namespace,
+                    dataset,
+                    field,
+                    node_id,
+                }
+            })
+            .collect();
+        Ok(TagPropagation {
+            tag: tag.to_string(),
+            fields,
+        })
+    }
+
+    /// Tag names assigned to a dataset (whole-dataset assignments only — field
+    /// tags are exposed via column lineage / propagation).
+    async fn dataset_tags(&self, namespace: &str, name: &str) -> Result<Vec<String>, ReadError> {
+        let rows = sqlx::query(
+            "SELECT tag FROM tag_assignments \
+             WHERE target_type = 'dataset' AND namespace = $1 AND name = $2 ORDER BY tag",
+        )
+        .bind(namespace)
+        .bind(name)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(|r| r.get::<String, _>("tag")).collect())
+    }
+}
+
+/// Validate a `date_trunc` period against a whitelist (it is interpolated into
+/// SQL, so it must not be arbitrary user text).
+fn normalize_period(period: &str) -> Result<&'static str, ReadError> {
+    match period.to_ascii_lowercase().as_str() {
+        "hour" => Ok("hour"),
+        "day" => Ok("day"),
+        "week" => Ok("week"),
+        "month" => Ok("month"),
+        other => Err(ReadError::NotFound(format!("unknown period {other}"))),
     }
 }
 
