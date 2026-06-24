@@ -1,27 +1,35 @@
 syntax = "proto3";
+
 package lineage.v1;
 
-option go_package = "github.com/open-lakehouse/open-lineage-service/gen/lineage/v1;lineagev1";
-
-import "buf/validate/validate.proto";
-import "google/protobuf/timestamp.proto";
 import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "lineage/v1/facets.proto";
+
+// The OpenLineage event object model.
+//
+// Core events are thin envelopes; the metadata that matters lives in facets.
+// Each carrier (`Run`/`Job`/`InputDataset`/`OutputDataset`/`StaticDataset`)
+// keeps a `google.protobuf.Struct facets` bag so *any* official or custom facet
+// round-trips opaquely. The `ColumnLineageDatasetFacet` is lifted out of that
+// bag into a strong type (see facets.proto for why); the other core facets are
+// modeled in facets.proto and read back out of the `Struct` bag on demand.
 
 message RunEvent {
-  string event_type = 1 [(buf.validate.field).required = true];
-  google.protobuf.Timestamp event_time = 2 [(buf.validate.field).required = true];
+  string event_type = 1;
+  google.protobuf.Timestamp event_time = 2;
   Run run = 3;
   Job job = 4;
   repeated InputDataset inputs = 5;
   repeated OutputDataset outputs = 6;
-  string producer = 7 [(buf.validate.field).required = true];
+  string producer = 7;
   string raw_json = 8;
   string schema_url = 9;
 }
 
 message JobEvent {
-  google.protobuf.Timestamp event_time = 1 [(buf.validate.field).required = true];
-  string producer = 2 [(buf.validate.field).required = true];
+  google.protobuf.Timestamp event_time = 1;
+  string producer = 2;
   string schema_url = 3;
   Job job = 4;
   repeated InputDataset inputs = 5;
@@ -30,8 +38,8 @@ message JobEvent {
 }
 
 message DatasetEvent {
-  google.protobuf.Timestamp event_time = 1 [(buf.validate.field).required = true];
-  string producer = 2 [(buf.validate.field).required = true];
+  google.protobuf.Timestamp event_time = 1;
+  string producer = 2;
   string schema_url = 3;
   StaticDataset dataset = 4;
   string raw_json = 5;
@@ -79,58 +87,7 @@ message OutputDataset {
   ColumnLineageDatasetFacet column_lineage = 5;
 }
 
-// ColumnLineageDatasetFacet is a typed model of the OpenLineage 1-2-0
-// `ColumnLineageDatasetFacet` (https://openlineage.io/spec/facets/1-2-0/ColumnLineageDatasetFacet.json).
-//
-// Carrying it as a strong proto type — rather than burying it inside
-// `google.protobuf.Struct facets` — lets downstream Go/Rust readers consume
-// column lineage without re-parsing arbitrary JSON shapes, which is important
-// because nested struct/array columns can blow past `Struct`'s practical
-// nesting depth (~100 levels) on real-world plans.
-message ColumnLineageDatasetFacet {
-  // Per-output-field lineage, keyed by output field name.
-  map<string, OutputFieldLineage> fields = 1;
-
-  // Dataset-level dependencies that affect the whole output (filters, joins,
-  // group-by columns, sort keys, window partitioning, etc.). These do not
-  // map to a single output column.
-  repeated InputField dataset = 2;
-}
-
-// Lineage of a single output column. `inputFields` is the canonical mapping;
-// `transformation_description` and `transformation_type` mirror the deprecated
-// fields in the OpenLineage spec and are kept here for spec-completeness.
-message OutputFieldLineage {
-  repeated InputField input_fields = 1;
-  string transformation_description = 2 [deprecated = true];
-  string transformation_type = 3 [deprecated = true];
-}
-
-// A single column-level dependency on a source dataset's field.
-message InputField {
-  string namespace = 1 [(buf.validate.field).required = true];
-  string name = 2 [(buf.validate.field).required = true];
-  string field = 3 [(buf.validate.field).required = true];
-  repeated FieldTransformation transformations = 4;
-}
-
-// Describes the kind of transformation that connects an input field to an
-// output column.
-//
-// `type` is one of:
-//   - DIRECT   — input value flows into the output value
-//   - INDIRECT — input affects the output's row set / ordering / grouping
-// `subtype` further qualifies the transformation. Common values:
-//   IDENTITY, TRANSFORMATION, AGGREGATION, JOIN, GROUP_BY, FILTER, SORT,
-//   WINDOW, CONDITIONAL.
-// `masking` is true for transformations that intentionally remove signal
-// from the input (hashes, redactions, regexp_replace-as-mask, etc.).
-message FieldTransformation {
-  string type = 1;
-  string subtype = 2;
-  string description = 3;
-  bool masking = 4;
-}
+// --- Ingest request/response shapes ---
 
 message IngestEventRequest {
   RunEvent event = 1;
@@ -141,18 +98,10 @@ message IngestEventResponse {
 }
 
 message IngestBatchRequest {
-  repeated RunEvent events = 1;
-}
-
-message IngestBatchResponse {
-  int32 ingested = 1;
-}
-
-message IngestOpenLineageBatchRequest {
   repeated OpenLineageEvent events = 1;
 }
 
-message IngestOpenLineageBatchResponse {
+message IngestBatchResponse {
   string status = 1;
   BatchSummary summary = 2;
   repeated FailedEvent failed_events = 3;
@@ -170,36 +119,4 @@ message FailedEvent {
   int32 index = 1;
   string reason = 2;
   bool retriable = 3;
-}
-
-message QueryLineageRequest {
-  string job_namespace = 1;
-  string job_name = 2;
-  int32 depth = 3;
-}
-
-message LineageNode {
-  string node_type = 1;
-  string namespace = 2;
-  string name = 3;
-  repeated LineageEdge edges = 4;
-}
-
-message LineageEdge {
-  string source_namespace = 1;
-  string source_name = 2;
-  string target_namespace = 3;
-  string target_name = 4;
-  string relationship = 5;
-}
-
-message QueryLineageResponse {
-  repeated LineageNode nodes = 1;
-}
-
-service LineageService {
-  rpc IngestEvent(IngestEventRequest) returns (IngestEventResponse);
-  rpc IngestBatch(IngestBatchRequest) returns (IngestBatchResponse);
-  rpc IngestOpenLineageBatch(IngestOpenLineageBatchRequest) returns (IngestOpenLineageBatchResponse);
-  rpc QueryLineage(QueryLineageRequest) returns (QueryLineageResponse);
 }

@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+package lineage.v1;
+
+import "google/api/annotations.proto";
+import "lineage/v1/lineage.proto";
+import "lineage/v1/read.proto";
+
+// The lineage service surface, defined once and semantically equivalent to the
+// hand-written REST API. The `google.api.http` annotations capture the REST
+// mapping in-proto; the REST server is hand-written (it owns the exact Marquez
+// JSON contract), and these definitions also seed the ConnectRPC stubs a later
+// codegen step emits.
+//
+// NOTE: buffa generates only the message types from this file today; the
+// ConnectRPC service stubs come from a separate `protoc-gen-connect-rust` pass
+// wired up in a subsequent step.
+
+service LineageService {
+  // --- ingest ---
+
+  rpc IngestEvent(IngestEventRequest) returns (IngestEventResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/lineage"
+      body: "event"
+    };
+  }
+
+  rpc IngestBatch(IngestBatchRequest) returns (IngestBatchResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/lineage/batch"
+      body: "*"
+    };
+  }
+
+  // --- read: namespaces / jobs / datasets ---
+
+  rpc ListNamespaces(ListNamespacesRequest) returns (ListNamespacesResponse) {
+    option (google.api.http) = {get: "/api/v1/namespaces"};
+  }
+
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse) {
+    option (google.api.http) = {get: "/api/v1/jobs"};
+  }
+
+  rpc GetJob(GetJobRequest) returns (JobDetail) {
+    option (google.api.http) = {get: "/api/v1/namespaces/{namespace}/jobs/{name}"};
+  }
+
+  rpc GetJobRuns(GetJobRunsRequest) returns (ListRunsResponse) {
+    option (google.api.http) = {get: "/api/v1/namespaces/{namespace}/jobs/{name}/runs"};
+  }
+
+  rpc ListDatasets(ListDatasetsRequest) returns (ListDatasetsResponse) {
+    option (google.api.http) = {get: "/api/v1/datasets"};
+  }
+
+  rpc GetDataset(GetDatasetRequest) returns (Dataset) {
+    option (google.api.http) = {get: "/api/v1/namespaces/{namespace}/datasets/{name}"};
+  }
+
+  rpc ListDatasetVersions(ListDatasetVersionsRequest) returns (ListDatasetVersionsResponse) {
+    option (google.api.http) = {get: "/api/v1/namespaces/{namespace}/datasets/{name}/versions"};
+  }
+
+  // --- read: search / graph / events / facets ---
+
+  rpc Search(SearchRequest) returns (SearchResponse) {
+    option (google.api.http) = {get: "/api/v1/search"};
+  }
+
+  rpc GetLineage(GetLineageRequest) returns (LineageGraph) {
+    option (google.api.http) = {get: "/api/v1/lineage"};
+  }
+
+  rpc GetColumnLineage(GetColumnLineageRequest) returns (LineageGraph) {
+    option (google.api.http) = {get: "/api/v1/column-lineage"};
+  }
+
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {
+    option (google.api.http) = {get: "/api/v1/events/lineage"};
+  }
+
+  rpc GetRunFacets(GetRunFacetsRequest) returns (RunFacetsResponse) {
+    option (google.api.http) = {get: "/api/v1/jobs/runs/{run_id}/facets"};
+  }
+}
+
+// --- request messages ---
+
+// `namespace` empty means "all namespaces" for the list endpoints; `limit` /
+// `offset` are the pagination knobs the read store applies.
+
+message ListNamespacesRequest {}
+
+message ListJobsRequest {
+  string namespace = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message GetJobRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message GetJobRunsRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message ListDatasetsRequest {
+  string namespace = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message GetDatasetRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message ListDatasetVersionsRequest {
+  string namespace = 1;
+  string name = 2;
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message SearchRequest {
+  string q = 1;
+  int32 limit = 2;
+}
+
+message GetLineageRequest {
+  string node_id = 1;
+  int32 depth = 2;
+}
+
+message GetColumnLineageRequest {
+  string node_id = 1;
+}
+
+message ListEventsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message GetRunFacetsRequest {
+  string run_id = 1;
+}

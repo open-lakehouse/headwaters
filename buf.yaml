@@ -2,10 +2,16 @@ version: v2
 modules:
   - path: proto
 deps:
-  - buf.build/bufbuild/protovalidate
+  - buf.build/googleapis/googleapis
 lint:
   use:
     - STANDARD
+  except:
+    # The read API is REST-shaped: RPCs intentionally return shared DTOs
+    # (JobDetail, Dataset, LineageGraph) rather than a unique *Response wrapper
+    # per RPC, and GetLineage/GetColumnLineage share the LineageGraph response.
+    - RPC_RESPONSE_STANDARD_NAME
+    - RPC_REQUEST_RESPONSE_UNIQUE
 breaking:
   use:
     - FILE

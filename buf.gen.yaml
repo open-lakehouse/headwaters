@@ -1,13 +1,15 @@
-# Rust proto codegen for the lineage event model.
+# Rust proto codegen for the lineage event model + read DTOs.
 #
-# Generates only the `lineage.v1` message/view/enum types — no ConnectRPC service
-# stubs: lineage-service ingests OpenLineage JSON over HTTP, not ConnectRPC, and
-# these types are the in-memory model that `writer::schema` converts to Arrow.
+# Generates the `lineage.v1` message/view/enum types only. The `service.proto`
+# `LineageService` RPCs *are* defined (and carry `google.api.http` annotations),
+# but buffa does not emit ConnectRPC stubs — those come from a separate
+# `protoc-gen-connect-rust` pass wired up in a later step. For now the REST
+# server is hand-written against these typed messages.
 #
-# Regenerate with `just proto-gen` (which scopes the input to the lineage proto).
-# Output is committed under crates/lineage-service/src/proto/ so CI runners
-# without a proto-codegen step build straight from source. (`proto`, not `gen`:
-# `gen` is a reserved keyword in Rust 2024.)
+# Regenerate with `just proto-gen`. Output is committed under
+# crates/lineage-service/src/proto/ so CI runners without a proto-codegen step
+# build straight from source. (`proto`, not `gen`: `gen` is a reserved keyword
+# in Rust 2024.)
 #
 # Uses the published remote buffa plugin (runs on the BSR, no local install).
 version: v2
