@@ -111,6 +111,52 @@ pub enum Mutation {
         at: DateTime<Utc>,
     },
 
+    /// Run metadata folded from run facets (nominalTime, parent, errorMessage).
+    /// Each field is `Option`; the applier sets only the present ones, guarded
+    /// latest-wins by `at`. Distinct from `UpsertRunState` so a metadata-only
+    /// event (e.g. a late facet) doesn't touch the state machine.
+    SetRunMeta {
+        run_id: String,
+        at: DateTime<Utc>,
+        nominal_start: Option<DateTime<Utc>>,
+        nominal_end: Option<DateTime<Utc>>,
+        parent_run_id: Option<String>,
+        parent_namespace: Option<String>,
+        parent_name: Option<String>,
+        error_message: Option<String>,
+    },
+
+    /// Job metadata folded from job facets (sourceCodeLocation → location,
+    /// jobType, dataSource → source_name, parent job link). Latest-wins by `at`.
+    SetJobMeta {
+        namespace: String,
+        name: String,
+        at: DateTime<Utc>,
+        location: Option<String>,
+        job_type: Option<String>,
+        parent_namespace: Option<String>,
+        parent_name: Option<String>,
+    },
+
+    /// Dataset metadata folded from dataset facets (documentation → description,
+    /// dataSource → source_name, lifecycleStateChange DROP → deleted).
+    /// Latest-wins by `at`.
+    SetDatasetMeta {
+        namespace: String,
+        name: String,
+        at: DateTime<Utc>,
+        description: Option<String>,
+        source_name: Option<String>,
+        deleted: Option<bool>,
+    },
+
+    /// A `dataSource` facet → the `sources` catalog (name + connection url).
+    UpsertSource {
+        name: String,
+        connection_url: Option<String>,
+        at: DateTime<Utc>,
+    },
+
     /// One column-lineage edge: input field → output field (from the
     /// `columnLineage` facet on an output dataset). Latest-wins per edge key.
     UpsertColumnEdge {

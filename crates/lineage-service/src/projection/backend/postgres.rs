@@ -101,6 +101,64 @@ impl PgApplier {
                 fields,
                 at,
             } => emit_dataset_version(tx, namespace, name, *version, run_id, fields, *at).await,
+            Mutation::SetRunMeta {
+                run_id,
+                at,
+                nominal_start,
+                nominal_end,
+                parent_run_id,
+                error_message,
+                // parent job identity is stored on the jobs row (SetJobMeta).
+                parent_namespace: _,
+                parent_name: _,
+            } => {
+                set_run_meta(
+                    tx,
+                    run_id,
+                    *at,
+                    *nominal_start,
+                    *nominal_end,
+                    parent_run_id,
+                    error_message,
+                )
+                .await
+            }
+            Mutation::SetJobMeta {
+                namespace,
+                name,
+                at,
+                location,
+                job_type,
+                parent_namespace,
+                parent_name,
+            } => {
+                set_job_meta(
+                    tx,
+                    namespace,
+                    name,
+                    *at,
+                    location,
+                    job_type,
+                    parent_namespace,
+                    parent_name,
+                )
+                .await
+            }
+            Mutation::SetDatasetMeta {
+                namespace,
+                name,
+                at,
+                description,
+                source_name,
+                deleted,
+            } => {
+                set_dataset_meta(tx, namespace, name, *at, description, source_name, deleted).await
+            }
+            Mutation::UpsertSource {
+                name,
+                connection_url,
+                at,
+            } => upsert_source(tx, name, connection_url, *at).await,
             Mutation::UpsertColumnEdge {
                 in_namespace,
                 in_dataset,
@@ -366,6 +424,133 @@ async fn upsert_dataset_field(
     .bind(field_type)
     .bind(description)
     .bind(ordinal)
+    .bind(at)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn set_run_meta(
+    tx: &mut Transaction<'_, Postgres>,
+    run_id: &str,
+    at: DateTime<Utc>,
+    nominal_start: Option<DateTime<Utc>>,
+    nominal_end: Option<DateTime<Utc>>,
+    parent_run_id: &Option<String>,
+    error_message: &Option<String>,
+) -> Result<(), sqlx::Error> {
+    // Latest-wins by `runs.meta_at` (the inline `$6 >= meta_at OR meta_at IS
+    // NULL` guard): a newer event's present fields win; a field absent from
+    // this event ($N IS NULL) keeps the stored value; an out-of-order older
+    // event is ignored.
+    sqlx::query(
+        "UPDATE runs SET \
+            nominal_start = CASE WHEN ($6 >= meta_at OR meta_at IS NULL) AND $2 IS NOT NULL \
+                                 THEN $2 ELSE nominal_start END, \
+            nominal_end   = CASE WHEN ($6 >= meta_at OR meta_at IS NULL) AND $3 IS NOT NULL \
+                                 THEN $3 ELSE nominal_end END, \
+            parent_run_id = CASE WHEN ($6 >= meta_at OR meta_at IS NULL) AND $4 IS NOT NULL \
+                                 THEN $4 ELSE parent_run_id END, \
+            error_message = CASE WHEN ($6 >= meta_at OR meta_at IS NULL) AND $5 IS NOT NULL \
+                                 THEN $5 ELSE error_message END, \
+            meta_at = GREATEST(meta_at, $6) \
+         WHERE run_id = $1",
+    )
+    .bind(run_id)
+    .bind(nominal_start)
+    .bind(nominal_end)
+    .bind(parent_run_id)
+    .bind(error_message)
+    .bind(at)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn set_job_meta(
+    tx: &mut Transaction<'_, Postgres>,
+    namespace: &str,
+    name: &str,
+    at: DateTime<Utc>,
+    location: &Option<String>,
+    job_type: &Option<String>,
+    parent_namespace: &Option<String>,
+    parent_name: &Option<String>,
+) -> Result<(), sqlx::Error> {
+    // `jobs.meta_at` is shared with the description/tags fold (Phase 0); these
+    // facet fields use the same latest-wins guard.
+    sqlx::query(
+        "UPDATE jobs SET \
+            location         = CASE WHEN ($7 >= meta_at OR meta_at IS NULL) AND $3 IS NOT NULL \
+                                    THEN $3 ELSE location END, \
+            job_type_facet   = CASE WHEN ($7 >= meta_at OR meta_at IS NULL) AND $4 IS NOT NULL \
+                                    THEN $4 ELSE job_type_facet END, \
+            parent_namespace = CASE WHEN ($7 >= meta_at OR meta_at IS NULL) AND $5 IS NOT NULL \
+                                    THEN $5 ELSE parent_namespace END, \
+            parent_name      = CASE WHEN ($7 >= meta_at OR meta_at IS NULL) AND $6 IS NOT NULL \
+                                    THEN $6 ELSE parent_name END, \
+            meta_at = GREATEST(meta_at, $7) \
+         WHERE namespace = $1 AND name = $2",
+    )
+    .bind(namespace)
+    .bind(name)
+    .bind(location)
+    .bind(job_type)
+    .bind(parent_namespace)
+    .bind(parent_name)
+    .bind(at)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn set_dataset_meta(
+    tx: &mut Transaction<'_, Postgres>,
+    namespace: &str,
+    name: &str,
+    at: DateTime<Utc>,
+    description: &Option<String>,
+    source_name: &Option<String>,
+    deleted: &Option<bool>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE datasets SET \
+            description = CASE WHEN ($6 >= meta_at OR meta_at IS NULL) AND $3 IS NOT NULL \
+                              THEN $3 ELSE description END, \
+            source_name = CASE WHEN ($6 >= meta_at OR meta_at IS NULL) AND $4 IS NOT NULL \
+                               THEN $4 ELSE source_name END, \
+            deleted     = CASE WHEN ($6 >= meta_at OR meta_at IS NULL) AND $5 IS NOT NULL \
+                               THEN $5 ELSE deleted END, \
+            meta_at = GREATEST(meta_at, $6) \
+         WHERE namespace = $1 AND name = $2",
+    )
+    .bind(namespace)
+    .bind(name)
+    .bind(description)
+    .bind(source_name)
+    .bind(deleted)
+    .bind(at)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn upsert_source(
+    tx: &mut Transaction<'_, Postgres>,
+    name: &str,
+    connection_url: &Option<String>,
+    at: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO sources (name, connection_url, created_at, updated_at) \
+         VALUES ($1, $2, $3, $3) \
+         ON CONFLICT (name) DO UPDATE SET \
+            connection_url = COALESCE(EXCLUDED.connection_url, sources.connection_url)",
+    )
+    .bind(name)
+    .bind(connection_url)
     .bind(at)
     .execute(&mut **tx)
     .await?;
