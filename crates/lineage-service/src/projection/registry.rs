@@ -10,7 +10,9 @@
 use super::RawEvent;
 use super::mutation::Mutation;
 use super::processor::FacetProcessor;
+use super::processors::column_lineage::ColumnLineageProcessor;
 use super::processors::core::{DatasetRefProcessor, JobEdgeProcessor, RunStateProcessor};
+use super::processors::schema::SchemaProcessor;
 
 pub struct ProcessorRegistry {
     processors: Vec<Box<dyn FacetProcessor>>,
@@ -25,13 +27,16 @@ impl ProcessorRegistry {
     }
 
     /// The built-in processors, in a deterministic order: namespaces/jobs/runs
-    /// and the datasets they imply. (Facet-specific processors — schema, column
-    /// lineage, sources, parent, tags — are added in later phases.)
+    /// and the datasets they imply, then per-column schema and column-lineage
+    /// edges. (Further facet processors — sources, parent, tags — are added in
+    /// later phases.)
     pub fn with_well_known() -> Self {
         let mut r = Self::new();
         r.register(Box::new(RunStateProcessor))
             .register(Box::new(JobEdgeProcessor))
-            .register(Box::new(DatasetRefProcessor));
+            .register(Box::new(DatasetRefProcessor))
+            .register(Box::new(SchemaProcessor))
+            .register(Box::new(ColumnLineageProcessor));
         r
     }
 

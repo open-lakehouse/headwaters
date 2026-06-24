@@ -179,7 +179,9 @@ pub async fn rebuild(pool: &PgPool) -> Result<(), sqlx::Error> {
     let registry = ProcessorRegistry::with_well_known();
     let mut tx = pool.begin().await?;
     sqlx::query(
-        "TRUNCATE namespaces, jobs, runs, datasets, lineage_edges RESTART IDENTITY CASCADE",
+        "TRUNCATE namespaces, jobs, runs, datasets, lineage_edges, \
+                  dataset_fields, column_lineage_edges, dataset_versions, \
+                  sources, tags, tag_assignments RESTART IDENTITY CASCADE",
     )
     .execute(&mut *tx)
     .await?;
@@ -212,7 +214,6 @@ pub struct RawEvent {
     pub outputs: Option<serde_json::Value>,
     /// The writer-lifted per-event column-lineage document
     /// (`{inputs:[...], outputs:[...]}`); consumed by the column-lineage
-    /// processor (Phase 1). Selected now so the projector query is stable.
-    #[allow(dead_code)]
+    /// processor.
     pub column_lineage: Option<serde_json::Value>,
 }
