@@ -1,14 +1,17 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
+use sqlx::postgres::PgPoolOptions;
 use tracing_subscriber::EnvFilter;
 
-use lineage_service::config::{Config, DeltaTarget, SinkKind, WriterConfig};
+use lineage_service::config::{Config, WriterConfig};
 use lineage_service::http::{self, AppState};
+use lineage_service::projection::Projector;
 use lineage_service::read::LineageStore;
 use lineage_service::writer::buffered::{BufferedWriter, BufferedWriterConfig};
-use lineage_service::writer::delta::DeltaWriter;
-use lineage_service::writer::sink::TableSink;
+use lineage_service::writer::postgres::PostgresSink;
+use lineage_service::writer::sink::EventSink;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -18,15 +21,37 @@ async fn main() -> anyhow::Result<()> {
 
     // Config file path: first positional arg, else the LINEAGE_CONFIG env var
     // (handled inside Config::load). With neither, run on defaults + LINEAGE__*
-    // env overrides.
+    // env overrides (DATABASE_URL still supplies the DSN).
     let config_path = std::env::args().nth(1);
     let cfg = Config::load(config_path.as_ref()).context("invalid configuration")?;
-    let sinks = build_sinks(&cfg).await?;
 
-    let writer = BufferedWriter::spawn(sinks, writer_config(&cfg.writer));
-    let store = LineageStore::from_config(&cfg)
+    // One pool shared by the sink, the projector, and the read store.
+    let url = cfg
+        .postgres
+        .resolve_url()
+        .context("invalid configuration")?;
+    let pool = PgPoolOptions::new()
+        .max_connections(cfg.postgres.pool_size)
+        .connect(url)
         .await
-        .context("failed to initialize the lineage read store")?;
+        .context("failed to connect to Postgres")?;
+
+    sqlx::migrate!()
+        .run(&pool)
+        .await
+        .context("failed to run database migrations")?;
+
+    // Write path: buffered ingest -> Postgres `events` (append-only).
+    let sinks: Vec<Arc<dyn EventSink>> = vec![Arc::new(PostgresSink::new(pool.clone()))];
+    let writer = BufferedWriter::spawn(sinks, writer_config(&cfg.writer));
+
+    // Async projection: fold `events` into the read tables.
+    let projector = Projector::spawn(
+        pool.clone(),
+        Duration::from_millis(cfg.postgres.projection_interval_ms),
+    );
+
+    let store = LineageStore::new(pool.clone());
     let app = http::router(AppState {
         writer: writer.handle(),
         store,
@@ -45,16 +70,19 @@ async fn main() -> anyhow::Result<()> {
 
     // The server has stopped accepting requests and dropped its handler state
     // (and the writer handle inside it), so the channel can now close. Drain
-    // any buffered events before exiting.
+    // buffered events, then stop the projector after a final fold.
     tracing::info!("draining buffered writer");
     writer.shutdown().await;
+    tracing::info!("stopping projection worker");
+    projector.shutdown().await;
+    pool.close().await;
     Ok(())
 }
 
 fn writer_config(cfg: &WriterConfig) -> BufferedWriterConfig {
     BufferedWriterConfig {
         buffer_size: cfg.buffer_size,
-        flush_interval: std::time::Duration::from_millis(cfg.flush_interval_ms),
+        flush_interval: Duration::from_millis(cfg.flush_interval_ms),
         channel_capacity: cfg.channel_capacity,
     }
 }
@@ -80,65 +108,5 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
-    }
-}
-
-async fn build_sinks(cfg: &Config) -> anyhow::Result<Vec<Arc<dyn TableSink>>> {
-    let mut sinks: Vec<Arc<dyn TableSink>> = Vec::with_capacity(cfg.sinks.len());
-    for kind in &cfg.sinks {
-        match kind {
-            SinkKind::Delta => {
-                sinks.push(build_delta_sink(cfg).await?);
-            }
-        }
-    }
-    Ok(sinks)
-}
-
-/// Build the Delta sink for the configured table-location mode (`local`, `unity-external`, or
-/// `unity-managed`). The UC modes connect/resolve (and optionally create) at startup, so a
-/// misconfigured target fails fast here rather than on the first flush.
-async fn build_delta_sink(cfg: &Config) -> anyhow::Result<Arc<dyn TableSink>> {
-    match cfg.delta.resolve(&cfg.storage_options)? {
-        DeltaTarget::Local { table_uri, .. } => {
-            tracing::info!("registering local delta sink at {table_uri}");
-            Ok(Arc::new(DeltaWriter::new(cfg)))
-        }
-        #[cfg(feature = "unity")]
-        DeltaTarget::UnityExternal(target) => {
-            use lineage_service::writer::unity_external::UnityExternalSink;
-            tracing::info!(
-                "registering unity-external delta sink: {}.{}.{}",
-                target.catalog,
-                target.schema,
-                target.table
-            );
-            Ok(Arc::new(
-                UnityExternalSink::connect(target)
-                    .await
-                    .context("failed to initialize unity-external sink")?,
-            ))
-        }
-        #[cfg(feature = "unity")]
-        DeltaTarget::UnityManaged(target) => {
-            use lineage_service::writer::unity_managed::UnityManagedSink;
-            tracing::info!(
-                "registering unity-managed delta sink: {}.{}.{}",
-                target.catalog,
-                target.schema,
-                target.table
-            );
-            Ok(Arc::new(
-                UnityManagedSink::connect(target)
-                    .await
-                    .context("failed to initialize unity-managed sink")?,
-            ))
-        }
-        // Unity targets can only be produced with the `unity` feature (config validation
-        // rejects them otherwise), so these arms are unreachable in a non-unity build.
-        #[cfg(not(feature = "unity"))]
-        DeltaTarget::UnityExternal(_) | DeltaTarget::UnityManaged(_) => unreachable!(
-            "unity delta mode selected without the `unity` feature; config validation should have rejected this"
-        ),
     }
 }

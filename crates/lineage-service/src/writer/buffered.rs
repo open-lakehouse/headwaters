@@ -24,9 +24,8 @@ use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 
 use crate::ingest::OwnedEvent;
-use crate::lineage::v1::OpenLineageEventView;
-use crate::writer::schema::events_to_record_batch;
-use crate::writer::sink::TableSink;
+use crate::writer::row::event_to_row;
+use crate::writer::sink::EventSink;
 
 /// Tuning knobs for the buffered writer. Defaults mirror the Go forwarder.
 #[derive(Debug, Clone, Copy)]
@@ -74,7 +73,7 @@ pub struct BufferedWriter {
 
 impl BufferedWriter {
     /// Spawn the background flush task.
-    pub fn spawn(sinks: Vec<Arc<dyn TableSink>>, cfg: BufferedWriterConfig) -> Self {
+    pub fn spawn(sinks: Vec<Arc<dyn EventSink>>, cfg: BufferedWriterConfig) -> Self {
         let (tx, rx) = mpsc::channel(cfg.channel_capacity);
         let task = tokio::spawn(run(rx, sinks, cfg));
         Self {
@@ -102,7 +101,7 @@ impl BufferedWriter {
 
 async fn run(
     mut rx: mpsc::Receiver<OwnedEvent>,
-    sinks: Vec<Arc<dyn TableSink>>,
+    sinks: Vec<Arc<dyn EventSink>>,
     cfg: BufferedWriterConfig,
 ) {
     let mut interval = tokio::time::interval(cfg.flush_interval);
@@ -138,34 +137,30 @@ async fn run(
     }
 }
 
-/// Convert the buffered events to one Arrow batch and fan it out to every sink.
-/// Clears the buffer unconditionally — a conversion or sink failure drops that
-/// flush's events (logged) rather than wedging the pipeline.
-async fn flush(sinks: &[Arc<dyn TableSink>], buf: &mut Vec<OwnedEvent>) {
+/// Convert the buffered events to `EventRow`s and fan them out to every sink.
+/// Clears the buffer unconditionally — a sink failure drops that flush's events
+/// (logged) rather than wedging the pipeline.
+async fn flush(sinks: &[Arc<dyn EventSink>], buf: &mut Vec<OwnedEvent>) {
     if buf.is_empty() {
         return;
     }
     let count = buf.len();
 
-    // `events_to_record_batch` takes a slice of borrowed-lifetime views;
-    // reborrow each owned view and clone it into an owned-view value. The view
-    // is a cheap handle over shared `Bytes`, so the clone is shallow.
-    let views: Vec<OpenLineageEventView<'_>> = buf.iter().map(|ev| ev.reborrow().clone()).collect();
+    // Reborrow each owned view (yielding a `&OpenLineageEventView`) into a row.
+    // An empty (`event = None`) view yields no row and is skipped.
+    let rows: Vec<_> = buf
+        .iter()
+        .filter_map(|ev| event_to_row(ev.reborrow()))
+        .collect();
 
-    match events_to_record_batch(&views) {
-        Ok(batch) => {
-            for sink in sinks {
-                if let Err(e) = sink.append(batch.clone()).await {
-                    tracing::error!("{} flush failed ({count} events): {e}", sink.name());
-                }
+    if !rows.is_empty() {
+        for sink in sinks {
+            if let Err(e) = sink.append(&rows).await {
+                tracing::error!("{} flush failed ({count} events): {e}", sink.name());
             }
-        }
-        Err(e) => {
-            tracing::error!("schema conversion failed, dropping {count} events: {e}");
         }
     }
 
-    drop(views);
     buf.clear();
 }
 
@@ -173,8 +168,8 @@ async fn flush(sinks: &[Arc<dyn TableSink>], buf: &mut Vec<OwnedEvent>) {
 mod tests {
     use super::*;
     use crate::ingest::convert_event;
+    use crate::writer::row::EventRow;
     use crate::writer::sink::SinkError;
-    use deltalake::arrow::array::RecordBatch;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
@@ -185,15 +180,15 @@ mod tests {
     }
 
     #[async_trait::async_trait]
-    impl TableSink for CountingSink {
+    impl EventSink for CountingSink {
         fn name(&self) -> &'static str {
             "counting"
         }
-        async fn append(&self, batch: RecordBatch) -> Result<(), SinkError> {
-            if batch.num_rows() == 0 {
+        async fn append(&self, rows: &[EventRow]) -> Result<(), SinkError> {
+            if rows.is_empty() {
                 return Ok(());
             }
-            self.rows.fetch_add(batch.num_rows(), Ordering::SeqCst);
+            self.rows.fetch_add(rows.len(), Ordering::SeqCst);
             self.flushes.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }
@@ -208,12 +203,12 @@ mod tests {
         convert_event(json.as_bytes()).unwrap()
     }
 
-    fn counting() -> (Arc<CountingSink>, Vec<Arc<dyn TableSink>>) {
+    fn counting() -> (Arc<CountingSink>, Vec<Arc<dyn EventSink>>) {
         let sink = Arc::new(CountingSink {
             rows: AtomicUsize::new(0),
             flushes: AtomicUsize::new(0),
         });
-        let sinks: Vec<Arc<dyn TableSink>> = vec![sink.clone()];
+        let sinks: Vec<Arc<dyn EventSink>> = vec![sink.clone()];
         (sink, sinks)
     }
 

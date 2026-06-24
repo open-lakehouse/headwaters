@@ -7,15 +7,7 @@ rust-version = "1.88"
 [dependencies]
 buffa = { version = "0.7", features = ["json"] }
 buffa-types = { version = "0.7", features = ["json"] }
-deltalake = { workspace = true, features = ["datafusion"] }
-# Unity Catalog sinks — opt-in via the `unity` feature (off by default). The
-# `delta` feature on datafusion-unitycatalog gates its `managed` module (the
-# catalog-managed committer + connector). All resolve to the same delta-rs fork
-# rev as `deltalake`, so there is no version skew.
-unitycatalog-client = { workspace = true, optional = true }
-unitycatalog-object-store = { workspace = true, optional = true }
-datafusion-unitycatalog = { workspace = true, optional = true, features = ["delta"] }
-object_store = { workspace = true, optional = true }
+sqlx = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 config = { workspace = true }
@@ -30,17 +22,13 @@ tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = { workspace = true }
 futures = "0.3"
-chrono = { version = "0.4", default-features = false, features = ["std"] }
+chrono = { workspace = true }
+uuid = { workspace = true }
 
 [features]
-default = ["unity"]
-# Build the Unity Catalog Delta sinks (`unity-external` + `unity-managed` modes).
-unity = [
-    "dep:unitycatalog-client",
-    "dep:unitycatalog-object-store",
-    "dep:datafusion-unitycatalog",
-    "dep:object_store",
-]
+# The Postgres-backed read/projection acceptance tests need Docker (a postgres
+# container via testcontainers); gate them off the default test run.
+postgres-it = []
 
 [dev-dependencies]
 tempfile = "3"
@@ -48,3 +36,5 @@ tempfile = "3"
 # catches route-syntax regressions the direct store-call tests can't.
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+testcontainers = { version = "0.27", features = ["http_wait"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
