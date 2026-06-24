@@ -1,0 +1,241 @@
+syntax = "proto3";
+
+package lineage.v1;
+
+import "google/protobuf/struct.proto";
+
+// Typed models of the *core* OpenLineage facets — the ones the lineage UI and
+// the DataFusion emitter actually derive values from. The long tail of official
+// facets and any custom/producer facets are NOT enumerated here: they ride
+// along in the `google.protobuf.Struct facets` bags on `Run`/`Job`/`*Dataset`
+// (see lineage.proto) and round-trip opaquely. We only promote a facet to a
+// strong type when something on the read side needs to read into it.
+//
+// Every facet in the spec embeds a `BaseFacet { _producer, _schemaURL }`. We
+// model that as two leading fields on each facet rather than a shared embedded
+// message, because proto3 field-presence on a scalar plus the `_`-prefixed JSON
+// names (mandated by the spec to avoid collisions with facet payload keys) is
+// simpler to map than an embedded message would be.
+
+// --- Dataset facets ---
+
+// SchemaDatasetFacet — the columns of a dataset.
+// https://openlineage.io/spec/facets/1-1-1/SchemaDatasetFacet.json
+message SchemaDatasetFacet {
+  string producer = 1 [json_name = "_producer"];
+  string schema_url = 2 [json_name = "_schemaURL"];
+  repeated SchemaDatasetFacetField fields = 3;
+}
+
+// One field (column) of a schema. `fields` is recursive for nested
+// struct/record columns.
+message SchemaDatasetFacetField {
+  string name = 1;
+  string type = 2;
+  string description = 3;
+  repeated SchemaDatasetFacetField fields = 4;
+}
+
+// DataSourceDatasetFacet — the physical data source backing a dataset.
+// https://openlineage.io/spec/facets/1-0-0/DatasourceDatasetFacet.json
+message DataSourceDatasetFacet {
+  string producer = 1 [json_name = "_producer"];
+  string schema_url = 2 [json_name = "_schemaURL"];
+  string name = 3;
+  string uri = 4;
+}
+
+// DocumentationDatasetFacet — human-readable description of a dataset.
+// https://openlineage.io/spec/facets/1-0-0/DocumentationDatasetFacet.json
+message DocumentationDatasetFacet {
+  string producer = 1 [json_name = "_producer"];
+  string schema_url = 2 [json_name = "_schemaURL"];
+  string description = 3;
+}
+
+// ColumnLineageDatasetFacet is a typed model of the OpenLineage 1-2-0
+// `ColumnLineageDatasetFacet`
+// (https://openlineage.io/spec/facets/1-2-0/ColumnLineageDatasetFacet.json).
+//
+// Carrying it as a strong proto type — rather than burying it inside
+// `google.protobuf.Struct facets` — lets downstream readers consume column
+// lineage without re-parsing arbitrary JSON shapes, which matters because
+// nested struct/array columns can blow past `Struct`'s practical nesting depth
+// (~100 levels) on real-world plans.
+message ColumnLineageDatasetFacet {
+  // Per-output-field lineage, keyed by output field name.
+  map<string, OutputFieldLineage> fields = 1;
+
+  // Dataset-level dependencies that affect the whole output (filters, joins,
+  // group-by columns, sort keys, window partitioning, etc.). These do not map
+  // to a single output column.
+  repeated InputField dataset = 2;
+}
+
+// Lineage of a single output column. `inputFields` is the canonical mapping;
+// `transformation_description` and `transformation_type` mirror the deprecated
+// fields in the OpenLineage spec and are kept here for spec-completeness.
+message OutputFieldLineage {
+  repeated InputField input_fields = 1;
+  string transformation_description = 2 [deprecated = true];
+  string transformation_type = 3 [deprecated = true];
+}
+
+// A single column-level dependency on a source dataset's field.
+message InputField {
+  string namespace = 1;
+  string name = 2;
+  string field = 3;
+  repeated FieldTransformation transformations = 4;
+}
+
+// Describes the kind of transformation that connects an input field to an
+// output column.
+//
+// `type` is one of:
+//   - DIRECT   — input value flows into the output value
+//   - INDIRECT — input affects the output's row set / ordering / grouping
+// `subtype` further qualifies the transformation. Common values:
+//   IDENTITY, TRANSFORMATION, AGGREGATION, JOIN, GROUP_BY, FILTER, SORT,
+//   WINDOW, CONDITIONAL.
+// `masking` is true for transformations that intentionally remove signal from
+// the input (hashes, redactions, regexp_replace-as-mask, etc.).
+message FieldTransformation {
+  string type = 1;
+  string subtype = 2;
+  string description = 3;
+  bool masking = 4;
+}
+
+// --- Job facets ---
+
+// JobTypeJobFacet — classifies a job (batch/stream, integration, processing).
+// https://openlineage.io/spec/facets/2-0-3/JobTypeJobFacet.json
+message JobTypeJobFacet {
+  string producer = 1 [json_name = "_producer"];
+  string schema_url = 2 [json_name = "_schemaURL"];
+  // "BATCH" | "STREAMING".
+  string processing_type = 3;
+  // The integration/source, e.g. "SPARK", "DATAFUSION".
+  string integration = 4;
+  // The job type within the integration, e.g. "QUERY", "JOB".
+  string job_type = 5;
+}
+
+// SqlJobFacet — the SQL the job ran.
+// https://openlineage.io/spec/facets/1-0-0/SQLJobFacet.json
+message SqlJobFacet {
+  string producer = 1 [json_name = "_producer"];
+  string schema_url = 2 [json_name = "_schemaURL"];
+  string query = 3;
+}
+
+// DocumentationJobFacet — human-readable description of a job.
+// https://openlineage.io/spec/facets/1-0-0/DocumentationJobFacet.json
+message DocumentationJobFacet {
+  string producer = 1 [json_name = "_producer"];
+  string schema_url = 2 [json_name = "_schemaURL"];
+  string description = 3;
+}
+
+// OwnershipJobFacet — the owners of a job.
+// https://openlineage.io/spec/facets/1-0-0/OwnershipJobFacet.json
+message OwnershipJobFacet {
+  string producer = 1 [json_name = "_producer"];
+  string schema_url = 2 [json_name = "_schemaURL"];
+  repeated Owner owners = 3;
+}
+
+// An owner entry shared by the ownership facets.
+message Owner {
+  string name = 1;
+  string type = 2;
+}
+
+// TagsJobFacet — key/value tags on a job.
+// https://openlineage.io/spec/facets/1-0-0/TagsJobFacet.json
+message TagsJobFacet {
+  string producer = 1 [json_name = "_producer"];
+  string schema_url = 2 [json_name = "_schemaURL"];
+  repeated Tag tags = 3;
+}
+
+// A tag entry shared by the tags facets. `value` and `source` are optional in
+// the spec; an empty string means "absent".
+message Tag {
+  string key = 1;
+  string value = 2;
+  string source = 3;
+}
+
+// --- Run facets ---
+
+// NominalTimeRunFacet — the scheduled (nominal) time window of a run.
+// https://openlineage.io/spec/facets/1-0-0/NominalTimeRunFacet.json
+message NominalTimeRunFacet {
+  string producer = 1 [json_name = "_producer"];
+  string schema_url = 2 [json_name = "_schemaURL"];
+  // RFC3339 strings, matching the spec's `date-time` fields.
+  string nominal_start_time = 3;
+  string nominal_end_time = 4;
+}
+
+// ParentRunFacet — links a run to the run/job that scheduled it.
+// https://openlineage.io/spec/facets/1-1-0/ParentRunFacet.json
+message ParentRunFacet {
+  string producer = 1 [json_name = "_producer"];
+  string schema_url = 2 [json_name = "_schemaURL"];
+  ParentRun run = 3;
+  ParentJob job = 4;
+}
+
+message ParentRun {
+  string run_id = 1;
+}
+
+message ParentJob {
+  string namespace = 1;
+  string name = 2;
+}
+
+// ErrorMessageRunFacet — the error a failed run produced.
+// https://openlineage.io/spec/facets/1-0-0/ErrorMessageRunFacet.json
+message ErrorMessageRunFacet {
+  string producer = 1 [json_name = "_producer"];
+  string schema_url = 2 [json_name = "_schemaURL"];
+  string message = 3;
+  string programming_language = 4;
+  string stack_trace = 5;
+}
+
+// ProcessingEngineRunFacet — the engine that executed the run.
+// https://openlineage.io/spec/facets/1-1-1/ProcessingEngineRunFacet.json
+message ProcessingEngineRunFacet {
+  string producer = 1 [json_name = "_producer"];
+  string schema_url = 2 [json_name = "_schemaURL"];
+  string version = 3;
+  string name = 4;
+  string openlineage_adapter_version = 5;
+}
+
+// --- Input / Output dataset facets ---
+
+// InputStatisticsInputDatasetFacet — rows/bytes read from an input dataset.
+// https://openlineage.io/spec/facets/1-0-0/InputStatisticsInputDatasetFacet.json
+message InputStatisticsInputDatasetFacet {
+  string producer = 1 [json_name = "_producer"];
+  string schema_url = 2 [json_name = "_schemaURL"];
+  int64 row_count = 3;
+  int64 size = 4;
+  int64 file_count = 5;
+}
+
+// OutputStatisticsOutputDatasetFacet — rows/bytes written to an output dataset.
+// https://openlineage.io/spec/facets/1-0-0/OutputStatisticsOutputDatasetFacet.json
+message OutputStatisticsOutputDatasetFacet {
+  string producer = 1 [json_name = "_producer"];
+  string schema_url = 2 [json_name = "_schemaURL"];
+  int64 row_count = 3;
+  int64 size = 4;
+  int64 file_count = 5;
+}

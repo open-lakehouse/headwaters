@@ -67,6 +67,10 @@ pub struct Job {
     pub tags: Vec<String>,
     pub parent_job_name: Option<String>,
     pub parent_job_uuid: Option<String>,
+    /// UUID identifying the job's current input/output + metadata shape, like
+    /// Marquez's `currentVersion`. Refreshed by the projector when the edges
+    /// change.
+    pub current_version: String,
 }
 
 /// Minimal Marquez `Run` shape — only the fields the web UI dereferences
@@ -143,6 +147,9 @@ pub struct Dataset {
     pub facets: serde_json::Value,
     pub tags: Vec<String>,
     pub deleted: bool,
+    /// UUID identifying the dataset's current schema, like Marquez's
+    /// `currentVersion`. Refreshed by the projector when the schema changes.
+    pub current_version: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
