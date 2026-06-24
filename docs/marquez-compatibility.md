@@ -39,9 +39,8 @@ For the same OpenLineage events, our read APIs reconstruct the same:
 
 ## Stubbed / not-yet-implemented endpoints
 
-- `/api/v1/tags`, `/api/v1/stats/*` — currently empty-but-200 stubs (the UI
-  renders empty rather than 404ing). Real implementations land in the tags +
-  stats phase.
+- `/api/v1/tags` and `/api/v1/stats/*` are now **real** (tag catalog from the
+  projection; time-bucketed event/asset counts off the log). No longer stubs.
 - Marquez's deprecated CRUD / run-state **write** endpoints (PUT
   namespace/dataset/job, POST `runs/{id}/start|complete|fail`, …) — **not
   implemented**; the event model replaces them and the web UI does not call
@@ -57,7 +56,7 @@ stand. "Interpreted" = promoted into the relational model, not just retained.
 | `schema` | one `dataset_fields` row per column | ✓ per-column `dataset_fields` rows (+ the `datasets.fields` cache) |
 | `columnLineage` | `column_lineage` edge table (output datasets) | ✓ `column_lineage_edges` table; per-output-field latest-wins |
 | `documentation` | `description` on job/dataset | ✓ job + dataset `description` |
-| `tags` | tag tables (via REST, not ingest) | job tags ✓ (catalog + assignments + propagation: Phase 4) |
+| `tags` (+ field `schema.tags`) | tag tables (via REST, not ingest) | ✓ `tags` catalog + `tag_assignments` (dataset/field/job), from ingest **and** synthetic fact events (ADR 0017); drives PII propagation (ADR 0018) |
 | `dataSource` | a `sources` row (name + connection_url) | ✓ `sources` row + dataset `source_name` |
 | `sourceCodeLocation` | job `location` | ✓ job `location` |
 | `parent` (ParentRunFacet) | creates parent run/job rows, links them | ✓ run `parent_run_id` + job `parent_namespace`/`parent_name` (we link, but do not synthesize standalone parent run/job rows) |
@@ -69,9 +68,9 @@ stand. "Interpreted" = promoted into the relational model, not just retained.
 
 ## Capabilities beyond Marquez
 
-- **Tag / PII propagation** (Phase 4): "where does data tagged `pii` land
-  downstream?" — a transitive closure over column (then table) lineage seeded
-  from tag assignments. Marquez has no equivalent API. ADR 0018.
-- **Tags as discovered facts** (Phase 4): tag/annotation writes are modeled as
-  appended events (a system that *discovers* PII raises a tag event), keeping
+- **Tag / PII propagation** — `GET /api/v1/tags/{tag}/downstream`: "where does
+  data tagged `pii` land downstream?" — a transitive closure over column lineage
+  seeded from tag assignments. Marquez has no equivalent API. ADR 0018.
+- **Tags as discovered facts** — tag/annotation writes are modeled as appended
+  OpenLineage events (a system that *discovers* PII raises a tag event), keeping
   everything rebuildable from the log. ADR 0017.

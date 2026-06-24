@@ -12,7 +12,7 @@ use serde_json::Value as JsonValue;
 use sqlx::{Postgres, Transaction};
 
 use crate::projection::applier::MutationApplier;
-use crate::projection::mutation::{EntityRef, JobEdges, Mutation};
+use crate::projection::mutation::{EntityRef, JobEdges, Mutation, TagTarget};
 
 /// Applies mutations to the Postgres read tables within a caller-provided
 /// transaction.
@@ -181,6 +181,10 @@ impl PgApplier {
                     *at,
                 )
                 .await
+            }
+            Mutation::UpsertTag { tag, description } => upsert_tag(tx, tag, description).await,
+            Mutation::TagAssignment { tag, target, at } => {
+                tag_assignment(tx, tag, target, *at).await
             }
         }
     }
@@ -551,6 +555,58 @@ async fn upsert_source(
     )
     .bind(name)
     .bind(connection_url)
+    .bind(at)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn upsert_tag(
+    tx: &mut Transaction<'_, Postgres>,
+    tag: &str,
+    description: &Option<String>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO tags (name, description, created_at) VALUES ($1, $2, now()) \
+         ON CONFLICT (name) DO UPDATE SET \
+            description = COALESCE(EXCLUDED.description, tags.description)",
+    )
+    .bind(tag)
+    .bind(description)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn tag_assignment(
+    tx: &mut Transaction<'_, Postgres>,
+    tag: &str,
+    target: &TagTarget,
+    at: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    // Decompose the target into the assignment table's columns. `field` is the
+    // empty string for non-field targets (part of the primary key, not null).
+    let (target_type, namespace, name, field) = match target {
+        TagTarget::Dataset { namespace, name } => ("dataset", namespace, name, ""),
+        TagTarget::DatasetField {
+            namespace,
+            name,
+            field,
+        } => ("dataset_field", namespace, name, field.as_str()),
+        TagTarget::Job { namespace, name } => ("job", namespace, name, ""),
+    };
+    // Add-only, latest-wins on assigned_at (a re-assertion just bumps the time).
+    sqlx::query(
+        "INSERT INTO tag_assignments (tag, target_type, namespace, name, field, assigned_at) \
+         VALUES ($1, $2, $3, $4, $5, $6) \
+         ON CONFLICT (tag, target_type, namespace, name, field) DO UPDATE SET \
+            assigned_at = GREATEST(tag_assignments.assigned_at, $6)",
+    )
+    .bind(tag)
+    .bind(target_type)
+    .bind(namespace)
+    .bind(name)
+    .bind(field)
     .bind(at)
     .execute(&mut **tx)
     .await?;

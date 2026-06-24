@@ -169,4 +169,38 @@ pub enum Mutation {
         transformation: Option<JsonValue>,
         at: DateTime<Utc>,
     },
+
+    /// A tag in the catalog (idempotent; the description is set if provided).
+    UpsertTag {
+        tag: String,
+        description: Option<String>,
+    },
+
+    /// A tag applied to a dataset, a dataset field, or a job — the seed for
+    /// downstream tag/PII propagation. Add-only, latest-wins by `at`. These come
+    /// from the `tags` facets and from synthetic "fact discovery" tag events
+    /// (e.g. a scanner asserting "this column is PII").
+    TagAssignment {
+        tag: String,
+        target: TagTarget,
+        at: DateTime<Utc>,
+    },
+}
+
+/// What a [`Mutation::TagAssignment`] tags.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TagTarget {
+    Dataset {
+        namespace: String,
+        name: String,
+    },
+    DatasetField {
+        namespace: String,
+        name: String,
+        field: String,
+    },
+    Job {
+        namespace: String,
+        name: String,
+    },
 }

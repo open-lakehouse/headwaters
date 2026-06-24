@@ -794,3 +794,111 @@ async fn column_edges_survive_rebuild_with_latest_wins() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get::<String, _>("in_field"), "customer_key");
 }
+
+// --- Phase 4: tags + PII propagation + stats --------------------------------
+
+#[tokio::test]
+async fn tags_catalog_and_dataset_assignment() {
+    let db = start_postgres().await;
+    ingest(
+        &db.pool,
+        r#"{"eventType":"COMPLETE","eventTime":"2023-11-14T22:00:00Z","producer":"p",
+            "run":{"runId":"r1"},"job":{"namespace":"etl","name":"j"},
+            "outputs":[{"namespace":"w","name":"gold","facets":{
+                "tags":{"tags":[{"key":"certified"}]}}}]}"#,
+    )
+    .await;
+    let store = LineageStore::new(db.pool.clone());
+
+    let tags = store.tags().await.unwrap();
+    assert!(tags.tags.iter().any(|t| t.name == "certified"));
+
+    let ds = store.dataset("w", "gold").await.unwrap();
+    assert!(ds.tags.contains(&"certified".to_string()));
+}
+
+/// A scanner discovers PII in `raw.users.email` (a synthetic DatasetEvent
+/// carrying a field-level tag), and a downstream job copies that column into
+/// `gold.email_hash`. Propagation must report the downstream field as reached.
+#[tokio::test]
+async fn pii_propagates_downstream_through_column_lineage() {
+    let db = start_postgres().await;
+    // 1. The lineage: raw.users.email -> gold.contact (column lineage).
+    ingest(
+        &db.pool,
+        r#"{"eventType":"COMPLETE","eventTime":"2023-11-14T22:00:00Z","producer":"p",
+            "run":{"runId":"r1"},"job":{"namespace":"etl","name":"build_gold"},
+            "inputs":[{"namespace":"raw","name":"users","facets":{"schema":{"fields":[
+                {"name":"email","type":"STRING"}]}}}],
+            "outputs":[{"namespace":"w","name":"gold","facets":{
+                "schema":{"fields":[{"name":"contact","type":"STRING"}]},
+                "columnLineage":{"fields":{"contact":{"inputFields":[
+                    {"namespace":"raw","name":"users","field":"email"}]}}}}}]}"#,
+    )
+    .await;
+    // 2. The discovered fact: raw.users.email is PII (synthetic dataset event
+    //    with a field-level tag in its schema facet).
+    ingest(
+        &db.pool,
+        r#"{"eventType":"COMPLETE","eventTime":"2023-11-14T22:05:00Z","producer":"pii-scanner",
+            "dataset":{"namespace":"raw","name":"users","facets":{"schema":{"fields":[
+                {"name":"email","type":"STRING","tags":[{"key":"pii"}]}]}}}}"#,
+    )
+    .await;
+
+    let store = LineageStore::new(db.pool.clone());
+    let prop = store.tag_downstream("pii").await.unwrap();
+    let reached: Vec<String> = prop.fields.iter().map(|f| f.node_id.clone()).collect();
+    // The tagged seed and the downstream field it flows into.
+    assert!(
+        reached.contains(&"datasetField:raw:users:email".to_string()),
+        "seed present: {reached:?}"
+    );
+    assert!(
+        reached.contains(&"datasetField:w:gold:contact".to_string()),
+        "downstream field reached: {reached:?}"
+    );
+}
+
+#[tokio::test]
+async fn stats_lineage_events_buckets_by_day() {
+    let db = start_postgres().await;
+    for day in ["2023-11-14", "2023-11-14", "2023-11-15"] {
+        ingest(
+            &db.pool,
+            &format!(
+                r#"{{"eventType":"COMPLETE","eventTime":"{day}T10:00:00Z","producer":"p",
+                    "run":{{"runId":"{day}"}},"job":{{"namespace":"etl","name":"j"}}}}"#
+            ),
+        )
+        .await;
+    }
+    let store = LineageStore::new(db.pool.clone());
+    let buckets = store.stats_lineage_events("day", 30).await.unwrap();
+    // Two day-buckets; the 14th has 2 events, the 15th has 1.
+    let total: i64 = buckets.iter().map(|b| b.count).sum();
+    assert_eq!(total, 3);
+    assert_eq!(buckets.len(), 2);
+}
+
+#[tokio::test]
+async fn tag_assignments_survive_rebuild() {
+    let db = start_postgres().await;
+    ingest(
+        &db.pool,
+        r#"{"eventType":"COMPLETE","eventTime":"2023-11-14T22:00:00Z","producer":"p",
+            "dataset":{"namespace":"raw","name":"users","facets":{"schema":{"fields":[
+                {"name":"email","type":"STRING","tags":[{"key":"pii"}]}]}}}}"#,
+    )
+    .await;
+    lineage_service::projection::rebuild(&db.pool)
+        .await
+        .unwrap();
+    let store = LineageStore::new(db.pool.clone());
+    let prop = store.tag_downstream("pii").await.unwrap();
+    assert!(
+        prop.fields.iter().any(|f| f.field == "email"),
+        "tag survives rebuild: {:?}",
+        prop.fields
+    );
+}

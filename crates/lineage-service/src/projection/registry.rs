@@ -16,6 +16,7 @@ use super::processors::dataset_meta::DatasetMetaProcessor;
 use super::processors::job_meta::JobMetaProcessor;
 use super::processors::run_meta::RunMetaProcessor;
 use super::processors::schema::SchemaProcessor;
+use super::processors::tags::TagsProcessor;
 
 pub struct ProcessorRegistry {
     processors: Vec<Box<dyn FacetProcessor>>,
@@ -42,7 +43,8 @@ impl ProcessorRegistry {
             .register(Box::new(ColumnLineageProcessor))
             .register(Box::new(RunMetaProcessor))
             .register(Box::new(JobMetaProcessor))
-            .register(Box::new(DatasetMetaProcessor));
+            .register(Box::new(DatasetMetaProcessor))
+            .register(Box::new(TagsProcessor));
         r
     }
 

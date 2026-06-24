@@ -54,25 +54,63 @@ pub fn router(store: LineageStore) -> Router {
         // column-lineage facet of the addressed dataset (empty graph, not
         // 404, when there is none).
         .route("/api/v1/column-lineage", get(column_lineage))
-        // Home-page activity charts. We don't compute time-bucketed metrics, so
-        // these return an empty series — the charts render empty rather than
-        // erroring on a 404. The UI expects a JSON array for each.
-        .route("/api/v1/stats/lineage-events", get(empty_stats))
-        .route("/api/v1/stats/:asset", get(empty_stats))
-        // Tags: we don't track tags, but the UI fetches the catalog on load and
-        // expects a `{ "tags": [] }` envelope. Empty keeps the page from 404ing.
-        .route("/api/v1/tags", get(empty_tags))
+        // Home-page activity charts: time-bucketed counts off the event log.
+        .route("/api/v1/stats/lineage-events", get(stats_lineage_events))
+        .route("/api/v1/stats/:asset", get(stats_asset))
+        // Tag catalog the UI fetches on load.
+        .route("/api/v1/tags", get(list_tags))
+        // Tag/PII propagation: the fields reachable downstream from a tag.
+        .route("/api/v1/tags/:tag/downstream", get(tag_downstream))
         .with_state(store)
 }
 
-/// Empty metric series for the unimplemented `/stats/*` endpoints (see router).
-async fn empty_stats() -> impl IntoResponse {
-    Json(serde_json::json!([]))
+#[derive(Debug, Deserialize)]
+struct StatsParams {
+    /// `DAY` (default) | `HOUR` | etc. — passed to `date_trunc`.
+    #[serde(default = "default_period")]
+    period: String,
+    #[serde(default = "default_stats_limit")]
+    limit: usize,
 }
 
-/// Empty tag catalog for the unimplemented `/tags` endpoint (see router).
-async fn empty_tags() -> impl IntoResponse {
-    Json(serde_json::json!({ "tags": [] }))
+fn default_period() -> String {
+    "day".into()
+}
+
+fn default_stats_limit() -> usize {
+    30
+}
+
+/// `GET /api/v1/stats/lineage-events?period=&limit=` — time-bucketed event counts.
+async fn stats_lineage_events(
+    State(store): State<LineageStore>,
+    Query(p): Query<StatsParams>,
+) -> Result<impl IntoResponse, ReadError> {
+    Ok(Json(store.stats_lineage_events(&p.period, p.limit).await?))
+}
+
+/// `GET /api/v1/stats/:asset?period=&limit=` — first-seen counts for `jobs` or
+/// `datasets`, bucketed by period.
+async fn stats_asset(
+    State(store): State<LineageStore>,
+    Path(asset): Path<String>,
+    Query(p): Query<StatsParams>,
+) -> Result<impl IntoResponse, ReadError> {
+    Ok(Json(store.stats_asset(&asset, &p.period, p.limit).await?))
+}
+
+/// `GET /api/v1/tags` — the tag catalog.
+async fn list_tags(State(store): State<LineageStore>) -> Result<impl IntoResponse, ReadError> {
+    Ok(Json(store.tags().await?))
+}
+
+/// `GET /api/v1/tags/:tag/downstream` — the dataset fields reachable downstream
+/// from anything currently tagged `tag`, via column (then table) lineage.
+async fn tag_downstream(
+    State(store): State<LineageStore>,
+    Path(tag): Path<String>,
+) -> Result<impl IntoResponse, ReadError> {
+    Ok(Json(store.tag_downstream(&tag).await?))
 }
 
 /// Map a [`ReadError`] onto an HTTP response: 404 for not-found, 500 otherwise.

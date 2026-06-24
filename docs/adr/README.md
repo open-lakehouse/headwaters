@@ -19,6 +19,8 @@ links point back to `open-lakehouse`.
 | [0014](0014-openlineage-planner-vs-rule.md) | OpenLineage planner vs rule (plan-carried marker) |
 | [0015](0015-hybrid-cqrs-postgres-storage.md) | Hybrid-CQRS Postgres storage (raw event log + async projection) |
 | [0016](0016-mutation-ir-projection-pipeline.md) | Facet processing as a backend-agnostic Mutation IR |
+| [0017](0017-tags-as-discovered-facts.md) | Tags are discovered facts carried as OpenLineage events |
+| [0018](0018-tag-pii-propagation.md) | Tag / PII propagation as a query-time graph traversal |
 
 See also [`docs/marquez-compatibility.md`](../marquez-compatibility.md) — a
 living reference for where the service matches, diverges from, and goes beyond

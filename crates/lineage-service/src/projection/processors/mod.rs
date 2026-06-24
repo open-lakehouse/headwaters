@@ -7,3 +7,4 @@ pub mod dataset_meta;
 pub mod job_meta;
 pub mod run_meta;
 pub mod schema;
+pub mod tags;
