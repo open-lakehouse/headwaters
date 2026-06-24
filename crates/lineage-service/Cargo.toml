@@ -1,0 +1,50 @@
+[package]
+name = "lineage-service"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+
+[dependencies]
+buffa = { version = "0.7", features = ["json"] }
+buffa-types = { version = "0.7", features = ["json"] }
+deltalake = { workspace = true, features = ["datafusion"] }
+# Unity Catalog sinks — opt-in via the `unity` feature (off by default). The
+# `delta` feature on datafusion-unitycatalog gates its `managed` module (the
+# catalog-managed committer + connector). All resolve to the same delta-rs fork
+# rev as `deltalake`, so there is no version skew.
+unitycatalog-client = { workspace = true, optional = true }
+unitycatalog-object-store = { workspace = true, optional = true }
+datafusion-unitycatalog = { workspace = true, optional = true, features = ["delta"] }
+object_store = { workspace = true, optional = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+config = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
+axum = "0.7"
+tower-http = { version = "0.6", features = ["cors"] }
+serde = { workspace = true }
+serde_json = "1"
+http-body = "1"
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = { workspace = true }
+futures = "0.3"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+
+[features]
+default = ["unity"]
+# Build the Unity Catalog Delta sinks (`unity-external` + `unity-managed` modes).
+unity = [
+    "dep:unitycatalog-client",
+    "dep:unitycatalog-object-store",
+    "dep:datafusion-unitycatalog",
+    "dep:object_store",
+]
+
+[dev-dependencies]
+tempfile = "3"
+# For exercising the read router over HTTP in tests (ServiceExt::oneshot), which
+# catches route-syntax regressions the direct store-call tests can't.
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

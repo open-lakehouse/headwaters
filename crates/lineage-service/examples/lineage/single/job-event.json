@@ -1,0 +1,32 @@
+{
+  "eventTime": "2024-06-15T12:00:00Z",
+  "producer": "https://github.com/OpenLineage/OpenLineage/blob/v1-0-0/client",
+  "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json",
+  "job": {
+    "namespace": "airflow-prod",
+    "name": "dag_weekly_report.generate_summary",
+    "facets": {
+      "sql": {
+        "_producer": "https://github.com/OpenLineage/OpenLineage/blob/v1-0-0/client",
+        "_schemaURL": "https://openlineage.io/spec/facets/1-0-0/SQLJobFacet.json",
+        "query": "SELECT region, SUM(revenue) FROM sales GROUP BY region"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "namespace": "bigquery",
+      "name": "project.dataset.sales",
+      "facets": {},
+      "inputFacets": {}
+    }
+  ],
+  "outputs": [
+    {
+      "namespace": "bigquery",
+      "name": "project.dataset.weekly_summary",
+      "facets": {},
+      "outputFacets": {}
+    }
+  ]
+}

@@ -1,0 +1,264 @@
+name: CI
+
+on:
+  merge_group:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+# Least privilege by default; jobs opt into more if they ever need it.
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  # fmt, clippy, test and coverage are independent jobs that run in parallel.
+  # Splitting them (rather than one sequential job) means a clippy or fmt failure
+  # no longer prevents the test job from running — you still get full test
+  # results on every push even when the lints are red. Wall-clock drops to the
+  # slowest single job instead of the sum of all checks.
+
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # fmt only parses source, so it needs no protoc and no build cache —
+      # keep this job seconds-fast for the quickest possible style feedback.
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.96"
+          components: rustfmt
+
+      - name: Format
+        run: cargo fmt --all --check
+
+  clippy:
+    name: clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # edition 2024 / rust-version 1.91 (see the workspace Cargo.toml). The pin
+      # tracks that floor so CI fails the same way a local 1.91 build would.
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.96"
+          components: clippy
+
+      # cedar-policy's build script compiles .proto schemas via prost-build,
+      # which shells out to `protoc`. Pin both the action (by commit SHA) and
+      # the protoc version so the toolchain is reproducible; repo-token avoids
+      # the unauthenticated GitHub API rate limit when resolving the release.
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "31.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Caches ~/.cargo and ./target keyed on the lockfile. clippy and test share
+      # the "ci" shared-key so they reuse one warmed target/; only main writes the
+      # cache (save-if) so parallel PR jobs don't thrash each other's entry.
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        with:
+          shared-key: ci
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The same gate enforced locally: deny all warnings across every target and
+      # feature (incl. `governance` and the opt-in `tpcds` bench scaffolding).
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # dorny/test-reporter publishes a check run with the parsed JUnit results.
+      checks: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.96"
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "31.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        with:
+          shared-key: ci
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Prebuilt binary (no compile); the ci profile emits JUnit XML.
+      - uses: taiki-e/install-action@8b3c737da4b541bf0fb5a3e0488ff20535badac9 # v2.82.1
+        with:
+          tool: cargo-nextest
+
+      # Live-integration tests (UC / OCI registry / a running hydrofoil) are
+      # marked #[ignore], so the default run needs no services. The always-on
+      # OpenLineage spec-conformance suite (tests/conformance.rs) runs here too —
+      # it validates emitted events against vendored JSON Schemas, no services.
+      # --profile ci writes target/nextest/ci/junit.xml and runs every test
+      # (fail-fast = false) so the report is complete even on failure.
+      - name: Test
+        run: cargo nextest run --workspace --all-features --profile ci
+
+      # nextest does not run doctests; the old `cargo test` did, so run them here
+      # to keep doctest coverage. Runs even if nextest failed above.
+      - name: Doctests
+        if: ${{ !cancelled() }}
+        run: cargo test --workspace --all-features --doc
+
+      # Surface per-test pass/fail in the PR Checks tab regardless of exit code —
+      # this is what gives you results even when clippy/fmt are failing.
+      - name: Publish test report
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        if: ${{ !cancelled() }}
+        with:
+          name: nextest results
+          path: target/nextest/ci/junit.xml
+          reporter: jest-junit
+
+      - name: Upload JUnit artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: junit-results
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: warn
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Doctest coverage (`--doc` / `report --doctests`) relies on
+      # `-Z unstable-options --persist-doctests`, which only the nightly
+      # compiler accepts. Install nightly so the doctest coverage step can run
+      # via `cargo +nightly`. Stable is installed last below so it stays the
+      # default toolchain for the nextest run.
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: nightly
+          components: llvm-tools-preview
+
+      # llvm-tools-preview ships the profdata tooling cargo-llvm-cov needs.
+      # Installed after nightly so "1.96" remains the default toolchain.
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.96"
+          components: llvm-tools-preview
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "31.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Coverage recompiles with -C instrument-coverage, so it cannot reuse the
+      # test/clippy "ci" cache — give it its own shared-key.
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        with:
+          shared-key: coverage
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - uses: taiki-e/install-action@8b3c737da4b541bf0fb5a3e0488ff20535badac9 # v2.82.1
+        with:
+          tool: cargo-llvm-cov,cargo-nextest
+
+      # Collect coverage from both nextest tests and doctests into one report.
+      # Doctest coverage needs nightly (unstable `--persist-doctests`); the
+      # nextest run stays on the pinned stable toolchain.
+      #
+      # `--ignore-filename-regex` drops committed codegen from the report itself
+      # (buffa/connect-rust under `**/generated/`, prost/tonic under `**/src/gen/`,
+      # and the generated lineage proto) so `codecov.json` never carries those
+      # thousands of machine-generated lines. codecov.yml's `ignore` does the same
+      # server-side; filtering at the source keeps the uploaded artifact honest
+      # too. Keep the two in sync.
+      - name: Collect coverage
+        run: |
+          cargo llvm-cov --no-report nextest --workspace --all-features
+          cargo +nightly llvm-cov --no-report --doc --workspace --all-features
+          cargo +nightly llvm-cov report --doctests --codecov --output-path codecov.json \
+            --ignore-filename-regex '(/generated/|/src/gen/|lineage-service/src/proto/lineage\.v1\.rs)'
+
+      # Codecov rejects tokenless uploads for this repo
+      # ("Token required - not valid tokenless upload"), so authenticate with
+      # the repository upload token stored as the CODECOV_TOKEN secret. Never
+      # fails CI on a flaky upload, and codecov.yml keeps the status
+      # informational so it can't block a PR.
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: codecov.json
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # The OpenLineage adapter's acceptance test against the Marquez reference
+  # backend. Separate job: it needs Docker (testcontainers spins up Marquez +
+  # Postgres) and is gated behind the `marquez-it` feature + #[ignore], so it
+  # never runs in the authoritative `ci` job above. Non-blocking for now
+  # (continue-on-error) while the live harness beds in; flip off once stable.
+  marquez-acceptance:
+    name: marquez reference acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.96"
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "31.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+
+      # ubuntu-latest ships a working Docker daemon; testcontainers finds it at
+      # the default socket. The test pulls marquezproject/marquez + postgres.
+      - name: Marquez acceptance test
+        run: cargo test -p datafusion-open-lineage --features marquez-it --test marquez_acceptance -- --ignored --nocapture

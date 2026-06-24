@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.91"
+
+[workspace.dependencies]
+anyhow = "1"
+arrow = "58"
+async-trait = { version = "^0.1.89" }
+chrono = { version = "0.4.44", features = ["serde"] }
+config = "0.15.19"
+datafusion = "53.1"
+datafusion-common = "53.1"
+datafusion-expr = "53.1"
+futures = "0.3.32"
+object_store = { version = "0.13.2", features = ["azure", "aws", "gcp"] }
+olai-http = { version = "0.0.1" }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+thiserror = { version = "2" }
+tokio = { version = "1.47", features = ["macros", "rt", "sync"] }
+tracing = { version = "0.1", features = ["log"] }
+url = { version = "2.5.2", features = [
+    "serde",
+    "std",
+], default-features = false }
+uuid = { version = "1", features = ["v4"] }
+
+# delta-rs / unitycatalog-rs forks, pinned to pushed git revs so the workspace
+# resolves them without sibling checkouts. These revs are kept in lock-step with
+# the open-lakehouse workspace they were extracted from — bump both together to
+# avoid a single buoyant_kernel / delta-rs version skew across the wider graph.
+# To iterate against in-progress fork changes locally, swap these for
+# `path = "../delta-rs/..."` / `../unitycatalog-rs/...` overrides.
+unitycatalog-client = { git = "https://github.com/unitycatalog-incubator/unitycatalog-rs", rev = "a4814ef98bcb7c95e5eb9de0166d0c086fffead1" }
+unitycatalog-object-store = { git = "https://github.com/unitycatalog-incubator/unitycatalog-rs", rev = "a4814ef98bcb7c95e5eb9de0166d0c086fffead1" }
+datafusion-unitycatalog = { git = "https://github.com/unitycatalog-incubator/unitycatalog-rs", rev = "a4814ef98bcb7c95e5eb9de0166d0c086fffead1" }
+deltalake = { git = "https://github.com/roeap/delta-rs", rev = "10d23f5ca992e497a331e78a03eb82d1bdbd149d", features = ["datafusion"] }

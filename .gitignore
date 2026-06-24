@@ -1,0 +1,68 @@
+# OS
+.DS_Store
+
+# IDE
+.dir-locals.el
+.idea/
+.vscode/
+.vim
+.zed
+
+# Rust
+.cargo/
+target/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Spark
+spark-warehouse/
+
+# Secrets / local env (tracked config env files live under config/environment/)
+.env
+.env.*
+!.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+.hydro/
+
+# buf protoschema-jsonschema intermediate output (see node/uc-client/scripts/gen-form-schemas.mjs
+# and node/ui/scripts/gen-fixture-schemas.mjs)
+.gen-jsonschema/
+.gen-fixture-jsonschema/
+
+# Storybook static build output (node/ui)
+storybook-static/
+
+# Local Unity Catalog dev data + rendered config (see scripts/dev-ui.sh)
+.uc-data/
+
+# Desktop app working directory: per-environment config + data (environments.json,
+# envs/<id>/uc/{config.yaml,catalog.db,storage}). In-repo so it's inspectable.
+.open-lakehouse/
+
+# Tauri sidecar binaries (symlinked to the local uc build by `just uc-setup`;
+# triple-suffixed, machine-specific).
+node/desktop/src-tauri/binaries/
+
+WALKTHROUGH.md

@@ -1,0 +1,80 @@
+{
+  "eventType": "COMPLETE",
+  "eventTime": "2026-04-28T19:30:00.000Z",
+  "producer": "https://github.com/open-lakehouse/open-lineage-service/spark-openlineage-plugin",
+  "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json",
+  "run": {
+    "runId": "11111111-2222-3333-4444-555555555555"
+  },
+  "job": {
+    "namespace": "prod-warehouse",
+    "name": "etl.customers.hourly"
+  },
+  "inputs": [
+    {
+      "namespace": "file:///data/bronze",
+      "name": "/customers"
+    }
+  ],
+  "outputs": [
+    {
+      "namespace": "warehouse",
+      "name": "silver.customers",
+      "facets": {
+        "columnLineage": {
+          "fields": {
+            "customer_id": {
+              "inputFields": [
+                {
+                  "namespace": "file:///data/bronze",
+                  "name": "/customers",
+                  "field": "id",
+                  "transformations": [
+                    {
+                      "type": "DIRECT",
+                      "subtype": "IDENTITY",
+                      "description": "",
+                      "masking": false
+                    }
+                  ]
+                }
+              ]
+            },
+            "email_hash": {
+              "inputFields": [
+                {
+                  "namespace": "file:///data/bronze",
+                  "name": "/customers",
+                  "field": "email",
+                  "transformations": [
+                    {
+                      "type": "DIRECT",
+                      "subtype": "TRANSFORMATION",
+                      "description": "md5",
+                      "masking": true
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "dataset": [
+            {
+              "namespace": "file:///data/bronze",
+              "name": "/customers",
+              "field": "region",
+              "transformations": [
+                {
+                  "type": "INDIRECT",
+                  "subtype": "FILTER",
+                  "description": "",
+                  "masking": false
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

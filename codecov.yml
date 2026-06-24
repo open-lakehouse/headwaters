@@ -1,0 +1,34 @@
+# Coverage is reported but never blocks a PR while it beds in. Both project and
+# patch statuses are informational, so a coverage drop shows up in the Codecov
+# comment/status without turning the check red. Tighten (drop `informational`,
+# add a `target`) once a baseline is trusted.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+
+# Exclude code we never want counted against coverage. The big skew is the
+# committed lineage proto codegen (thousands of machine-generated lines tests
+# never exercise directly), which drags the denominator down. Also drop examples
+# and test helpers (exercised by running them, not by assertions).
+#
+# Paths are matched against the report's workspace-relative file paths. Keep this
+# in sync with the CI coverage job's `--ignore-filename-regex`. Regenerate the
+# proto with `just proto-gen`.
+ignore:
+  - "crates/lineage-service/src/proto/lineage.v1.rs" # generated; sibling mod.rs is hand-written
+  - "**/examples/**" # runnable examples, not unit-tested
+  - "**/tests/**" # integration test harnesses
+  - "**/benches/**"
+
+# Public-repo tokenless upload; no CODECOV_TOKEN secret required.
+codecov:
+  require_ci_to_pass: false
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default

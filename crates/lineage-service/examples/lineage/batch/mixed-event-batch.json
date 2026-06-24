@@ -1,0 +1,71 @@
+[
+  {
+    "eventTime": "2024-06-15T10:30:00Z",
+    "producer": "https://github.com/OpenLineage/OpenLineage/blob/v1-0-0/client",
+    "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json",
+    "eventType": "COMPLETE",
+    "run": {
+      "runId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "facets": {}
+    },
+    "job": {
+      "namespace": "spark-cluster",
+      "name": "etl.daily_transform",
+      "facets": {}
+    },
+    "inputs": [
+      {
+        "namespace": "postgres://db:5432",
+        "name": "public.events",
+        "facets": {},
+        "inputFacets": {}
+      }
+    ],
+    "outputs": [
+      {
+        "namespace": "s3://warehouse",
+        "name": "curated/events",
+        "facets": {},
+        "outputFacets": {}
+      }
+    ]
+  },
+  {
+    "eventTime": "2024-06-15T11:00:00Z",
+    "producer": "https://github.com/OpenLineage/OpenLineage/blob/v1-0-0/client",
+    "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json",
+    "job": {
+      "namespace": "airflow-prod",
+      "name": "dag_reports.weekly_summary",
+      "facets": {}
+    },
+    "inputs": [
+      {
+        "namespace": "s3://warehouse",
+        "name": "curated/events",
+        "facets": {},
+        "inputFacets": {}
+      }
+    ],
+    "outputs": []
+  },
+  {
+    "eventTime": "2024-06-15T08:00:00Z",
+    "producer": "https://github.com/OpenLineage/OpenLineage/blob/v1-0-0/client",
+    "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json",
+    "dataset": {
+      "namespace": "s3://data-lake",
+      "name": "raw/clickstream/2024-06-15",
+      "facets": {
+        "schema": {
+          "_producer": "https://github.com/OpenLineage/OpenLineage/blob/v1-0-0/client",
+          "_schemaURL": "https://openlineage.io/spec/facets/1-0-0/SchemaDatasetFacet.json",
+          "fields": [
+            {"name": "event_id", "type": "STRING"},
+            {"name": "user_id", "type": "STRING"}
+          ]
+        }
+      }
+    }
+  }
+]

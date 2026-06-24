@@ -1,0 +1,51 @@
+[package]
+name = "datafusion-open-lineage"
+version = "0.1.0"
+description = "OpenLineage integration for Apache DataFusion sessions"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository = "https://github.com/open-lakehouse/open-lineage-rs"
+homepage = "https://github.com/open-lakehouse/open-lineage-rs/tree/main/crates/open-lineage"
+documentation = "https://docs.rs/datafusion-open-lineage"
+readme = "README.md"
+keywords = ["datafusion", "openlineage", "lineage", "observability"]
+categories = ["database", "development-tools::debugging"]
+
+[dependencies]
+datafusion = { workspace = true }
+datafusion-common = { workspace = true }
+datafusion-expr = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+url = { workspace = true }
+# OpenLineage recommends time-ordered (v7) UUIDs for run ids.
+uuid = { workspace = true, features = ["v7", "serde"] }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+olai-http = { workspace = true, optional = true }
+reqwest = { version = "0.12", optional = true }
+serde_yaml = { version = "0.9", optional = true }
+
+[features]
+default = ["http"]
+http = ["dep:olai-http", "dep:reqwest", "dep:serde_yaml"]
+# Opt-in: the live Marquez reference-backend acceptance test (tests/marquez_acceptance.rs).
+# It additionally needs Docker; the test is also `#[ignore]`d so even with the
+# feature on it only runs under `-- --ignored`. Requires `http` for the transport.
+marquez-it = ["http"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+# Offline OpenLineage spec conformance: validate emitted events against the
+# vendored JSON Schemas in tests/schemas/ (see tests/conformance.rs).
+jsonschema = "0.46"
+# Live Marquez reference-backend acceptance test (gated by the `marquez-it`
+# feature + `#[ignore]`; see tests/marquez_acceptance.rs).
+testcontainers = { version = "0.27", features = ["http_wait"] }
+reqwest = { version = "0.12", features = ["json"] }

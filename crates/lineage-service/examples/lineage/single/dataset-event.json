@@ -1,0 +1,27 @@
+{
+  "eventTime": "2024-06-15T08:00:00Z",
+  "producer": "https://github.com/OpenLineage/OpenLineage/blob/v1-0-0/client",
+  "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json",
+  "dataset": {
+    "namespace": "s3://data-lake",
+    "name": "raw/clickstream/2024-06-15",
+    "facets": {
+      "schema": {
+        "_producer": "https://github.com/OpenLineage/OpenLineage/blob/v1-0-0/client",
+        "_schemaURL": "https://openlineage.io/spec/facets/1-0-0/SchemaDatasetFacet.json",
+        "fields": [
+          {"name": "event_id", "type": "STRING"},
+          {"name": "user_id", "type": "STRING"},
+          {"name": "page_url", "type": "STRING"},
+          {"name": "timestamp", "type": "TIMESTAMP"}
+        ]
+      },
+      "dataSource": {
+        "_producer": "https://github.com/OpenLineage/OpenLineage/blob/v1-0-0/client",
+        "_schemaURL": "https://openlineage.io/spec/facets/1-0-0/DatasourceDatasetFacet.json",
+        "name": "clickstream-collector",
+        "uri": "s3://data-lake/raw/clickstream/"
+      }
+    }
+  }
+}

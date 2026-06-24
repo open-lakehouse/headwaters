@@ -1,0 +1,34 @@
+# Spell-check configuration for `crate-ci/typos` (see .github/workflows/typos.yml).
+
+[default]
+extend-ignore-re = [
+    # Custom ignore regex patterns: https://github.com/crate-ci/typos/blob/master/docs/reference.md#example-configurations
+    "(?s)//\\s*spellchecker:ignore-next-line[^\\n]*\\n[^\\n]*",
+    # Line block with # spellchecker:<on|off>
+    "(?s)(#|//|<\\!--)\\s*spellchecker:off.*?\\n\\s*(#|//|<\\!--)\\s*spellchecker:on",
+    "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",
+]
+
+[default.extend-words]
+# to avoid having to name fields r#type
+typ = "typ"
+
+# Pluralized SQL keywords in prose/tests ("SELECTs", "INSERTs"): typos strips the
+# trailing "s" and flags the stem as a misspelling of SELECT / INSERT.
+selec = "selec"
+inser = "inser"
+
+# "criticals" — used as a noun ("first the criticals") in the service review docs.
+criticals = "criticals"
+
+# Hyphenated "mis-" prefix ("mis-creating", "mis-route"): the prefix is tokenized
+# on its own and flagged as a misspelling of miss/mist.
+mis = "mis"
+
+# We only want typos to police code we own. The generated lineage proto carries
+# tokens we don't control; exclude it (its sibling mod.rs is hand-written and
+# stays in scope).
+[files]
+extend-exclude = [
+    "crates/lineage-service/src/proto/lineage.v1.rs",
+]

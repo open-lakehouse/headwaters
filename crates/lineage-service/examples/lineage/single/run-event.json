@@ -1,0 +1,68 @@
+{
+  "eventTime": "2024-06-15T10:30:00Z",
+  "producer": "https://github.com/OpenLineage/OpenLineage/blob/v1-0-0/client",
+  "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json",
+  "eventType": "START",
+  "run": {
+    "runId": "d4c1e6a2-7b3f-4e5a-9c8d-1f2e3a4b5c6d",
+    "facets": {
+      "nominalTime": {
+        "_producer": "https://github.com/OpenLineage/OpenLineage/blob/v1-0-0/client",
+        "_schemaURL": "https://openlineage.io/spec/facets/1-0-0/NominalTimeRunFacet.json",
+        "nominalStartTime": "2024-06-15T10:00:00Z",
+        "nominalEndTime": "2024-06-15T11:00:00Z"
+      }
+    }
+  },
+  "job": {
+    "namespace": "spark-cluster",
+    "name": "etl_pipeline.transform_users",
+    "facets": {
+      "sourceCodeLocation": {
+        "_producer": "https://github.com/OpenLineage/OpenLineage/blob/v1-0-0/client",
+        "_schemaURL": "https://openlineage.io/spec/facets/1-0-0/SourceCodeLocationJobFacet.json",
+        "type": "git",
+        "url": "https://github.com/example/etl-pipelines",
+        "repoUrl": "https://github.com/example/etl-pipelines.git",
+        "path": "jobs/transform_users.py",
+        "tag": "v2.3.1"
+      }
+    }
+  },
+  "inputs": [
+    {
+      "namespace": "postgres://warehouse:5432",
+      "name": "public.raw_users",
+      "facets": {
+        "schema": {
+          "_producer": "https://github.com/OpenLineage/OpenLineage/blob/v1-0-0/client",
+          "_schemaURL": "https://openlineage.io/spec/facets/1-0-0/SchemaDatasetFacet.json",
+          "fields": [
+            {"name": "id", "type": "INTEGER"},
+            {"name": "email", "type": "VARCHAR"},
+            {"name": "created_at", "type": "TIMESTAMP"}
+          ]
+        }
+      },
+      "inputFacets": {}
+    }
+  ],
+  "outputs": [
+    {
+      "namespace": "s3://data-lake",
+      "name": "curated/users",
+      "facets": {
+        "schema": {
+          "_producer": "https://github.com/OpenLineage/OpenLineage/blob/v1-0-0/client",
+          "_schemaURL": "https://openlineage.io/spec/facets/1-0-0/SchemaDatasetFacet.json",
+          "fields": [
+            {"name": "user_id", "type": "INTEGER"},
+            {"name": "email_hash", "type": "VARCHAR"},
+            {"name": "created_date", "type": "DATE"}
+          ]
+        }
+      },
+      "outputFacets": {}
+    }
+  ]
+}
