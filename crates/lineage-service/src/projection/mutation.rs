@@ -98,6 +98,19 @@ pub enum Mutation {
         at: DateTime<Utc>,
     },
 
+    /// A dataset version snapshot, keyed to the producing run (Marquez's
+    /// per-version model). `version` is a deterministic UUID of the schema, so
+    /// re-emitting the same schema is a no-op (`ON CONFLICT DO NOTHING`) and
+    /// replay stays idempotent. Emitted whenever a schema-bearing event arrives.
+    EmitDatasetVersion {
+        namespace: String,
+        name: String,
+        version: uuid::Uuid,
+        run_id: Option<String>,
+        fields: Vec<JsonValue>,
+        at: DateTime<Utc>,
+    },
+
     /// One column-lineage edge: input field → output field (from the
     /// `columnLineage` facet on an output dataset). Latest-wins per edge key.
     UpsertColumnEdge {

@@ -425,8 +425,10 @@ impl LineageStore {
         })
     }
 
-    /// `GET /api/v1/namespaces/{ns}/datasets/{ds}/versions` — one current
-    /// version derived from the dataset (we don't track historical schemas).
+    /// `GET /api/v1/namespaces/{ns}/datasets/{ds}/versions` — the dataset's
+    /// schema history, newest first, from the projected `dataset_versions`
+    /// table (one row per distinct schema snapshot, keyed to its producing run).
+    /// 404 if the dataset is unknown, like the dataset detail endpoint.
     pub async fn dataset_versions(
         &self,
         namespace: &str,
@@ -434,32 +436,67 @@ impl LineageStore {
         limit: usize,
         offset: usize,
     ) -> Result<DatasetVersions, ReadError> {
+        // 404 on an unknown dataset (and reuse its source_name for the DTO).
         let dataset = self.dataset(namespace, name).await?;
-        let version = stable_version_id(namespace, name, &dataset.fields);
-        let all = vec![DatasetVersion {
-            id: DatasetVersionId {
-                namespace: namespace.to_string(),
-                name: name.to_string(),
-                version: version.clone(),
-            },
-            dataset_type: dataset.dataset_type,
-            name: name.to_string(),
-            physical_name: dataset.physical_name,
-            created_at: dataset.created_at,
-            version,
-            namespace: namespace.to_string(),
-            source_name: dataset.source_name,
-            fields: dataset.fields,
-            tags: Vec::new(),
-            last_modified_at: Some(dataset.updated_at),
-            description: dataset.description,
-            facets: dataset.facets,
-        }];
-        let total_count = all.len();
-        let versions = all.into_iter().skip(offset).take(limit).collect();
+
+        let total_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM dataset_versions WHERE namespace = $1 AND name = $2",
+        )
+        .bind(namespace)
+        .bind(name)
+        .fetch_one(&self.pool)
+        .await?;
+
+        let rows = sqlx::query(
+            "SELECT version, run_id, fields, created_at FROM dataset_versions \
+             WHERE namespace = $1 AND name = $2 \
+             ORDER BY created_at DESC, version DESC LIMIT $3 OFFSET $4",
+        )
+        .bind(namespace)
+        .bind(name)
+        .bind(limit as i64)
+        .bind(offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let versions = rows
+            .iter()
+            .map(|r| {
+                let version: uuid::Uuid = r.get("version");
+                let version = version.to_string();
+                let created_at: DateTime<Utc> = r.get("created_at");
+                let fields_json: JsonValue = r.get("fields");
+                let fields = fields_json.as_array().cloned().unwrap_or_default();
+                let facets = if fields.is_empty() {
+                    json!({})
+                } else {
+                    json!({ "schema": { "fields": fields } })
+                };
+                DatasetVersion {
+                    id: DatasetVersionId {
+                        namespace: namespace.to_string(),
+                        name: name.to_string(),
+                        version: version.clone(),
+                    },
+                    dataset_type: dataset.dataset_type.clone(),
+                    name: name.to_string(),
+                    physical_name: dataset.physical_name.clone(),
+                    created_at: rfc3339(created_at),
+                    version,
+                    namespace: namespace.to_string(),
+                    source_name: dataset.source_name.clone(),
+                    fields,
+                    tags: Vec::new(),
+                    last_modified_at: Some(rfc3339(created_at)),
+                    description: dataset.description.clone(),
+                    facets,
+                }
+            })
+            .collect();
+
         Ok(DatasetVersions {
             versions,
-            total_count,
+            total_count: total_count as usize,
         })
     }
 
@@ -675,17 +712,4 @@ fn string_vec(val: &JsonValue) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-/// A deterministic version id for a dataset snapshot.
-fn stable_version_id(namespace: &str, name: &str, fields: &[JsonValue]) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h = DefaultHasher::new();
-    namespace.hash(&mut h);
-    name.hash(&mut h);
-    serde_json::to_string(fields)
-        .unwrap_or_default()
-        .hash(&mut h);
-    format!("{:016x}", h.finish())
 }

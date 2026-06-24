@@ -38,7 +38,7 @@ url = { version = "2.5.2", features = [
     "serde",
     "std",
 ], default-features = false }
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "v5"] }
 
 # delta-rs / unitycatalog-rs forks, pinned to pushed git revs so the workspace
 # resolves them without sibling checkouts. These revs are kept in lock-step with

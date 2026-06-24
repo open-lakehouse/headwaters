@@ -93,6 +93,14 @@ impl PgApplier {
                 )
                 .await
             }
+            Mutation::EmitDatasetVersion {
+                namespace,
+                name,
+                version,
+                run_id,
+                fields,
+                at,
+            } => emit_dataset_version(tx, namespace, name, *version, run_id, fields, *at).await,
             Mutation::UpsertColumnEdge {
                 in_namespace,
                 in_dataset,
@@ -358,6 +366,33 @@ async fn upsert_dataset_field(
     .bind(field_type)
     .bind(description)
     .bind(ordinal)
+    .bind(at)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn emit_dataset_version(
+    tx: &mut Transaction<'_, Postgres>,
+    namespace: &str,
+    name: &str,
+    version: uuid::Uuid,
+    run_id: &Option<String>,
+    fields: &[JsonValue],
+    at: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    // Append-on-change: a given (namespace, name, schema-hash) version is
+    // written once. The deterministic `version` makes replay a no-op.
+    sqlx::query(
+        "INSERT INTO dataset_versions (namespace, name, version, run_id, fields, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6) \
+         ON CONFLICT (namespace, name, version) DO NOTHING",
+    )
+    .bind(namespace)
+    .bind(name)
+    .bind(version)
+    .bind(run_id)
+    .bind(JsonValue::Array(fields.to_vec()))
     .bind(at)
     .execute(&mut **tx)
     .await?;
