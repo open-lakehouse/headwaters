@@ -1,11 +1,11 @@
-# 0018 — Tag / PII propagation as a query-time graph traversal
+# 0009 — Tag / PII propagation as a query-time graph traversal
 
 > Status: **Accepted** (2026-06). Implemented in
 > `crates/lineage-service/src/read/queries.rs`
 > (`LineageStore::tag_downstream`) and exposed at
 > `GET /api/v1/tags/{tag}/downstream` (`read/http.rs`). Consumes the tags from
-> ADR [0017](0017-tags-as-discovered-facts.md) and the `column_lineage_edges`
-> projection from ADR [0016](0016-mutation-ir-projection-pipeline.md).
+> ADR [0008](0008-tags-as-discovered-facts.md) and the `column_lineage_edges`
+> projection from ADR [0007](0007-mutation-ir-projection-pipeline.md).
 
 ## Context
 
@@ -31,7 +31,7 @@ Query-time over materialized because:
 
 - **Correctness for free.** The closure always reflects the current projection;
   there is no second derived table to keep replay-consistent. Materializing
-  reachability would double the idempotency/rebuild surface (ADR 0015's
+  reachability would double the idempotency/rebuild surface (ADR 0006's
   invariant) for a read pattern that is not yet hot.
 - **The graph is the cost, and it's already indexed.** `column_lineage_edges`
   has in/out indexes; recursive traversal over it is the same shape as the
@@ -49,7 +49,7 @@ lineage; field-level is preferred where present.
   beyond-Marquez capability in `docs/marquez-compatibility.md`.
 - **No new projection state**, so no new rebuild path — the propagation is a
   pure read over existing projections. Proven by an acceptance test: a scanner's
-  synthetic PII tag event (ADR 0017) flows through column lineage to the
+  synthetic PII tag event (ADR 0008) flows through column lineage to the
   downstream field, and survives a rebuild.
 - **Depth-capped**, like the lineage graph, to bound dense graphs; the cap is a
   known limit (very long transformation chains truncate) rather than silent.

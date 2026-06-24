@@ -5,6 +5,14 @@
 > extend DataFusion to build a full-featured, governed object-store query
 > service.
 
+> **Scope.** This design was written for a host Flight SQL query service
+> (`hydrofoil`) that embeds the integration; that service is an upstream
+> open-lakehouse component and is **not** part of this repo. Headwaters ships the
+> reusable pieces: the `datafusion-open-lineage` crate (this document) and the
+> standalone `lineage-service`. Where the text refers to `hydrofoil` or
+> `crates/hydrofoil/...`, read it as "the embedding host service" — the design
+> holds for any `SessionContext` the crate is instrumented into.
+
 ## Why
 
 We run a Flight SQL query service (`hydrofoil`) on Apache DataFusion over object
@@ -41,7 +49,7 @@ lineage is the third capability layered onto the same session.
 DataFusion offers several extension seams: `AnalyzerRule`, `OptimizerRule`,
 `PhysicalOptimizerRule`, custom `ExecutionPlan` nodes, the `ExtensionPlanner`, and
 the `QueryPlanner` trait. The work splits along three concerns with different
-needs (see ADR [0014](adr/0014-openlineage-planner-vs-rule.md)):
+needs (see ADR [0005](adr/0005-openlineage-planner-vs-rule.md)):
 
 - **Extraction** needs the *fully optimized* `LogicalPlan` — the richest lineage
   signal (scans have projections/filters pushed down, so we see exactly which
@@ -184,7 +192,7 @@ plan and attached to the **output** datasets, keyed by output field — the side
 the spec defines `ColumnLineageDatasetFacet` on. (An earlier name-based,
 top-down extraction was removed as unsound: aliases/CTEs fabricated datasets,
 same-named projections clobbered each other, and the facet sat on inputs where
-consumers never look. See ADR 0013 for the full decision record.)
+consumers never look. See ADR 0004 for the full decision record.)
 
 The soundness keystone is **positional indexing**: every node's map is one
 entry per output-schema field (*position → set of physical `(dataset, column)`
@@ -342,10 +350,10 @@ spans several RPCs (`CreatePreparedStatement` → `GetFlightInfo` → `DoGet` �
 per-session orchestration context that outlives a single statement. That needs
 real session/statement management — a session keyed by a protocol-derived id
 (Flight SQL handshake / cookie), statements owning their `runId` — replacing the
-current demo `get_ctx` stub. That work is designed in `docs/session-management.md`
-and intentionally deferred; the lineage layer is already structured to slot into
-it (the `LineageContextProvider` reads context from the session, and a statement
-could pre-mint the `runId` the planner uses).
+current demo `get_ctx` stub. That session/statement management is designed in the
+upstream host service and intentionally not reproduced here; the lineage layer is
+already structured to slot into it (the `LineageContextProvider` reads context
+from the session, and a statement could pre-mint the `runId` the planner uses).
 
 ## Patterns adopted vs. deferred
 

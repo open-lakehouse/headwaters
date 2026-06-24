@@ -1,9 +1,12 @@
-# 0009 — lineage-service Unity Catalog write path
+# 0002 — lineage-service Unity Catalog write path
 
-> Status: **Proposed** (2026-06). Design for `crates/lineage-service`; not yet
-> implemented. Relates to
-> [`0004-per-session-credential-isolation.md`](0004-per-session-credential-isolation.md)
-> and the read-path UC integration in `crates/hydrofoil/src/catalog/unity.rs`.
+> Status: **Superseded** by [ADR 0006](0006-hybrid-cqrs-postgres-storage.md),
+> which replaced the Delta-Lake/Unity events table with a Postgres event log +
+> async projection. This record is retained for the credential-vending analysis,
+> which stays relevant if a lakehouse write path is reintroduced. It relates to
+> an upstream per-session credential-isolation decision and the read-path UC
+> integration, both of which live in the host open-lakehouse service rather than
+> this repo.
 
 ## Context
 
@@ -67,9 +70,9 @@ inject it. The read-path resolver hardcodes `TableOperation::Read`, so the write
   (`server/src/api/commits.rs`). The events table must therefore be an external /
   non-coordinated Delta table — which matches hydrofoil's own direct-commit behavior.
 
-### Deviation from ADR 0004 (per-session credential isolation)
+### Deviation from the upstream per-session credential-isolation decision
 
-ADR 0004 mandates a fresh `RuntimeEnv` per session so vended credentials cannot leak across
+The upstream per-session credential-isolation decision mandates a fresh `RuntimeEnv` per session so vended credentials cannot leak across
 *principals*. `lineage-service` is a **single-principal service-account writer** — there is
 no second principal to leak to — so one long-lived `UnityObjectStoreFactory` and one cached
 `ReadWrite` store is correct and does not violate the isolation invariant. This deviation is

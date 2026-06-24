@@ -1,4 +1,4 @@
-# 0015 — Hybrid-CQRS Postgres storage: raw event log + async projection
+# 0006 — Hybrid-CQRS Postgres storage: raw event log + async projection
 
 > Status: **Accepted** (2026-06). Implemented in
 > `crates/lineage-service/src/writer/` (ingest → `events`), `src/projection/`
@@ -56,7 +56,7 @@ Postgres replaces Delta/Unity entirely for this service.
 - **Replayability is a first-class property.** Because the read model is a pure
   projection of the log, we can change the projection logic and rebuild — which
   is exactly what the extensible facet pipeline (ADR
-  [0016](0016-mutation-ir-projection-pipeline.md)) and future facet processors
+  [0007](0007-mutation-ir-projection-pipeline.md)) and future facet processors
   rely on.
 - **A differential conformance test** (`tests/conformance_test.rs`) proves the
   reconstructed lineage matches Marquez for identical events.

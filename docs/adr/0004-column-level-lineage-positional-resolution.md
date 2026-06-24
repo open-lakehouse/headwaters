@@ -1,4 +1,4 @@
-# 0013 — Column-level lineage via positional plan resolution
+# 0004 — Column-level lineage via positional plan resolution
 
 > Status: **Accepted** (2026-06). Implemented in
 > `crates/open-lineage/src/column.rs` (resolver), `src/extract.rs` /

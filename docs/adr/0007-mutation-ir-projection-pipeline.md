@@ -1,11 +1,11 @@
-# 0016 — Facet processing as a backend-agnostic Mutation IR
+# 0007 — Facet processing as a backend-agnostic Mutation IR
 
 > Status: **Accepted** (2026-06). Implemented in
 > `crates/lineage-service/src/projection/`: `mutation.rs` (the `Mutation` IR),
 > `processor.rs` + `processors/` (pure `FacetProcessor`s), `registry.rs`
 > (composition), `applier.rs` + `backend/postgres.rs` (the `PgApplier`).
 > Builds on the storage model in ADR
-> [0015](0015-hybrid-cqrs-postgres-storage.md).
+> [0006](0006-hybrid-cqrs-postgres-storage.md).
 
 ## Context
 
