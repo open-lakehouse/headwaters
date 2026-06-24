@@ -72,6 +72,50 @@ impl PgApplier {
                 origin,
                 destination,
             } => upsert_edge(tx, origin, destination).await,
+            Mutation::UpsertDatasetField {
+                namespace,
+                dataset,
+                field,
+                field_type,
+                description,
+                ordinal,
+                at,
+            } => {
+                upsert_dataset_field(
+                    tx,
+                    namespace,
+                    dataset,
+                    field,
+                    field_type,
+                    description,
+                    *ordinal,
+                    *at,
+                )
+                .await
+            }
+            Mutation::UpsertColumnEdge {
+                in_namespace,
+                in_dataset,
+                in_field,
+                out_namespace,
+                out_dataset,
+                out_field,
+                transformation,
+                at,
+            } => {
+                upsert_column_edge(
+                    tx,
+                    in_namespace,
+                    in_dataset,
+                    in_field,
+                    out_namespace,
+                    out_dataset,
+                    out_field,
+                    transformation,
+                    *at,
+                )
+                .await
+            }
         }
     }
 }
@@ -280,6 +324,101 @@ async fn upsert_edge(
     )
     .bind(origin)
     .bind(destination)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn upsert_dataset_field(
+    tx: &mut Transaction<'_, Postgres>,
+    namespace: &str,
+    dataset: &str,
+    field: &str,
+    field_type: &Option<String>,
+    description: &Option<String>,
+    ordinal: i32,
+    at: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    // Latest-schema-wins per field: a more recent event replaces type/
+    // description/ordinal; an older one is ignored.
+    sqlx::query(
+        "INSERT INTO dataset_fields \
+            (namespace, dataset, field, type, description, ordinal, schema_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7) \
+         ON CONFLICT (namespace, dataset, field) DO UPDATE SET \
+            type        = CASE WHEN $7 >= dataset_fields.schema_at THEN $4 ELSE dataset_fields.type END, \
+            description = CASE WHEN $7 >= dataset_fields.schema_at THEN $5 ELSE dataset_fields.description END, \
+            ordinal     = CASE WHEN $7 >= dataset_fields.schema_at THEN $6 ELSE dataset_fields.ordinal END, \
+            schema_at   = GREATEST(dataset_fields.schema_at, $7)",
+    )
+    .bind(namespace)
+    .bind(dataset)
+    .bind(field)
+    .bind(field_type)
+    .bind(description)
+    .bind(ordinal)
+    .bind(at)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn upsert_column_edge(
+    tx: &mut Transaction<'_, Postgres>,
+    in_ns: &str,
+    in_ds: &str,
+    in_field: &str,
+    out_ns: &str,
+    out_ds: &str,
+    out_field: &str,
+    transformation: &Option<JsonValue>,
+    at: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    // Per-output-field latest-wins: a newer event re-declaring an output field's
+    // column lineage *replaces* that field's input edges (it does not union with
+    // a stale mapping). Delete the output field's older edges first, then upsert
+    // this one. This stays replay-safe: deletes are strictly older-than (`<`),
+    // so same-`at` edges (the input fields of one facet) coexist, and replaying
+    // in any order converges on the max-`at` event's edge set.
+    sqlx::query(
+        "DELETE FROM column_lineage_edges \
+         WHERE out_namespace = $1 AND out_dataset = $2 AND out_field = $3 AND edge_at < $4",
+    )
+    .bind(out_ns)
+    .bind(out_ds)
+    .bind(out_field)
+    .bind(at)
+    .execute(&mut **tx)
+    .await?;
+
+    // Insert only if no *newer* event has already declared this output field's
+    // lineage — so an out-of-order replay of an older event can't re-add a stale
+    // edge (the delete above handles the in-order case; this `NOT EXISTS` guard
+    // handles the reverse order, making the fold fully order-insensitive).
+    sqlx::query(
+        "INSERT INTO column_lineage_edges \
+            (in_namespace, in_dataset, in_field, out_namespace, out_dataset, out_field, \
+             transformation, edge_at) \
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8 \
+         WHERE NOT EXISTS ( \
+            SELECT 1 FROM column_lineage_edges \
+            WHERE out_namespace = $4 AND out_dataset = $5 AND out_field = $6 AND edge_at > $8) \
+         ON CONFLICT (in_namespace, in_dataset, in_field, out_namespace, out_dataset, out_field) \
+         DO UPDATE SET \
+            transformation = CASE WHEN $8 >= column_lineage_edges.edge_at \
+                                  THEN $7 ELSE column_lineage_edges.transformation END, \
+            edge_at = GREATEST(column_lineage_edges.edge_at, $8)",
+    )
+    .bind(in_ns)
+    .bind(in_ds)
+    .bind(in_field)
+    .bind(out_ns)
+    .bind(out_ds)
+    .bind(out_field)
+    .bind(transformation)
+    .bind(at)
     .execute(&mut **tx)
     .await?;
     Ok(())

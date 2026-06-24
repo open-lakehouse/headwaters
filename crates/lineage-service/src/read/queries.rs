@@ -497,82 +497,85 @@ impl LineageStore {
     }
 
     /// `GET /api/v1/column-lineage?nodeId=` — the dataset column-lineage view,
-    /// served from the latest stored column-lineage of the addressed output
-    /// dataset. Unknown datasets / no column lineage return an empty graph.
+    /// served from the projected `column_lineage_edges` table (single-hop
+    /// upstream, what the UI's dataset column view renders). Unknown datasets /
+    /// no column lineage return an empty graph (200, not 404).
     pub async fn column_lineage(&self, node_id: &str) -> Result<ColumnLineageGraph, ReadError> {
         let empty = ColumnLineageGraph { graph: Vec::new() };
         let Some((namespace, dataset, field_filter)) = parse_column_lineage_node_id(node_id) else {
             return Ok(empty);
         };
 
-        // The `column_lineage` column holds the lifted per-event document
-        // `{inputs:[{namespace,name,columnLineage}], outputs:[...]}` produced by
-        // the writer. Newest-first: the first event carrying a facet for this
-        // output dataset is its current column lineage.
+        // Edges terminating at the addressed output dataset (optionally one
+        // field). Each row is one input-field → output-field dependency.
         let rows = sqlx::query(
-            "SELECT column_lineage FROM events WHERE column_lineage IS NOT NULL \
-             ORDER BY event_time DESC NULLS LAST, seq DESC",
+            "SELECT in_namespace, in_dataset, in_field, out_field, transformation \
+             FROM column_lineage_edges \
+             WHERE out_namespace = $1 AND out_dataset = $2 \
+               AND ($3::text IS NULL OR out_field = $3) \
+             ORDER BY out_field, in_namespace, in_dataset, in_field",
         )
+        .bind(&namespace)
+        .bind(&dataset)
+        .bind(&field_filter)
         .fetch_all(&self.pool)
         .await?;
-        let mut facet = None;
-        'rows: for r in &rows {
-            let Some(doc): Option<JsonValue> = r.get("column_lineage") else {
-                continue;
-            };
-            let Some(outputs) = doc.get("outputs").and_then(|o| o.as_array()) else {
-                continue;
-            };
-            for out in outputs {
-                if out["namespace"] == namespace.as_str() && out["name"] == dataset.as_str() {
-                    facet = Some(out["columnLineage"].clone());
-                    break 'rows;
-                }
-            }
-        }
-        let Some(facet) = facet else { return Ok(empty) };
-        let Some(fields) = facet["fields"].as_object() else {
-            return Ok(empty);
-        };
 
         let mut data: std::collections::BTreeMap<String, JsonValue> = Default::default();
         let mut in_edges: std::collections::BTreeMap<String, Vec<LineageEdge>> = Default::default();
         let mut out_edges: std::collections::BTreeMap<String, Vec<LineageEdge>> =
             Default::default();
-        for (field, lineage) in fields {
-            if field_filter.as_deref().is_some_and(|f| f != field) {
-                continue;
+        // Accumulate each output field's inputFields payload (the UI reads it).
+        let mut output_inputs: std::collections::BTreeMap<String, Vec<JsonValue>> =
+            Default::default();
+
+        for r in &rows {
+            let in_ns: String = r.get("in_namespace");
+            let in_ds: String = r.get("in_dataset");
+            let in_field: String = r.get("in_field");
+            let out_field: String = r.get("out_field");
+            let transformation: Option<JsonValue> = r.get("transformation");
+
+            let out_id = dataset_field_node_id(&namespace, &dataset, &out_field);
+            let in_id = dataset_field_node_id(&in_ns, &in_ds, &in_field);
+            let edge = LineageEdge {
+                origin: in_id.clone(),
+                destination: out_id.clone(),
+            };
+            in_edges
+                .entry(out_id.clone())
+                .or_default()
+                .push(edge.clone());
+            out_edges.entry(in_id.clone()).or_default().push(edge);
+            data.entry(in_id).or_insert_with(
+                || json!({ "namespace": in_ns, "dataset": in_ds, "field": in_field }),
+            );
+
+            let mut input_entry = json!({
+                "namespace": in_ns, "name": in_ds, "field": in_field,
+            });
+            if let Some(t) = transformation {
+                input_entry["transformations"] = t;
             }
-            let out_id = dataset_field_node_id(&namespace, &dataset, field);
-            for input in lineage["inputFields"].as_array().into_iter().flatten() {
-                let (Some(in_ns), Some(in_ds), Some(in_field)) = (
-                    input["namespace"].as_str(),
-                    input["name"].as_str(),
-                    input["field"].as_str(),
-                ) else {
-                    continue;
-                };
-                let in_id = dataset_field_node_id(in_ns, in_ds, in_field);
-                let edge = LineageEdge {
-                    origin: in_id.clone(),
-                    destination: out_id.clone(),
-                };
-                in_edges
-                    .entry(out_id.clone())
-                    .or_default()
-                    .push(edge.clone());
-                out_edges.entry(in_id.clone()).or_default().push(edge);
-                data.entry(in_id).or_insert_with(
-                    || json!({ "namespace": in_ns, "dataset": in_ds, "field": in_field }),
-                );
-            }
+            output_inputs
+                .entry(out_field)
+                .or_default()
+                .push(input_entry);
+        }
+
+        if data.is_empty() {
+            return Ok(empty);
+        }
+
+        for (out_field, input_fields) in output_inputs {
+            let out_id = dataset_field_node_id(&namespace, &dataset, &out_field);
             data.insert(
                 out_id,
                 json!({
                     "namespace": namespace,
                     "dataset": dataset,
-                    "field": field,
-                    "inputFields": lineage["inputFields"],
+                    "field": out_field,
+                    "inputFields": input_fields,
                 }),
             );
         }

@@ -85,4 +85,29 @@ pub enum Mutation {
     /// A directed lineage edge between two node-id strings (input ds → job,
     /// job → output ds). Add-only.
     UpsertLineageEdge { origin: String, destination: String },
+
+    /// One column (field) of a dataset's schema (from the `schema` facet).
+    /// Latest-schema-wins per `(namespace, dataset, field)`.
+    UpsertDatasetField {
+        namespace: String,
+        dataset: String,
+        field: String,
+        field_type: Option<String>,
+        description: Option<String>,
+        ordinal: i32,
+        at: DateTime<Utc>,
+    },
+
+    /// One column-lineage edge: input field → output field (from the
+    /// `columnLineage` facet on an output dataset). Latest-wins per edge key.
+    UpsertColumnEdge {
+        in_namespace: String,
+        in_dataset: String,
+        in_field: String,
+        out_namespace: String,
+        out_dataset: String,
+        out_field: String,
+        transformation: Option<JsonValue>,
+        at: DateTime<Utc>,
+    },
 }
