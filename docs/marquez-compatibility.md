@@ -7,8 +7,8 @@ This is a living document: it is updated as each facet-processing phase adds
 interpretation. Claims marked **[conformance]** are backed by an assertion in
 `crates/lineage-service/tests/conformance_test.rs`, which posts identical events
 to a real Marquez and to our service and diffs their read APIs on a normalized
-semantic subset. See ADR [0015](adr/0015-hybrid-cqrs-postgres-storage.md)
-(storage) and [0016](adr/0016-mutation-ir-projection-pipeline.md) (facet
+semantic subset. See ADR [0006](adr/0006-hybrid-cqrs-postgres-storage.md)
+(storage) and [0007](adr/0007-mutation-ir-projection-pipeline.md) (facet
 pipeline).
 
 [Marquez]: https://github.com/MarquezProject/marquez
@@ -31,8 +31,8 @@ For the same OpenLineage events, our read APIs reconstruct the same:
 
 | Area | Marquez | Us | Why |
 |---|---|---|---|
-| Consistency | Normalizes **synchronously** in the ingest request (read-your-writes) | **Async projection** off an append-only log; reads eventually consistent | Spike-tolerant ingest + replayable projections. ADR 0015. |
-| Facets | *Interprets* facets opinionatedly during ingest (see table below) | **Opaque pass-through** by default; interpret a facet only when a read derives value from it | New/custom facets cost nothing on ingest; we add interpretation deliberately, per phase. ADR 0016. |
+| Consistency | Normalizes **synchronously** in the ingest request (read-your-writes) | **Async projection** off an append-only log; reads eventually consistent | Spike-tolerant ingest + replayable projections. ADR 0006. |
+| Facets | *Interprets* facets opinionatedly during ingest (see table below) | **Opaque pass-through** by default; interpret a facet only when a read derives value from it | New/custom facets cost nothing on ingest; we add interpretation deliberately, per phase. ADR 0007. |
 | `nominalTime` | Hoists to top-level `run.nominalStartTime`/`End` (only for a `_schemaURL` it recognizes) and parses into `run.args` truncated to minutes | Keep the facet verbatim in the run-facets blob | Marquez's hoisting is internal and inconsistent; the verbatim facet is the stable compatibility surface. |
 | Column-edge orientation | output→input | input→output (consistent with table-level) | One internal convention. Normalized away in the conformance diff. |
 | Dataset versions | A version per run, keyed to the creating run | A version per **distinct schema snapshot** (deterministic UUIDv5 of the fields), keyed to the producing run; `/versions` returns the real schema history (empty until a `schema` facet is seen, vs. our earlier fabricated single version) | Schema-change-driven versioning is the useful axis ("how did this dataset evolve?") and keeps replay idempotent. |
@@ -56,7 +56,7 @@ stand. "Interpreted" = promoted into the relational model, not just retained.
 | `schema` | one `dataset_fields` row per column | ✓ per-column `dataset_fields` rows (+ the `datasets.fields` cache) |
 | `columnLineage` | `column_lineage` edge table (output datasets) | ✓ `column_lineage_edges` table; per-output-field latest-wins |
 | `documentation` | `description` on job/dataset | ✓ job + dataset `description` |
-| `tags` (+ field `schema.tags`) | tag tables (via REST, not ingest) | ✓ `tags` catalog + `tag_assignments` (dataset/field/job), from ingest **and** synthetic fact events (ADR 0017); drives PII propagation (ADR 0018) |
+| `tags` (+ field `schema.tags`) | tag tables (via REST, not ingest) | ✓ `tags` catalog + `tag_assignments` (dataset/field/job), from ingest **and** synthetic fact events (ADR 0008); drives PII propagation (ADR 0009) |
 | `dataSource` | a `sources` row (name + connection_url) | ✓ `sources` row + dataset `source_name` |
 | `sourceCodeLocation` | job `location` | ✓ job `location` |
 | `parent` (ParentRunFacet) | creates parent run/job rows, links them | ✓ run `parent_run_id` + job `parent_namespace`/`parent_name` (we link, but do not synthesize standalone parent run/job rows) |
@@ -70,7 +70,7 @@ stand. "Interpreted" = promoted into the relational model, not just retained.
 
 - **Tag / PII propagation** — `GET /api/v1/tags/{tag}/downstream`: "where does
   data tagged `pii` land downstream?" — a transitive closure over column lineage
-  seeded from tag assignments. Marquez has no equivalent API. ADR 0018.
+  seeded from tag assignments. Marquez has no equivalent API. ADR 0009.
 - **Tags as discovered facts** — tag/annotation writes are modeled as appended
   OpenLineage events (a system that *discovers* PII raises a tag event), keeping
-  everything rebuildable from the log. ADR 0017.
+  everything rebuildable from the log. ADR 0008.
