@@ -35,6 +35,7 @@ For the same OpenLineage events, our read APIs reconstruct the same:
 | Facets | *Interprets* facets opinionatedly during ingest (see table below) | **Opaque pass-through** by default; interpret a facet only when a read derives value from it | New/custom facets cost nothing on ingest; we add interpretation deliberately, per phase. ADR 0016. |
 | `nominalTime` | Hoists to top-level `run.nominalStartTime`/`End` (only for a `_schemaURL` it recognizes) and parses into `run.args` truncated to minutes | Keep the facet verbatim in the run-facets blob | Marquez's hoisting is internal and inconsistent; the verbatim facet is the stable compatibility surface. |
 | Column-edge orientation | output→input | input→output (consistent with table-level) | One internal convention. Normalized away in the conformance diff. |
+| Dataset versions | A version per run, keyed to the creating run | A version per **distinct schema snapshot** (deterministic UUIDv5 of the fields), keyed to the producing run; `/versions` returns the real schema history (empty until a `schema` facet is seen, vs. our earlier fabricated single version) | Schema-change-driven versioning is the useful axis ("how did this dataset evolve?") and keeps replay idempotent. |
 
 ## Stubbed / not-yet-implemented endpoints
 

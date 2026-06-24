@@ -361,10 +361,19 @@ async fn http_events_lineage_returns_raw_events() {
 #[tokio::test]
 async fn http_dataset_versions_returns_a_version() {
     let db = start_postgres().await;
-    let store = seeded_store(&db).await;
+    // A schema-bearing event so the dataset has a real version snapshot.
+    ingest(
+        &db.pool,
+        r#"{"eventType":"COMPLETE","eventTime":"2023-11-14T22:00:00Z","producer":"p",
+            "run":{"runId":"r1"},"job":{"namespace":"etl","name":"j"},
+            "outputs":[{"namespace":"marts","name":"daily","facets":{"schema":{"fields":[
+                {"name":"id","type":"BIGINT"}]}}}]}"#,
+    )
+    .await;
+    let store = LineageStore::new(db.pool.clone());
     let (status, body) = get(
         store,
-        "/api/v1/namespaces/raw/datasets/orders/versions?limit=10&offset=0",
+        "/api/v1/namespaces/marts/datasets/daily/versions?limit=10&offset=0",
     )
     .await;
     assert_eq!(status, axum::http::StatusCode::OK, "body: {body}");
@@ -605,6 +614,84 @@ async fn column_lineage_facet_populates_edges() {
     let ids: Vec<&str> = graph.iter().map(|n| n.id.as_str()).collect();
     assert!(ids.contains(&"datasetField:raw:customers:customer_key"));
     assert!(!ids.contains(&"datasetField:raw:customers:id"));
+}
+
+// --- Phase 2: dataset versioning ---------------------------------------------
+
+#[tokio::test]
+async fn schema_evolution_produces_multiple_versions() {
+    let db = start_postgres().await;
+    // v1: id only.
+    ingest(
+        &db.pool,
+        r#"{"eventType":"COMPLETE","eventTime":"2023-11-14T22:00:00Z","producer":"p",
+            "run":{"runId":"r1"},"job":{"namespace":"etl","name":"j"},
+            "outputs":[{"namespace":"w","name":"d","facets":{"schema":{"fields":[
+                {"name":"id","type":"BIGINT"}]}}}]}"#,
+    )
+    .await;
+    // v2: id + email (schema changed).
+    ingest(
+        &db.pool,
+        r#"{"eventType":"COMPLETE","eventTime":"2023-11-14T23:00:00Z","producer":"p",
+            "run":{"runId":"r2"},"job":{"namespace":"etl","name":"j"},
+            "outputs":[{"namespace":"w","name":"d","facets":{"schema":{"fields":[
+                {"name":"id","type":"BIGINT"},{"name":"email","type":"STRING"}]}}}]}"#,
+    )
+    .await;
+    // A third event re-emitting v2's schema must NOT add a third version.
+    ingest(
+        &db.pool,
+        r#"{"eventType":"COMPLETE","eventTime":"2023-11-14T23:30:00Z","producer":"p",
+            "run":{"runId":"r3"},"job":{"namespace":"etl","name":"j"},
+            "outputs":[{"namespace":"w","name":"d","facets":{"schema":{"fields":[
+                {"name":"id","type":"BIGINT"},{"name":"email","type":"STRING"}]}}}]}"#,
+    )
+    .await;
+
+    let store = LineageStore::new(db.pool.clone());
+    let versions = store.dataset_versions("w", "d", 100, 0).await.unwrap();
+    assert_eq!(
+        versions.total_count, 2,
+        "two distinct schemas -> two versions"
+    );
+    // Newest first: v2 (id+email) before v1 (id).
+    assert_eq!(versions.versions[0].fields.len(), 2);
+    assert_eq!(versions.versions[1].fields.len(), 1);
+    // Distinct version ids.
+    assert_ne!(versions.versions[0].version, versions.versions[1].version);
+}
+
+#[tokio::test]
+async fn dataset_versions_unknown_dataset_is_not_found() {
+    let db = start_postgres().await;
+    let store = seeded_store(&db).await;
+    let err = store
+        .dataset_versions("w", "nope", 100, 0)
+        .await
+        .unwrap_err();
+    assert!(matches!(err, lineage_service::read::ReadError::NotFound(_)));
+}
+
+#[tokio::test]
+async fn dataset_versions_survive_rebuild() {
+    let db = start_postgres().await;
+    ingest(
+        &db.pool,
+        r#"{"eventType":"COMPLETE","eventTime":"2023-11-14T22:00:00Z","producer":"p",
+            "run":{"runId":"r1"},"job":{"namespace":"etl","name":"j"},
+            "outputs":[{"namespace":"w","name":"d","facets":{"schema":{"fields":[
+                {"name":"id","type":"BIGINT"}]}}}]}"#,
+    )
+    .await;
+    let store = LineageStore::new(db.pool.clone());
+    let before = store.dataset_versions("w", "d", 100, 0).await.unwrap();
+    lineage_service::projection::rebuild(&db.pool)
+        .await
+        .unwrap();
+    let after = store.dataset_versions("w", "d", 100, 0).await.unwrap();
+    assert_eq!(before.total_count, after.total_count);
+    assert_eq!(before.versions[0].version, after.versions[0].version);
 }
 
 #[tokio::test]
