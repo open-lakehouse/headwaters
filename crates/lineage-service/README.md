@@ -10,22 +10,33 @@ in [ADR 0006](../../docs/adr/0006-hybrid-cqrs-postgres-storage.md).
 
 ## What it does
 
-```
-        POST /api/v1/lineage[/batch]                          GET /api/v1/...
-                    │                                                ▲
-                    ▼                                                │
-   ┌──────────┐  convert   ┌──────────────┐  flush   ┌──────────┐   │   ┌────────────┐
-   │  http.rs │ ─────────▶ │ ingest/      │ ───────▶ │ writer/  │   │   │  read/     │
-   │ (axum)   │ JSON→proto │  converter.rs│ buffered │ postgres │   │   │  (axum)    │
-   └──────────┘            └──────────────┘          └────┬─────┘   │   └─────▲──────┘
-        │ 202 Accepted                                    │ append  │         │ query
-        ▼ (does not block on the write)                   ▼         │         │
-                                              ┌───────────────────┐ │  ┌──────┴───────────┐
-                                              │  events (log,     │ └──│ namespaces/jobs/ │
-                                              │  source of truth) │────▶│ runs/datasets/   │
-                                              └───────────────────┘     │ lineage_edges    │
-                                                  Projector (async)      └──────────────────┘
-                                                  folds events → read tables
+```mermaid
+flowchart LR
+    client(["Client"])
+
+    subgraph ingest["Ingest path (never blocks on the write)"]
+        direction LR
+        http["http.rs<br/>(axum)"]
+        conv["ingest/converter.rs"]
+        buf["writer/buffered.rs"]
+        pg["writer/postgres.rs"]
+        http -->|"JSON → proto"| conv
+        conv -->|"buffered"| buf
+        buf -->|"flush"| pg
+    end
+
+    events[("events<br/>(append-only log,<br/>source of truth)")]
+    tables[("namespaces / jobs /<br/>runs / datasets /<br/>lineage_edges<br/>(read tables)")]
+    read["read/<br/>(axum)"]
+
+    client -->|"POST /api/v1/lineage[/batch]"| http
+    http -.->|"202 Accepted"| client
+    pg -->|"append"| events
+    events -->|"Projector (async)<br/>folds events → read tables"| tables
+
+    tables -->|"graph / browse / stats"| read
+    events -->|"event feed / run facets /<br/>column lineage"| read
+    read -->|"GET /api/v1/…"| client
 ```
 
 1. **Ingest** (`src/http.rs`) — `POST /api/v1/lineage` (one event) and
