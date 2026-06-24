@@ -1,11 +1,13 @@
-# 0012 — Client-forwarded lineage metadata over gRPC headers
+# 0003 — Client-forwarded lineage metadata over gRPC headers
 
-> Status: **Accepted** (2026-06). Implemented in `crates/hydrofoil/src/lineage.rs`
-> (header parsing), `crates/hydrofoil/src/server.rs` (request-path wiring), and
-> `crates/lineage-service/src/read/queries.rs` (read-side surfacing). Refines
+> Status: **Accepted** (2026-06). Header parsing and request-path wiring are
+> implemented in the host Flight SQL service (an upstream open-lakehouse service,
+> not part of this repo); the spec-correct facet structs live in
+> `crates/open-lineage/src/facets.rs` and the read-side surfacing in
+> `crates/lineage-service/src/read/queries.rs`. Refines
 > [`docs/open-lineage-design.md`](../open-lineage-design.md); builds on
-> [ADR 0003](0003-per-statement-run-id-correlation.md) (run identity) and
-> [ADR 0005](0005-per-query-agent-governance-context.md) (agent context).
+> [ADR 0001](0001-per-statement-run-id-correlation.md) (run identity) and an
+> upstream per-query agent-governance-context decision.
 
 ## Context
 
@@ -19,20 +21,20 @@ The OpenLineage **Spark integration** is the prior art for how clients supply
 this: `spark.openlineage.namespace`, `appName`, `parent*`, `job.tags`,
 `job.owners.<type>`, all session-level configuration that the listener folds
 into emitted events. Hydrofoil's analog of "session configuration a client
-controls" is **gRPC request metadata**, already used for the principal
-(`x-hydrofoil-*`, ADR 0008), agent context (ADR 0005), and parent-run lineage
-context.
+controls" is **gRPC request metadata**, already used in the host service for the
+principal (`x-hydrofoil-*` headers), agent context, and parent-run lineage
+context — all upstream open-lakehouse decisions.
 
 ## Decision
 
-Extend the `x-openlineage-*` header family (parsed in
-`crates/hydrofoil/src/lineage.rs`) to Spark parity, and fold the existing
-governance context into a custom run facet:
+Extend the `x-openlineage-*` header family (parsed in the host service's
+lineage layer) to Spark parity, and fold the existing governance context into a
+custom run facet:
 
 | header | target | grammar |
 |---|---|---|
 | `x-openlineage-job-namespace` | job namespace | plain string |
-| `x-openlineage-job-name` | job name (ADR 0003 / S11) | plain string |
+| `x-openlineage-job-name` | job name (ADR 0001 / S11) | plain string |
 | `x-openlineage-job-description` | `documentation` job facet | free text |
 | `x-openlineage-job-tags` | `tags` job facet | `key[:value[:source]]`, `;`-separated |
 | `x-openlineage-job-owners` | `ownership` job facet | `type:name`, `;`-separated |

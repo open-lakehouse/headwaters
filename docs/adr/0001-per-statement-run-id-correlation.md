@@ -1,9 +1,13 @@
-# 0003 — Per-statement `run_id` for START/COMPLETE correlation
+# 0001 — Per-statement `run_id` for START/COMPLETE correlation
 
-> Status: **Accepted** (2026-06). Implemented in `crates/hydrofoil/src/engine.rs`
-> (`StoredStatement`) and `crates/hydrofoil/src/server.rs`. Refines
-> [`docs/open-lineage-design.md`](../open-lineage-design.md) and
-> [`docs/session-management.md`](../session-management.md).
+> Status: **Accepted** (2026-06). The run-identity model lives in
+> `crates/open-lineage` (`LineageContext`, `execution_context`); the
+> statement-store wiring described here is implemented in the host Flight SQL
+> service that embeds the integration (an upstream open-lakehouse service, not
+> part of this repo). Refines
+> [`docs/open-lineage-design.md`](../open-lineage-design.md); the per-session /
+> statement-lifecycle work it builds on is designed upstream and not yet
+> reproduced here.
 
 ## Context
 

@@ -1,11 +1,11 @@
-# 0017 — Tags are discovered facts carried as OpenLineage events
+# 0008 — Tags are discovered facts carried as OpenLineage events
 
 > Status: **Accepted** (2026-06). Implemented in
 > `crates/lineage-service/src/projection/processors/tags.rs` (the tags
 > processor) and the `tags` / `tag_assignments` projection tables
 > (`migrations/0003_facet_model.sql`). Builds on the projection model in ADR
-> [0016](0016-mutation-ir-projection-pipeline.md); the propagation that consumes
-> these tags is ADR [0018](0018-tag-pii-propagation.md).
+> [0007](0007-mutation-ir-projection-pipeline.md); the propagation that consumes
+> these tags is ADR [0009](0009-tag-pii-propagation.md).
 
 ## Context
 
@@ -14,7 +14,7 @@ normal lineage events (the OpenLineage `tags` facet, and per-field `schema.tags`
 and, more importantly, **tags asserted by a separate system that *discovers* a
 fact** — e.g. a PII scanner finding that `raw.users.email` contains PII and
 needing to annotate that column so policy can act on it ("where does this PII
-land downstream?", ADR 0018).
+land downstream?", ADR 0009).
 
 The question was how a discovery like that enters the system. Two options:
 
@@ -24,7 +24,7 @@ The question was how a discovery like that enters the system. Two options:
    carrying a `tags` / `schema.tags` facet), appended to the `events` log and
    projected like any other event.
 
-Option 1 breaks the load-bearing invariant of the hybrid-CQRS design (ADR 0015):
+Option 1 breaks the load-bearing invariant of the hybrid-CQRS design (ADR 0006):
 the read model is a pure projection of the event log, rebuildable by replay. A
 directly-mutated `tag_assignments` would be wiped by `projection::rebuild` unless
 carved out of the rebuild — splitting the source of truth.

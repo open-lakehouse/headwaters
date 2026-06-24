@@ -1,11 +1,11 @@
-# 0014 — OpenLineage installs its terminal node via a registered `ExtensionPlanner`
+# 0005 — OpenLineage installs its terminal node via a registered `ExtensionPlanner`
 
 > Status: **Accepted** (2026-06). Implemented in `crates/open-lineage/src/rule.rs`
 > (the `LineageMarker` node, `LineageExtensionPlanner`, and
 > `OpenLineageQueryPlanner`), wired by `src/session.rs`
 > (`instrument_session_state`). Refines the "Critical decision 1 — Where to hook"
 > section of [`docs/open-lineage-design.md`](../open-lineage-design.md) and
-> complements ADR [0003](0003-per-statement-run-id-correlation.md) (per-statement
+> complements ADR [0001](0001-per-statement-run-id-correlation.md) (per-statement
 > `run_id` correlation).
 
 ## Context
@@ -73,8 +73,8 @@ any extension planners the host already had.
   irreducibly `&SessionState`-bound, async planning-time work (extraction, context,
   START); it no longer hand-wraps the physical plan.
 - The public surface is unchanged: `instrument_session_state` /
-  `instrument_session_state_simple` keep the same names and signatures, so the sole
-  consumer (`crates/hydrofoil/src/session/mod.rs`) needs no change. The old
+  `instrument_session_state_simple` keep the same names and signatures, so the
+  embedding host service (upstream) needs no change. The old
   root-wrapping `OpenLineageQueryPlanner`/`planner.rs` is removed.
 - The OTel/`datafusion-tracing` *physical-optimizer-rule* pattern fits stateless,
   node-local execution spans; lineage's START/context half is run-scoped and
