@@ -20,6 +20,7 @@ those are referenced inline as prose rather than as numbered ADRs here.
 | [0007](0007-mutation-ir-projection-pipeline.md) | Facet processing as a backend-agnostic Mutation IR | Accepted |
 | [0008](0008-tags-as-discovered-facts.md) | Tags are discovered facts carried as OpenLineage events | Accepted |
 | [0009](0009-tag-pii-propagation.md) | Tag / PII propagation as a query-time graph traversal | Accepted |
+| [0010](0010-read-api-proto-source-of-truth.md) | Read API modeled in protobuf (`headwaters.read.v1`); REST stays hand-written for now | Accepted |
 
 See also [`docs/marquez-compatibility.md`](../marquez-compatibility.md) — a
 living reference for where the service matches, diverges from, and goes beyond
