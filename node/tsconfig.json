@@ -1,0 +1,8 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./lineage-client" },
+    { "path": "./lineage-ui" },
+    { "path": "./app" }
+  ]
+}

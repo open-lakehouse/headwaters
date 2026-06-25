@@ -47,3 +47,28 @@ marquez-it:
 proto-gen:
     buf generate
     cargo fmt -p lineage-service
+
+# --- lineage UI (node/ monorepo: lineage-client + lineage-ui + scaffold app) ---
+
+# install the node workspace dependencies (lineage-client, lineage-ui, app)
+ui-install:
+    cd node && npm install
+
+# regenerate the read-API ConnectRPC TypeScript client from the protos. Mirrors
+# `proto-gen` for the Rust side: one proto, two language clients. Output is
+# committed under node/lineage-client/src/gen/.
+ui-gen:
+    cd node && npm run gen:rpc
+
+# run the scaffold UI dev server (Vite). Expects the lineage-service on :8091
+# (`just lineage`); the Vite proxy forwards ConnectRPC calls to it.
+ui-dev:
+    cd node && npm run dev
+
+# run Storybook for the reusable lineage-ui components (mocked, no backend).
+ui-sb:
+    cd node && npm run storybook
+
+# typecheck + lint the whole node workspace (what CI gates on)
+ui-check:
+    cd node && npm run typecheck && npm run lint:ci

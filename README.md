@@ -66,6 +66,21 @@ future generated clients) agree on. See ADR
 hand-written for now and the Trestle-codegen follow-ups that would let it be
 generated.
 
+## Web UI
+
+A TypeScript/React lineage UI lives under [`node/`](node) — an npm-workspaces
+monorepo with a generated ConnectRPC client (`@headwaters/lineage-client`), a
+reusable component package (`@headwaters/lineage-ui`: graph canvas, browsers,
+detail panels, search, stats), and a thin scaffold app + Storybook. The client
+is generated from the same `proto/` module as the Rust crate — one proto, two
+language clients. See [`node/README.md`](node/README.md).
+
+```bash
+just ui-install   # install workspace deps
+just ui-dev       # dev server (proxies ConnectRPC to a local lineage-service)
+just ui-sb        # Storybook (mocked, no backend)
+```
+
 ## Documentation
 
 Design records and decisions live under [`docs/`](docs) — start with the

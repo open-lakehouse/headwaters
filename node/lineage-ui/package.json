@@ -1,0 +1,36 @@
+{
+  "name": "@headwaters/lineage-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@headwaters/lineage-client": "*",
+    "@tanstack/react-query": "^5.100.0",
+    "@xyflow/react": "^12.4.0",
+    "clsx": "^2.1.1",
+    "elkjs": "^0.11.0",
+    "lucide-react": "^1.17.0",
+    "tailwind-merge": "^3.6.0"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@storybook/react": "^8.6.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "typescript": "^5.7.0"
+  }
+}
