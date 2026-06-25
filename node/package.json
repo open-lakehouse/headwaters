@@ -1,0 +1,23 @@
+{
+  "name": "@headwaters/node",
+  "private": true,
+  "workspaces": [
+    "lineage-client",
+    "lineage-ui",
+    "app"
+  ],
+  "scripts": {
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "lint:ci": "biome ci .",
+    "format": "biome format --write .",
+    "typecheck": "tsc -b",
+    "gen:rpc": "npm run gen:rpc --workspace @headwaters/lineage-client",
+    "dev": "npm run dev --workspace @headwaters/lineage-app",
+    "storybook": "npm run storybook --workspace @headwaters/lineage-app"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.8",
+    "typescript": "^5.7.0"
+  }
+}

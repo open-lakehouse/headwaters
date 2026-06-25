@@ -1,0 +1,25 @@
+# TypeScript codegen for headwaters' read API (headwaters.read.v1.ReadService),
+# consumed by the connect-web client (src/client.ts). The proto source is
+# single-sourced from the repo-root tree (proto/), the same module the Rust
+# crate generates from (see the repo-root buf.gen.yaml). One proto, two language
+# clients.
+#
+# connect-es v2 emits service descriptors directly from protoc-gen-es; the read
+# client reads the generated `ReadService` descriptor via
+# `createClient(ReadService, transport)`.
+#
+# Regenerate with `npm run gen:rpc` (from node/lineage-client) or `just ui-gen`.
+# Output is committed under src/gen/ so CI builds straight from source.
+# The `gen:rpc` script passes `--include-imports` so the googleapis annotation
+# protos (google/api/*) the read proto references are generated too — the
+# generated TS then resolves its imports without a separate google-protobuf-es
+# dependency.
+version: v2
+inputs:
+  - directory: ../../proto
+plugins:
+  - local: protoc-gen-es
+    out: src/gen
+    opt:
+      - target=ts
+      - import_extension=js
