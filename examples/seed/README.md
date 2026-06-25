@@ -5,12 +5,15 @@ to explore the UI against. The data is hand-designed to exercise **every**
 read-API feature the UI surfaces, not just the happy path.
 
 ```sh
-just lineage          # start the service (needs a Postgres DSN — see below)
-just seed             # ingest the demo data into it
+just dev              # start Postgres (Docker) + the lineage-service on :8091
+just seed             # ingest the demo data into it (in another shell)
 just ui-dev           # open the UI against it
+just dev-down         # clean shutdown (removes the Postgres container + volume)
 ```
 
-`just seed` is a thin wrapper over [`ingest.sh`](ingest.sh).
+`just dev` brings up a Dockerized Postgres and runs the service against it; see
+[Running](#running) for running the two separately. `just seed` is a thin
+wrapper over [`ingest.sh`](ingest.sh).
 
 ## What's here
 
@@ -70,7 +73,15 @@ bigquery://reporting        marts.exec_customer_overview
 
 ## Running
 
-The service needs Postgres. With a DSN exported:
+The service needs Postgres. The easiest path runs one in Docker:
+
+```sh
+just dev              # Postgres (Docker) + lineage-service on :8091
+just seed             # in another shell
+just dev-down         # tear it all down when done
+```
+
+Or bring up Postgres yourself and point the service at it with a DSN:
 
 ```sh
 export DATABASE_URL=postgres://user:pass@localhost:5432/lineage
