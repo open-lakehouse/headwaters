@@ -46,11 +46,25 @@ behind the `marquez-it` feature (`just marquez-it`, needs Docker).
 
 ## Protobuf
 
-The lineage event model is defined in `proto/lineage/v1/lineage.proto`. The
-generated Rust types are committed under
-`crates/lineage-service/src/proto/lineage.v1.rs` so the workspace builds without
-a codegen step. Regenerate with `just proto-gen` (uses [`buf`](https://buf.build)
-+ the remote `buffa` plugin).
+Two protobuf packages define the service surface:
+
+- **`proto/lineage/v1`** — the OpenLineage-aligned event/facet model and the
+  ingest endpoints (`IngestService`, the spec `POST /lineage` surface).
+- **`proto/headwaters/read/v1`** — headwaters' own (non-spec) read API the web UI
+  consumes (`ReadService`: namespace/job/dataset browse, the lineage graph,
+  search, events, run facets, dataset versions, tags, PII propagation, stats).
+
+The generated Rust types are committed under
+`crates/lineage-service/src/proto/` (`lineage.v1.rs`, `headwaters.read.v1.rs`) so
+the workspace builds without a codegen step. Regenerate with `just proto-gen`
+(uses [`buf`](https://buf.build) + the remote `buffa` plugin).
+
+The read API is served by a hand-written Axum server (`src/read/`) that honors
+the exact Marquez wire contract; the proto is the canonical shape it (and the
+future generated clients) agree on. See ADR
+[0010](docs/adr/0010-read-api-proto-source-of-truth.md) for why serving is kept
+hand-written for now and the Trestle-codegen follow-ups that would let it be
+generated.
 
 ## Documentation
 
