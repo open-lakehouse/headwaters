@@ -7,6 +7,10 @@ rust-version = "1.88"
 [dependencies]
 buffa = { version = "0.7", features = ["json"] }
 buffa-types = { version = "0.7", features = ["json"] }
+# ConnectRPC server runtime for the read-API facade (generated under
+# src/connect_gen/). The read REST server and the Connect surface serve the same
+# buffa messages on one port.
+connectrpc = { version = "0.7", features = ["server", "axum"] }
 sqlx = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
