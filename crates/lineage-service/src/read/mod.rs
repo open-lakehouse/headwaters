@@ -16,6 +16,7 @@
 pub mod connect;
 pub mod http;
 pub mod ids;
+pub mod marquez_compat;
 pub mod queries;
 
 use sqlx::PgPool;

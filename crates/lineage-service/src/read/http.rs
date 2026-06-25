@@ -61,6 +61,13 @@ pub fn router(store: LineageStore) -> Router {
         .route("/api/v1/tags", get(list_tags))
         // Tag/PII propagation: the fields reachable downstream from a tag.
         .route("/api/v1/tags/:tag/downstream", get(tag_downstream))
+        // Normalize JSON responses so the upstream Marquez web UI (which assumes
+        // empty arrays like `tags`/`inputs` are always present) doesn't crash on
+        // proto3-JSON's omitted-empty fields. Additive only — a no-op for our own
+        // UI's generated client. See `super::marquez_compat`.
+        .layer(axum::middleware::map_response(
+            super::marquez_compat::normalize,
+        ))
         .with_state(store)
 }
 
@@ -96,13 +103,22 @@ async fn stats_lineage_events(
 
 /// `GET /api/v1/stats/:asset?period=&limit=` — first-seen counts for `jobs` or
 /// `datasets`, bucketed by period. Bare array, like `stats_lineage_events`.
+///
+/// The Marquez dashboard also requests `stats/sources` (and may add others); for
+/// assets we don't track we return an empty array rather than a 404, so the UI's
+/// metrics panel degrades gracefully instead of logging fetch errors.
 async fn stats_asset(
     State(store): State<LineageStore>,
     Path(asset): Path<String>,
     Query(p): Query<StatsParams>,
 ) -> Result<impl IntoResponse, ReadError> {
-    let resp = store.stats_asset(&asset, &p.period, p.limit).await?;
-    Ok(Json(resp.buckets))
+    match store.stats_asset(&asset, &p.period, p.limit).await {
+        Ok(resp) => Ok(Json(resp.buckets)),
+        Err(ReadError::NotFound(_)) => {
+            Ok(Json(Vec::<crate::headwaters::read::v1::StatBucket>::new()))
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// `GET /api/v1/tags` — the tag catalog.
