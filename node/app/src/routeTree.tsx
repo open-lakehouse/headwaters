@@ -1,9 +1,10 @@
 import { createRootRoute, createRoute } from "@tanstack/react-router";
 import { AppShell } from "./AppShell.js";
 import { DatasetsPage } from "./routes/DatasetsPage.js";
+import { HomePage } from "./routes/HomePage.js";
 import { JobsPage } from "./routes/JobsPage.js";
 import { LineagePage } from "./routes/LineagePage.js";
-import { HomePage, SearchPage } from "./routes/placeholders.js";
+import { SearchPage } from "./routes/SearchPage.js";
 
 const rootRoute = createRootRoute({ component: AppShell });
 

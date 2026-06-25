@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "@xyflow/react/dist/style.css";
 
+/* The reusable components live in a sibling workspace package; Tailwind 4's
+   automatic content detection doesn't reach across the package boundary, so
+   register lineage-ui's source explicitly. Without this, utility classes used
+   ONLY in lineage-ui (e.g. h-40, bg-sky-500/70) never make it into the bundle. */
+@source "../../lineage-ui/src/**/*.{ts,tsx}";
+
 /* Map the semantic tokens lineage-ui's components reference (muted, border,
    background, foreground, …) to concrete colors, in both light and dark mode.
    Tailwind 4 reads these via the @theme inline bindings below. */
