@@ -3,6 +3,15 @@
 mod proto;
 pub use proto::{headwaters, lineage};
 
+// Generated ConnectRPC service facade for the read API (committed under
+// src/connect_gen/, produced by `just proto-gen`). References the buffa messages
+// + views in `crate::proto` via the `buffa_module=crate::proto` codegen opt. The
+// module carries its own `#![allow(...)]` lints. The `lineage.v1` ingest facade
+// is generated alongside but intentionally not mounted — ingest stays a
+// hand-written OpenLineage REST surface (see `crate::http`).
+#[path = "connect_gen/mod.rs"]
+mod connect_gen;
+
 pub mod config;
 pub mod http;
 pub mod ingest;

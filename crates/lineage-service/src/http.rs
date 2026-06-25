@@ -9,6 +9,8 @@
 //! (`services/lineage/internal/ingest/handler.go`); the batch response shape is
 //! preserved.
 
+use std::sync::Arc;
+
 use axum::Router;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -17,6 +19,7 @@ use axum::routing::{get, post};
 use serde::Serialize;
 use tower_http::cors::CorsLayer;
 
+use crate::connect_gen::headwaters::read::v1::ReadServiceExt;
 use crate::ingest::{convert_batch, convert_event};
 use crate::read::{self, LineageStore};
 use crate::writer::buffered::BufferedWriterHandle;
@@ -38,6 +41,14 @@ pub struct AppState {
 pub fn router(state: AppState) -> Router {
     let read_routes = read::http::router(state.store.clone());
 
+    // The read API also speaks ConnectRPC, served on this same listener so the
+    // web UI can use generated typed clients. `LineageStore` implements the
+    // generated `ReadService` trait (see `read::connect`), delegating to the same
+    // store the REST handlers use — one model, two surfaces. Connect POSTs to
+    // `/headwaters.read.v1.ReadService/<Method>`.
+    let connect_router =
+        ReadServiceExt::register(Arc::new(state.store.clone()), connectrpc::Router::new());
+
     let ingest_routes = Router::new()
         .route("/health", get(|| async { "OK" }))
         .route("/api/v1/lineage", post(ingest_event))
@@ -46,6 +57,9 @@ pub fn router(state: AppState) -> Router {
 
     ingest_routes
         .merge(read_routes)
+        // REST routes are matched explicitly above; everything else (the Connect
+        // RPC paths) falls through to the Connect dispatcher.
+        .fallback_service(connect_router.into_axum_service())
         .layer(CorsLayer::permissive())
 }
 
