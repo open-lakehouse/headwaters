@@ -27,13 +27,22 @@ use axum::response::Response;
 use http_body_util::BodyExt;
 use serde_json::{Map, Value};
 
-/// Array fields Marquez dereferences unguarded on a job/dataset entity (e.g.
-/// `job.tags.slice(...)`, `dataset.fields.map(...)`). Missing → `[]`.
+/// Array fields Marquez dereferences unguarded on a job/dataset/graph-node
+/// entity (e.g. `job.tags.slice(...)`, `dataset.fields.map(...)`,
+/// `node.outEdges.map(...)` in the lineage graph layout). Missing → `[]`.
 ///
-/// Scoped to job/dataset-shaped objects (those carrying a `type` — `BATCH`,
-/// `DB_TABLE`, …); namespaces, runs, and `{namespace,name}` id-pairs don't have
-/// a `type` and so are left untouched.
-const ARRAY_KEYS: &[&str] = &["tags", "inputs", "outputs", "latestRuns", "fields"];
+/// Scoped to entities carrying a `type` (`BATCH`, `DB_TABLE`, … — jobs,
+/// datasets, and lineage-graph nodes all have one); namespaces, runs, and
+/// `{namespace,name}` id-pairs don't, and so are left untouched.
+const ARRAY_KEYS: &[&str] = &[
+    "tags",
+    "inputs",
+    "outputs",
+    "latestRuns",
+    "fields",
+    "inEdges",
+    "outEdges",
+];
 
 /// Recursively ensure the Marquez-expected default-present keys exist on every
 /// object. Only *adds* missing keys; never overwrites a present value.
