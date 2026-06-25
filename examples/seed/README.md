@@ -18,7 +18,9 @@ wrapper over [`ingest.sh`](ingest.sh).
 
 Because our read API honors the Marquez wire contract, `just marquez-ui` spawns
 the upstream **Marquez** web UI pointed straight at our service — a handy
-cross-check of the seeded data against the reference frontend.
+cross-check of the seeded data against the reference frontend. (A small
+response-normalization layer fills the empty arrays the Marquez frontend expects
+but proto3-JSON omits; see `src/read/marquez_compat.rs`.)
 
 ## What's here
 
