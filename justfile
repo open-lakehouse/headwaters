@@ -20,6 +20,13 @@ lineage *args:
     RUST_LOG="${RUST_LOG:-lineage_service=debug}" \
     cargo run -p lineage-service -- {{ args }}
 
+# seed a running lineage-service with the rich demo lineage in examples/seed
+# (regenerates the Headwaters demo graph, then POSTs it + the vendored Marquez
+# food-delivery dataset to the batch endpoint). Target a non-default host with
+# MARQUEZ_URL=… (defaults to http://localhost:8091). See examples/seed/README.md.
+seed *files:
+    examples/seed/ingest.sh {{ files }}
+
 # the Postgres-backed read/projection acceptance tests (needs Docker; spins up
 # a postgres container per test via testcontainers). On colima/Docker Desktop
 # you may need to point DOCKER_HOST at the right socket first.
