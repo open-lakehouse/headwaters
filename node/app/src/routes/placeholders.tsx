@@ -16,12 +16,6 @@ export function HomePage() {
   return <Placeholder title="Home" note="Activity stats land in Stage 3." />;
 }
 
-export function LineagePage() {
-  return (
-    <Placeholder title="Lineage" note="The lineage graph lands in Stage 2." />
-  );
-}
-
 export function SearchPage() {
   return <Placeholder title="Search" note="Search lands in Stage 3." />;
 }

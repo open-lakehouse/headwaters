@@ -23,6 +23,17 @@ export { JobBrowser } from "./browser/JobBrowser.js";
 export { AsyncBoundary } from "./components/ui/AsyncBoundary.js";
 export { Pager } from "./components/ui/Pager.js";
 export { RunStateBadge } from "./components/ui/RunStateBadge.js";
+export type { LineageCanvasProps } from "./graph/LineageCanvas.js";
+// --- lineage graph ---
+export { LineageCanvas } from "./graph/LineageCanvas.js";
+export type { LineageViewProps } from "./graph/LineageView.js";
+export { LineageView } from "./graph/LineageView.js";
+export {
+  datasetNodeData,
+  fieldNodeData,
+  jobNodeData,
+  type LineageNodeKind,
+} from "./graph/model.js";
 export type { ReadClientProviderProps } from "./hooks/client-context.js";
 // --- client injection (the React companion to lineage-client's transport seam) ---
 export { ReadClientProvider, useReadClient } from "./hooks/client-context.js";
@@ -41,3 +52,4 @@ export {
   useLineageEventStats,
   useSearch,
 } from "./hooks/queries.js";
+export { datasetNodeId, jobNodeId, nodeIdKind } from "./lib/nodeId.js";
