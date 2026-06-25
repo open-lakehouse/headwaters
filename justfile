@@ -38,10 +38,12 @@ conformance-it:
 marquez-it:
     cargo test -p datafusion-open-lineage --features marquez-it --test marquez_acceptance -- --ignored --nocapture
 
-# regenerate lineage-service's protobuf message types from the lineage protos
-# (events, facets, read DTOs, service defs). One-time: the buffa plugin runs
-# remotely on the BSR (no local install). The generated output is committed
-# under crates/lineage-service/src/proto/.
+# regenerate lineage-service's protobuf message types + the read-API ConnectRPC
+# facade from the lineage protos (events, facets, read DTOs, service defs). The
+# buffa plugin runs remotely on the BSR (no local install); the two connect
+# plugins are local binaries (`cargo install protoc-gen-connect-rust
+# protoc-gen-buffa-packaging`). The generated output is committed under
+# crates/lineage-service/src/{proto,connect_gen}/.
 proto-gen:
-    buf generate --path proto/lineage/v1
+    buf generate
     cargo fmt -p lineage-service

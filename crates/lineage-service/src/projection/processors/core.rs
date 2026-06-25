@@ -12,7 +12,7 @@ use serde_json::Value as JsonValue;
 use crate::projection::RawEvent;
 use crate::projection::mutation::{EntityRef, JobEdges, Mutation};
 use crate::projection::processor::FacetProcessor;
-use crate::read::model::{dataset_node_id, job_node_id};
+use crate::read::ids::{dataset_node_id, job_node_id};
 
 /// The event time, or the epoch for an unknown timestamp — matching the old
 /// fold, which used `0` so the latest-wins guards still have a total order.

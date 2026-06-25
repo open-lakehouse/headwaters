@@ -1,17 +1,29 @@
-# Rust proto codegen for the lineage event model + read DTOs.
+# Rust proto codegen for the lineage event model + read DTOs + the read-API
+# ConnectRPC facade.
 #
-# Generates the `lineage.v1` message/view/enum types only. The `service.proto`
-# `LineageService` RPCs *are* defined (and carry `google.api.http` annotations),
-# but buffa does not emit ConnectRPC stubs — those come from a separate
-# `protoc-gen-connect-rust` pass wired up in a later step. For now the REST
-# server is hand-written against these typed messages.
+# Three passes:
+# - buffa (remote, BSR): the `lineage.v1` and `headwaters.read.v1` message/view/
+#   enum types, committed under crates/lineage-service/src/proto/.
+# - protoc-gen-connect-rust (local): the ConnectRPC service facade for the read
+#   API (`headwaters.read.v1.ReadService`) — service traits + routers that
+#   reference the buffa messages/views above via `buffa_module=crate::proto`.
+# - protoc-gen-buffa-packaging (local): stitches the per-service connect_gen
+#   `mod.rs` tree.
+#
+# Only the read API gets a Connect facade; the OpenLineage ingest surface
+# (`lineage.v1.IngestService`) stays a hand-written REST endpoint per the spec.
+# The hand-written read REST server (crates/lineage-service/src/read/http.rs)
+# serves the *same* buffa messages the Connect facade does — one model, two
+# surfaces, on one port.
 #
 # Regenerate with `just proto-gen`. Output is committed under
-# crates/lineage-service/src/proto/ so CI runners without a proto-codegen step
-# build straight from source. (`proto`, not `gen`: `gen` is a reserved keyword
-# in Rust 2024.)
+# crates/lineage-service/src/{proto,connect_gen}/ so CI runners without a
+# proto-codegen step build straight from source. (`proto`/`connect_gen`, not
+# `gen`: `gen` is a reserved keyword in Rust 2024.)
 #
-# Uses the published remote buffa plugin (runs on the BSR, no local install).
+# The buffa pass runs remotely on the BSR (no local install); the two connect
+# plugins are locally-installed binaries (`cargo install protoc-gen-connect-rust
+# protoc-gen-buffa-packaging`).
 version: v2
 plugins:
   - remote: buf.build/anthropics/buffa
@@ -19,3 +31,15 @@ plugins:
     opt:
       - file_per_package=true
       - json=true
+  # ConnectRPC server facade for the read API. Emits service traits + routers
+  # only, referencing the buffa models above via the absolute `buffa_module`
+  # path (the `__buffa::view` types they already carry).
+  - local: protoc-gen-connect-rust
+    out: crates/lineage-service/src/connect_gen
+    opt:
+      - buffa_module=crate::proto
+  - local: protoc-gen-buffa-packaging
+    out: crates/lineage-service/src/connect_gen
+    strategy: all
+    opt:
+      - filter=services

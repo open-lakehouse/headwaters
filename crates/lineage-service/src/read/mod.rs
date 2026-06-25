@@ -13,8 +13,9 @@
 //! is a `WITH RECURSIVE` walk over `lineage_edges`; the events feed, run facets,
 //! and column-lineage endpoints read the raw `events` log directly.
 
+pub mod connect;
 pub mod http;
-pub mod model;
+pub mod ids;
 pub mod queries;
 
 use sqlx::PgPool;

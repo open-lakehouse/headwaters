@@ -82,21 +82,27 @@ fn default_stats_limit() -> usize {
 }
 
 /// `GET /api/v1/stats/lineage-events?period=&limit=` — time-bucketed event counts.
+///
+/// Marquez returns a bare JSON array of `{date, count}` here (no envelope), so
+/// we serialize the response message's `buckets` directly rather than the
+/// `StatsResponse` wrapper.
 async fn stats_lineage_events(
     State(store): State<LineageStore>,
     Query(p): Query<StatsParams>,
 ) -> Result<impl IntoResponse, ReadError> {
-    Ok(Json(store.stats_lineage_events(&p.period, p.limit).await?))
+    let resp = store.stats_lineage_events(&p.period, p.limit).await?;
+    Ok(Json(resp.buckets))
 }
 
 /// `GET /api/v1/stats/:asset?period=&limit=` — first-seen counts for `jobs` or
-/// `datasets`, bucketed by period.
+/// `datasets`, bucketed by period. Bare array, like `stats_lineage_events`.
 async fn stats_asset(
     State(store): State<LineageStore>,
     Path(asset): Path<String>,
     Query(p): Query<StatsParams>,
 ) -> Result<impl IntoResponse, ReadError> {
-    Ok(Json(store.stats_asset(&asset, &p.period, p.limit).await?))
+    let resp = store.stats_asset(&asset, &p.period, p.limit).await?;
+    Ok(Json(resp.buckets))
 }
 
 /// `GET /api/v1/tags` — the tag catalog.
@@ -239,7 +245,21 @@ async fn lineage(
     State(store): State<LineageStore>,
     Query(params): Query<LineageParams>,
 ) -> Result<impl IntoResponse, ReadError> {
-    Ok(Json(store.lineage(&params.node_id, params.depth).await?))
+    let graph = store.lineage(&params.node_id, params.depth).await?;
+    Ok(Json(lineage_envelope(graph)))
+}
+
+/// Wrap a lineage graph in an envelope that *always* carries the `graph` key.
+///
+/// The proto message omits an empty `graph` from JSON (proto3 drops empty
+/// repeated fields), but the web UI's graph layout reads `payload.graph` and
+/// crashes (`.map()` of undefined) when it is absent — and the column-lineage
+/// view legitimately returns an empty graph (200, not 404). So for the REST
+/// surface we serialize the nodes under an unconditional `graph` field. (The
+/// Connect surface keeps proto semantics: typed clients default a missing
+/// repeated to an empty list.)
+fn lineage_envelope(graph: crate::headwaters::read::v1::LineageGraph) -> serde_json::Value {
+    serde_json::json!({ "graph": graph.graph })
 }
 
 async fn get_dataset_versions(
@@ -278,5 +298,6 @@ async fn column_lineage(
     State(store): State<LineageStore>,
     Query(params): Query<ColumnLineageParams>,
 ) -> Result<impl IntoResponse, ReadError> {
-    Ok(Json(store.column_lineage(&params.node_id).await?))
+    let graph = store.column_lineage(&params.node_id).await?;
+    Ok(Json(lineage_envelope(graph)))
 }
