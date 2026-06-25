@@ -22,6 +22,7 @@ tower-http = { version = "0.6", features = ["cors"] }
 serde = { workspace = true }
 serde_json = "1"
 http-body = "1"
+http-body-util = "0.1"
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = { workspace = true }
@@ -42,7 +43,6 @@ tempfile = "3"
 # For exercising the read router over HTTP in tests (ServiceExt::oneshot), which
 # catches route-syntax regressions the direct store-call tests can't.
 tower = { version = "0.5", features = ["util"] }
-http-body-util = "0.1"
 testcontainers = { version = "0.27", features = ["http_wait"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 # The conformance harness posts events to / reads from the real Marquez over HTTP.

@@ -91,14 +91,25 @@ export function fieldNodeData(node: LineageNode): FieldNodeData {
   return { dataset, field };
 }
 
-/** Deduplicated edges from every node's in/out edges, as `{source, target}`. */
+/**
+ * Deduplicated edges from every node's in/out edges, as `{source, target}`.
+ *
+ * Edges whose endpoints fall outside the returned node set are dropped. The read
+ * API includes edges to neighbors just beyond the depth horizon (nodes it did
+ * not return), so an unfiltered edge list references ids with no corresponding
+ * node — which the ELK layout rejects (and ReactFlow would render as floating
+ * edges to nowhere). Keeping only edges between present nodes is what makes the
+ * graph layout reliably.
+ */
 export function collectEdges(
   graph: LineageGraph,
 ): { source: string; target: string }[] {
+  const present = new Set(graph.graph.map((n) => n.id));
   const seen = new Set<string>();
   const edges: { source: string; target: string }[] = [];
   for (const node of graph.graph) {
     for (const e of [...node.inEdges, ...node.outEdges]) {
+      if (!present.has(e.origin) || !present.has(e.destination)) continue;
       const key = `${e.origin}->${e.destination}`;
       if (seen.has(key)) continue;
       seen.add(key);
