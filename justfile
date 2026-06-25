@@ -13,6 +13,13 @@ PG_DB := "lineage"
 # DSN the lineage-service reads from DATABASE_URL.
 DATABASE_URL := "postgres://" + PG_USER + ":" + PG_PASSWORD + "@localhost:" + PG_PORT + "/" + PG_DB
 
+# the Marquez reference web UI, pointed at our (Marquez-compatible) read API.
+MARQUEZ_WEB_CONTAINER := "headwaters-marquez-web"
+MARQUEZ_WEB_IMAGE := "marquezproject/marquez-web:0.50.0"
+MARQUEZ_WEB_PORT := "3000"
+# Port our lineage-service serves on (the read API the UI talks to).
+LINEAGE_PORT := "8091"
+
 # list all commands by default
 _default:
     just --list
@@ -104,10 +111,48 @@ dev *args: pg-up
     RUST_LOG="${RUST_LOG:-lineage_service=debug}" \
     cargo run -p lineage-service -- {{ args }}
 
-# Stop the lineage-service with Ctrl-C first.
+# Stop the lineage-service with Ctrl-C first. Also removes the Marquez UI if it
+# was started.
 #
-# clean shutdown of the local environment (removes the Postgres container + volume)
-dev-down: pg-down
+# clean shutdown of the local environment (removes the Postgres + Marquez containers)
+dev-down: pg-down marquez-ui-down
+
+# --- Marquez reference web UI ---
+
+# Our read API honors the Marquez wire contract, so the upstream Marquez web UI
+# can point straight at our lineage-service — handy for cross-checking the data
+# against the reference frontend. Needs a running service (`just dev`) on
+# LINEAGE_PORT. The container reaches the host via host.docker.internal (mapped
+# to the host gateway so it works on Linux too). Idempotent. Open
+# http://localhost:{{ MARQUEZ_WEB_PORT }} once it's up.
+#
+# spawn the Marquez reference web UI pointed at our lineage-service
+marquez-ui:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "$(docker ps -aq -f name='^{{ MARQUEZ_WEB_CONTAINER }}$')" ]; then
+        echo "→ container {{ MARQUEZ_WEB_CONTAINER }} exists; (re)starting"
+        docker start {{ MARQUEZ_WEB_CONTAINER }} >/dev/null
+    else
+        if ! curl -fsS "http://localhost:{{ LINEAGE_PORT }}/health" >/dev/null 2>&1; then
+            echo "warning: no lineage-service on :{{ LINEAGE_PORT }} — start it with \`just dev\`" >&2
+        fi
+        echo "→ creating {{ MARQUEZ_WEB_CONTAINER }} ({{ MARQUEZ_WEB_IMAGE }}) on :{{ MARQUEZ_WEB_PORT }}"
+        docker run -d \
+            --name {{ MARQUEZ_WEB_CONTAINER }} \
+            --add-host host.docker.internal:host-gateway \
+            -e MARQUEZ_HOST=host.docker.internal \
+            -e MARQUEZ_PORT={{ LINEAGE_PORT }} \
+            -e WEB_PORT={{ MARQUEZ_WEB_PORT }} \
+            -p {{ MARQUEZ_WEB_PORT }}:{{ MARQUEZ_WEB_PORT }} \
+            {{ MARQUEZ_WEB_IMAGE }} >/dev/null
+    fi
+    echo "✓ Marquez UI: http://localhost:{{ MARQUEZ_WEB_PORT }}  (API → host.docker.internal:{{ LINEAGE_PORT }})"
+
+# remove the Marquez web UI container
+marquez-ui-down:
+    -docker rm -f {{ MARQUEZ_WEB_CONTAINER }} 2>/dev/null
+    @echo "✓ removed {{ MARQUEZ_WEB_CONTAINER }}"
 
 # the Postgres-backed read/projection acceptance tests (needs Docker; spins up
 # a postgres container per test via testcontainers). On colima/Docker Desktop
