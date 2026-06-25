@@ -9,7 +9,7 @@ export function DatasetNode({ data, selected }: NodeProps) {
   const { node } = data as unknown as { node: LineageNode };
   const d = datasetNodeData(node);
   return (
-    <BaseNode selected={selected} className="w-[240px]">
+    <BaseNode selected={selected} className="h-[92px] w-[240px]">
       <div className="flex items-center gap-2 px-3 pt-2 text-xs font-medium text-sky-600 dark:text-sky-400">
         <Database className="h-3.5 w-3.5" />
         DATASET

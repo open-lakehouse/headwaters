@@ -6,7 +6,7 @@ export function JobsPage() {
   return (
     <div className="flex h-full flex-col">
       <header className="border-b border-border px-6 py-4">
-        <h1 className="text-lg font-semibold">Jobs</h1>
+        <h1 className="text-lg font-semibold tracking-tight">Jobs</h1>
       </header>
       <div className="min-h-0 flex-1">
         <JobBrowser

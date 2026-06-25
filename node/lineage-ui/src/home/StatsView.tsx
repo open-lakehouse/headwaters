@@ -40,7 +40,7 @@ export function StatsView({ title, buckets }: StatsViewProps) {
             title={`${b.date}: ${b.count}`}
           >
             <div
-              className="w-full rounded-t bg-sky-500/70 transition-colors group-hover:bg-sky-500"
+              className="w-full rounded-t bg-primary/70 transition-colors group-hover:bg-primary"
               style={{ height: `${(counts[i] / max) * 100}%` }}
             />
           </div>

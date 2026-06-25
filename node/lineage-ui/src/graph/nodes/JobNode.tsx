@@ -10,7 +10,7 @@ export function JobNode({ data, selected }: NodeProps) {
   const { node } = data as unknown as { node: LineageNode };
   const d = jobNodeData(node);
   return (
-    <BaseNode selected={selected} className="w-[240px]">
+    <BaseNode selected={selected} className="h-[92px] w-[240px]">
       <div className="flex items-center justify-between gap-2 px-3 pt-2">
         <span className="flex items-center gap-2 text-xs font-medium text-violet-600 dark:text-violet-400">
           <Cog className="h-3.5 w-3.5" />

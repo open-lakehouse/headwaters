@@ -1,7 +1,10 @@
 import type { LineageGraph, LineageNode } from "@headwaters/lineage-client";
 import {
   Background,
+  type ColorMode,
   Controls,
+  type Edge,
+  MarkerType,
   type Node,
   type NodeTypes,
   ReactFlow,
@@ -27,6 +30,12 @@ export interface LineageCanvasProps {
   selectedId?: string;
   /** Called when a node is clicked. */
   onSelect?: (node: LineageNode) => void;
+  /**
+   * Drives ReactFlow's built-in canvas/Controls/Background colors. Defaults to
+   * `"system"` (follows the OS preference); a host with an explicit light/dark
+   * toggle can pass its active theme so the canvas tracks the rest of the app.
+   */
+  colorMode?: ColorMode;
 }
 
 /**
@@ -44,7 +53,12 @@ export function LineageCanvas(props: LineageCanvasProps) {
   );
 }
 
-function LineageFlow({ graph, selectedId, onSelect }: LineageCanvasProps) {
+function LineageFlow({
+  graph,
+  selectedId,
+  onSelect,
+  colorMode = "system",
+}: LineageCanvasProps) {
   const { nodes, edges } = useLineageLayout(graph);
   const { fitView } = useReactFlow();
 
@@ -52,6 +66,42 @@ function LineageFlow({ graph, selectedId, onSelect }: LineageCanvasProps) {
   const decoratedNodes = useMemo(
     () => nodes.map((n) => ({ ...n, selected: n.id === selectedId })),
     [nodes, selectedId],
+  );
+
+  // Edges carry the read direction (upstream → downstream): an arrowhead on the
+  // target end plus a gentle animated dash give the static graph a sense of
+  // flow. When a node is selected we emphasize its incident edges (in `primary`)
+  // and dim the rest — the Databricks-style "show me what connects here" cue.
+  const decoratedEdges = useMemo<Edge[]>(
+    () =>
+      edges.map((e) => {
+        const incident =
+          !!selectedId && (e.source === selectedId || e.target === selectedId);
+        const dimmed = !!selectedId && !incident;
+        // Reference the raw HSL-component tokens (authored in the host's base
+        // layer, theme-reactive) rather than Tailwind's @theme-inline color
+        // vars, which aren't guaranteed to be emitted as global properties.
+        const stroke = incident
+          ? "hsl(var(--primary))"
+          : "hsl(var(--muted-foreground))";
+        return {
+          ...e,
+          animated: true,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 16,
+            height: 16,
+            color: stroke,
+          },
+          style: {
+            stroke,
+            strokeWidth: incident ? 2 : 1.5,
+            opacity: dimmed ? 0.35 : incident ? 1 : 0.85,
+            transition: "opacity 150ms ease, stroke 150ms ease",
+          },
+        };
+      }),
+    [edges, selectedId],
   );
 
   // The layout resolves asynchronously (ELK runs off-thread), so nodes arrive
@@ -82,9 +132,10 @@ function LineageFlow({ graph, selectedId, onSelect }: LineageCanvasProps) {
   return (
     <ReactFlow
       nodes={decoratedNodes}
-      edges={edges}
+      edges={decoratedEdges}
       nodeTypes={nodeTypes}
       onNodeClick={handleNodeClick}
+      colorMode={colorMode}
       fitView
       proOptions={{ hideAttribution: true }}
       minZoom={0.1}
