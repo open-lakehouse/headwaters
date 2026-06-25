@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "resolveJsonModule": true,
+    "types": ["vite/client", "node", "react", "react-dom"]
+  },
+  "references": [{ "path": "../lineage-client" }, { "path": "../lineage-ui" }],
+  "include": ["src", "vite.config.ts", ".storybook"],
+  "exclude": ["node_modules", "dist"]
+}
