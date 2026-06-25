@@ -1,14 +1,19 @@
-//! Generated protobuf message + view types for the lineage event model.
+//! Generated protobuf message + view types.
 //!
 //! Produced by `just proto-gen` (the `buf.build/anthropics/buffa` plugin over
-//! `proto/lineage/v1/*.proto`). Committed to source — do not hand-edit
-//! `lineage.v1.rs`; regenerate it instead.
+//! `proto/**/*.proto`). Committed to source — do not hand-edit the `*.rs`
+//! includes; regenerate them instead.
 //!
-//! Only message/view/enum types are generated. The `LineageService` RPCs are
-//! defined in `service.proto` (with `google.api.http` annotations), but buffa
-//! does not emit ConnectRPC stubs — that is a separate, later codegen step. The
-//! generated types back both the hand-written REST server and (eventually) the
-//! Connect service.
+//! Two packages are generated:
+//! - [`lineage::v1`] — the OpenLineage-aligned spec event/facet model and the
+//!   ingest request/response shapes (`IngestService`).
+//! - [`headwaters::read::v1`] — headwaters' own (non-spec) read API DTOs and the
+//!   `ReadService` request/response messages the web UI consumes.
+//!
+//! Only message/view/enum types are generated here. The service RPCs are defined
+//! in their `service.proto` files (with `google.api.http` annotations); the
+//! ConnectRPC stubs + Axum routes come from a separate `protoc-gen-connect-rust`
+//! / Trestle pass.
 
 #[allow(
     dead_code,
@@ -21,5 +26,21 @@
 pub mod lineage {
     pub mod v1 {
         include!("lineage.v1.rs");
+    }
+}
+
+#[allow(
+    dead_code,
+    non_camel_case_types,
+    unused_imports,
+    clippy::derivable_impls,
+    clippy::doc_lazy_continuation,
+    clippy::match_single_binding
+)]
+pub mod headwaters {
+    pub mod read {
+        pub mod v1 {
+            include!("headwaters.read.v1.rs");
+        }
     }
 }

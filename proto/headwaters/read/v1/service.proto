@@ -1,0 +1,194 @@
+syntax = "proto3";
+
+// The headwaters read API service. This is headwaters' own (non-spec) surface —
+// the Marquez-compatible GET routes the web UI calls to populate the namespace /
+// job / dataset browse views, the lineage + column-lineage graph, the events
+// feed, run facets, dataset versions, tags, PII propagation, and the activity
+// charts. Ingest (the OpenLineage spec POST surface) lives separately in
+// `lineage.v1.IngestService`.
+//
+// The `google.api.http` annotations capture the REST mapping in-proto; the
+// Trestle/olai-codegen pass turns each RPC into an Axum route handler + a typed
+// Rust/TS/WASM client. Every RPC here is unary and REST-derivable (see the
+// streaming-candidates ADR for what we intentionally keep off the REST path).
+package headwaters.read.v1;
+
+import "google/api/annotations.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "headwaters/read/v1/read.proto";
+
+service ReadService {
+  // --- namespaces ---
+
+  rpc ListNamespaces(ListNamespacesRequest) returns (ListNamespacesResponse) {
+    option (google.api.http) = {get: "/api/v1/namespaces"};
+  }
+
+  // --- jobs ---
+
+  // Jobs across all namespaces, or scoped to one. Two routes bind to the same
+  // RPC: the global `/jobs` (namespace empty) and the namespace-scoped form.
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/jobs"
+      additional_bindings {get: "/api/v1/namespaces/{namespace}/jobs"}
+    };
+  }
+
+  rpc GetJob(GetJobRequest) returns (JobDetail) {
+    option (google.api.http) = {get: "/api/v1/namespaces/{namespace}/jobs/{name}"};
+  }
+
+  rpc GetJobRuns(GetJobRunsRequest) returns (ListRunsResponse) {
+    option (google.api.http) = {get: "/api/v1/namespaces/{namespace}/jobs/{name}/runs"};
+  }
+
+  // --- datasets ---
+
+  rpc ListDatasets(ListDatasetsRequest) returns (ListDatasetsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/datasets"
+      additional_bindings {get: "/api/v1/namespaces/{namespace}/datasets"}
+    };
+  }
+
+  rpc GetDataset(GetDatasetRequest) returns (Dataset) {
+    option (google.api.http) = {get: "/api/v1/namespaces/{namespace}/datasets/{name}"};
+  }
+
+  rpc ListDatasetVersions(ListDatasetVersionsRequest) returns (ListDatasetVersionsResponse) {
+    option (google.api.http) = {get: "/api/v1/namespaces/{namespace}/datasets/{name}/versions"};
+  }
+
+  // --- search / graph / events / facets ---
+
+  rpc Search(SearchRequest) returns (SearchResponse) {
+    option (google.api.http) = {get: "/api/v1/search"};
+  }
+
+  rpc GetLineage(GetLineageRequest) returns (LineageGraph) {
+    option (google.api.http) = {get: "/api/v1/lineage"};
+  }
+
+  rpc GetColumnLineage(GetColumnLineageRequest) returns (LineageGraph) {
+    option (google.api.http) = {get: "/api/v1/column-lineage"};
+  }
+
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {
+    option (google.api.http) = {get: "/api/v1/events/lineage"};
+  }
+
+  rpc GetRunFacets(GetRunFacetsRequest) returns (RunFacetsResponse) {
+    option (google.api.http) = {get: "/api/v1/jobs/runs/{run_id}/facets"};
+  }
+
+  // --- tags ---
+
+  rpc ListTags(ListTagsRequest) returns (ListTagsResponse) {
+    option (google.api.http) = {get: "/api/v1/tags"};
+  }
+
+  rpc GetTagDownstream(GetTagDownstreamRequest) returns (TagPropagation) {
+    option (google.api.http) = {get: "/api/v1/tags/{tag}/downstream"};
+  }
+
+  // --- stats (home-page activity charts) ---
+
+  rpc GetLineageEventStats(GetLineageEventStatsRequest) returns (StatsResponse) {
+    option (google.api.http) = {get: "/api/v1/stats/lineage-events"};
+  }
+
+  rpc GetAssetStats(GetAssetStatsRequest) returns (StatsResponse) {
+    option (google.api.http) = {get: "/api/v1/stats/{asset}"};
+  }
+}
+
+// --- request messages ---
+//
+// `namespace` empty means "all namespaces" for the list endpoints; `limit` /
+// `offset` are the pagination knobs. Query-string params (limit, offset, q,
+// nodeId, depth, period) are request fields not bound to the URL path; the REST
+// extractor binds them from the query string by their JSON (camelCase) name.
+
+message ListNamespacesRequest {}
+
+message ListJobsRequest {
+  // Parent namespace scoping; empty = all namespaces. Declares Namespace → Job.
+  string namespace = 1 [(google.api.resource_reference) = {child_type: "headwaters.io/Job"}];
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message GetJobRequest {
+  string namespace = 1 [(google.api.field_behavior) = REQUIRED];
+  string name = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+message GetJobRunsRequest {
+  string namespace = 1 [(google.api.field_behavior) = REQUIRED];
+  string name = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+message ListDatasetsRequest {
+  // Parent namespace scoping; empty = all namespaces. Declares Namespace → Dataset.
+  string namespace = 1 [(google.api.resource_reference) = {child_type: "headwaters.io/Dataset"}];
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message GetDatasetRequest {
+  string namespace = 1 [(google.api.field_behavior) = REQUIRED];
+  string name = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+message ListDatasetVersionsRequest {
+  string namespace = 1 [(google.api.field_behavior) = REQUIRED];
+  string name = 2 [(google.api.field_behavior) = REQUIRED];
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message SearchRequest {
+  string q = 1;
+  int32 limit = 2;
+}
+
+message GetLineageRequest {
+  // Bound from `?nodeId=` (camelCase) on the query string.
+  string node_id = 1 [(google.api.field_behavior) = REQUIRED];
+  int32 depth = 2;
+}
+
+message GetColumnLineageRequest {
+  // Bound from `?nodeId=` (camelCase) on the query string.
+  string node_id = 1;
+}
+
+message ListEventsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message GetRunFacetsRequest {
+  string run_id = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message ListTagsRequest {}
+
+message GetTagDownstreamRequest {
+  string tag = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+message GetLineageEventStatsRequest {
+  // date_trunc period: HOUR | DAY (default) | WEEK | MONTH.
+  string period = 1;
+  int32 limit = 2;
+}
+
+message GetAssetStatsRequest {
+  // `jobs` | `job` | `datasets` | `dataset`.
+  string asset = 1 [(google.api.field_behavior) = REQUIRED];
+  string period = 2;
+  int32 limit = 3;
+}
