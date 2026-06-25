@@ -2,17 +2,27 @@
 //! projected read tables (and the raw `events` log for the events/facets/
 //! column-lineage views).
 //!
-//! Each method returns the Marquez JSON contract shapes in [`super::model`].
-//! The model is maintained incrementally by the [`projection`](crate::projection)
-//! worker, so these queries are cheap point/range lookups rather than the
-//! full-history fold the old DataFusion reader ran per request.
+//! Each method builds and returns the read-API proto messages in
+//! [`crate::proto::headwaters::read::v1`] directly — the single model both the
+//! hand-written REST server ([`super::http`]) and the generated ConnectRPC
+//! facade ([`super::connect`]) serve. The model is maintained incrementally by
+//! the [`projection`](crate::projection) worker, so these queries are cheap
+//! point/range lookups rather than a full-history fold per request.
+//!
+//! Field-for-field these messages mirror the Marquez JSON the web UI consumes;
+//! buffa derives proto-JSON serde (camelCase, proto3 empty-field omission), and
+//! the opaque/polymorphic bits (`fields`, `facets`, `data`, raw events) are
+//! `google.protobuf.Struct` built from the stored JSON via [`struct_from_json`].
 
 use chrono::{DateTime, Utc};
 use serde_json::{Value as JsonValue, json};
 use sqlx::Row;
 
-use super::model::*;
+use super::ids::*;
 use super::{LineageStore, ReadError};
+use crate::proto::headwaters::read::v1 as pb;
+use buffa::MessageField;
+use buffa_types::google::protobuf::Struct as PbStruct;
 
 /// Default and maximum graph traversal depth (hops). Marquez's UI defaults to a
 /// depth of 20; we cap to keep the recursion bounded on dense graphs.
@@ -23,13 +33,39 @@ fn rfc3339(ts: DateTime<Utc>) -> String {
     ts.to_rfc3339()
 }
 
-fn opt_rfc3339(ts: Option<DateTime<Utc>>) -> Option<String> {
-    ts.map(rfc3339)
+/// Format an optional timestamp, defaulting to the empty string (proto3 omits
+/// empty strings from JSON, matching Marquez's absent-field behavior).
+fn opt_rfc3339(ts: Option<DateTime<Utc>>) -> String {
+    ts.map(rfc3339).unwrap_or_default()
+}
+
+/// Convert a stored JSON value into a `google.protobuf.Struct`. The read DTOs'
+/// opaque fields (`facets`, `data`, raw events, schema `fields`) are always JSON
+/// objects in practice; a non-object collapses to an empty struct (the wire
+/// shape the UI tolerates). Buffa's `Struct` round-trips back through serde as a
+/// plain JSON object, so the REST output matches the source JSON.
+fn struct_from_json(value: JsonValue) -> PbStruct {
+    serde_json::from_value(value).unwrap_or_default()
+}
+
+/// A set [`MessageField`] carrying the JSON value as a `Struct` (used for the
+/// always-present `facets` / `data` fields the UI dereferences). Even an empty
+/// `{}` stays a *set* field so it serializes as `{}` rather than being omitted.
+fn struct_field(value: JsonValue) -> MessageField<PbStruct> {
+    MessageField::some(struct_from_json(value))
+}
+
+/// Convert a JSON array of objects into the repeated-`Struct` schema `fields`.
+fn struct_vec(value: &JsonValue) -> Vec<PbStruct> {
+    value
+        .as_array()
+        .map(|arr| arr.iter().cloned().map(struct_from_json).collect())
+        .unwrap_or_default()
 }
 
 impl LineageStore {
     /// `GET /api/v1/namespaces`
-    pub async fn namespaces(&self) -> Result<Namespaces, ReadError> {
+    pub async fn namespaces(&self) -> Result<pb::ListNamespacesResponse, ReadError> {
         let rows = sqlx::query(
             "SELECT name, created_at, updated_at, description FROM namespaces ORDER BY name",
         )
@@ -37,16 +73,22 @@ impl LineageStore {
         .await?;
         let namespaces = rows
             .into_iter()
-            .map(|r| Namespace {
+            .map(|r| pb::Namespace {
                 name: r.get("name"),
                 created_at: rfc3339(r.get("created_at")),
                 updated_at: rfc3339(r.get("updated_at")),
-                owner_name: None,
-                description: r.get("description"),
+                owner_name: String::new(),
+                description: r
+                    .get::<Option<String>, _>("description")
+                    .unwrap_or_default(),
                 is_hidden: false,
+                ..Default::default()
             })
             .collect();
-        Ok(Namespaces { namespaces })
+        Ok(pb::ListNamespacesResponse {
+            namespaces,
+            ..Default::default()
+        })
     }
 
     /// `GET /api/v1/namespaces/{ns}/jobs` (when `namespace` is `Some`) and the
@@ -56,7 +98,7 @@ impl LineageStore {
         namespace: Option<&str>,
         limit: usize,
         offset: usize,
-    ) -> Result<Jobs, ReadError> {
+    ) -> Result<pb::ListJobsResponse, ReadError> {
         let total_count: i64 = match namespace {
             Some(ns) => {
                 sqlx::query_scalar("SELECT COUNT(*) FROM jobs WHERE namespace = $1")
@@ -88,14 +130,15 @@ impl LineageStore {
         for r in &rows {
             jobs.push(self.build_job_from_row(r).await?);
         }
-        Ok(Jobs {
+        Ok(pb::ListJobsResponse {
             jobs,
-            total_count: total_count as usize,
+            total_count: total_count as i32,
+            ..Default::default()
         })
     }
 
     /// `GET /api/v1/namespaces/{ns}/jobs/{job}`
-    pub async fn job(&self, namespace: &str, name: &str) -> Result<Job, ReadError> {
+    pub async fn job(&self, namespace: &str, name: &str) -> Result<pb::JobDetail, ReadError> {
         let row = sqlx::query(
             "SELECT namespace, name, created_at, updated_at, description, tags, inputs, outputs, \
                     current_version, location, parent_namespace, parent_name \
@@ -110,17 +153,25 @@ impl LineageStore {
     }
 
     /// `GET /api/v1/namespaces/{ns}/jobs/{job}/runs`
-    pub async fn job_runs(&self, namespace: &str, name: &str) -> Result<Runs, ReadError> {
+    pub async fn job_runs(
+        &self,
+        namespace: &str,
+        name: &str,
+    ) -> Result<pb::ListRunsResponse, ReadError> {
         let job = self.job(namespace, name).await?;
-        let total_count = job.latest_runs.len();
-        Ok(Runs {
+        let total_count = job.latest_runs.len() as i32;
+        Ok(pb::ListRunsResponse {
             runs: job.latest_runs,
             total_count,
+            ..Default::default()
         })
     }
 
-    /// Build a Marquez `Job` from a `jobs` row, loading its runs.
-    async fn build_job_from_row(&self, r: &sqlx::postgres::PgRow) -> Result<Job, ReadError> {
+    /// Build a Marquez `JobDetail` from a `jobs` row, loading its runs.
+    async fn build_job_from_row(
+        &self,
+        r: &sqlx::postgres::PgRow,
+    ) -> Result<pb::JobDetail, ReadError> {
         let namespace: String = r.get("namespace");
         let name: String = r.get("name");
         let created_at: DateTime<Utc> = r.get("created_at");
@@ -148,19 +199,23 @@ impl LineageStore {
         .fetch_all(&self.pool)
         .await?;
 
-        let latest_runs: Vec<LatestRun> = if run_rows.is_empty() {
-            vec![LatestRun::neutral(&node_id, &updated)]
+        // The dashboard's `latestRuns.reduce(...)` has no initial value and
+        // crashes on an empty array, so jobs with no run-typed events still
+        // carry one neutral entry.
+        let latest_runs: Vec<pb::RunDetail> = if run_rows.is_empty() {
+            vec![neutral_run(&node_id, &updated)]
         } else {
             run_rows.iter().map(build_run).collect()
         };
-        let latest_run = latest_runs.first().cloned();
+        let latest_run: MessageField<pb::RunDetail> = latest_runs.first().cloned().into();
 
-        Ok(Job {
-            id: EntityId {
+        Ok(pb::JobDetail {
+            id: MessageField::some(pb::EntityId {
                 namespace: namespace.clone(),
                 name: name.clone(),
-            },
-            job_type: "BATCH".into(),
+                ..Default::default()
+            }),
+            r#type: "BATCH".into(),
             name: name.clone(),
             simple_name: name,
             namespace,
@@ -168,14 +223,15 @@ impl LineageStore {
             updated_at: updated,
             inputs: entity_ids(&inputs),
             outputs: entity_ids(&outputs),
-            location,
-            description,
+            location: location.unwrap_or_default(),
+            description: description.unwrap_or_default(),
             latest_run,
             latest_runs,
             tags: string_vec(&tags),
-            parent_job_name: parent_name,
-            parent_job_uuid: None,
+            parent_job_name: parent_name.unwrap_or_default(),
+            parent_job_uuid: String::new(),
             current_version: current_version.to_string(),
+            ..Default::default()
         })
     }
 
@@ -186,7 +242,7 @@ impl LineageStore {
         namespace: Option<&str>,
         limit: usize,
         offset: usize,
-    ) -> Result<Datasets, ReadError> {
+    ) -> Result<pb::ListDatasetsResponse, ReadError> {
         let total_count: i64 = match namespace {
             Some(ns) => {
                 sqlx::query_scalar("SELECT COUNT(*) FROM datasets WHERE namespace = $1")
@@ -212,14 +268,15 @@ impl LineageStore {
         .fetch_all(&self.pool)
         .await?;
         let datasets = rows.iter().map(build_dataset).collect();
-        Ok(Datasets {
+        Ok(pb::ListDatasetsResponse {
             datasets,
-            total_count: total_count as usize,
+            total_count: total_count as i32,
+            ..Default::default()
         })
     }
 
     /// `GET /api/v1/namespaces/{ns}/datasets/{name}`
-    pub async fn dataset(&self, namespace: &str, name: &str) -> Result<Dataset, ReadError> {
+    pub async fn dataset(&self, namespace: &str, name: &str) -> Result<pb::Dataset, ReadError> {
         let row = sqlx::query(
             "SELECT namespace, name, created_at, updated_at, fields, current_version, \
                     description, source_name, deleted FROM datasets \
@@ -236,7 +293,7 @@ impl LineageStore {
     }
 
     /// `GET /api/v1/search?q=`
-    pub async fn search(&self, q: &str, limit: usize) -> Result<Search, ReadError> {
+    pub async fn search(&self, q: &str, limit: usize) -> Result<pb::SearchResponse, ReadError> {
         let pattern = format!("%{}%", q.to_lowercase());
         // Jobs + datasets whose name matches, unioned and sorted by name.
         let job_rows =
@@ -251,35 +308,38 @@ impl LineageStore {
         .fetch_all(&self.pool)
         .await?;
 
-        let mut results: Vec<SearchResult> = Vec::new();
+        let mut results: Vec<pb::SearchResult> = Vec::new();
         for r in &job_rows {
             let ns: String = r.get("namespace");
             let name: String = r.get("name");
-            results.push(SearchResult {
+            results.push(pb::SearchResult {
                 node_id: job_node_id(&ns, &name),
                 name,
                 namespace: ns,
-                result_type: "JOB".into(),
+                r#type: "JOB".into(),
                 updated_at: rfc3339(r.get("updated_at")),
+                ..Default::default()
             });
         }
         for r in &ds_rows {
             let ns: String = r.get("namespace");
             let name: String = r.get("name");
-            results.push(SearchResult {
+            results.push(pb::SearchResult {
                 node_id: dataset_node_id(&ns, &name),
                 name,
                 namespace: ns,
-                result_type: "DATASET".into(),
+                r#type: "DATASET".into(),
                 updated_at: rfc3339(r.get("updated_at")),
+                ..Default::default()
             });
         }
         results.sort_by(|a, b| a.name.cmp(&b.name));
-        let total_count = results.len();
+        let total_count = results.len() as i32;
         results.truncate(limit);
-        Ok(Search {
+        Ok(pb::SearchResponse {
             total_count,
             results,
+            ..Default::default()
         })
     }
 
@@ -288,7 +348,11 @@ impl LineageStore {
     /// Walks `lineage_edges` with a `WITH RECURSIVE` query in both directions
     /// from the seed node up to `depth` hops, then materializes each reached
     /// node with its incident edges.
-    pub async fn lineage(&self, node_id: &str, depth: usize) -> Result<LineageGraph, ReadError> {
+    pub async fn lineage(
+        &self,
+        node_id: &str,
+        depth: usize,
+    ) -> Result<pb::LineageGraph, ReadError> {
         let (seed_kind, seed_ns, seed_name) = parse_node_id(node_id)
             .ok_or_else(|| ReadError::NotFound(format!("malformed nodeId {node_id}")))?;
 
@@ -328,11 +392,12 @@ impl LineageStore {
         .bind(&reached)
         .fetch_all(&self.pool)
         .await?;
-        let edges: Vec<LineageEdge> = edge_rows
+        let edges: Vec<pb::LineageEdge> = edge_rows
             .iter()
-            .map(|r| LineageEdge {
+            .map(|r| pb::LineageEdge {
                 origin: r.get("origin"),
                 destination: r.get("destination"),
+                ..Default::default()
             })
             .collect();
 
@@ -342,7 +407,10 @@ impl LineageStore {
                 graph.push(node);
             }
         }
-        Ok(LineageGraph { graph })
+        Ok(pb::LineageGraph {
+            graph,
+            ..Default::default()
+        })
     }
 
     async fn job_exists(&self, namespace: &str, name: &str) -> Result<bool, ReadError> {
@@ -368,12 +436,14 @@ impl LineageStore {
     }
 
     /// Build a graph node (Job or Dataset payload + incident edges) for a
-    /// nodeId, or `None` if it names an entity not in the model.
+    /// nodeId, or `None` if it names an entity not in the model. The `data`
+    /// payload is the full Job/Dataset message rendered as JSON (the UI's side
+    /// panel reads it), carried as a `google.protobuf.Struct`.
     async fn build_node(
         &self,
         node_id: &str,
-        edges: &[LineageEdge],
-    ) -> Result<Option<LineageNode>, ReadError> {
+        edges: &[pb::LineageEdge],
+    ) -> Result<Option<pb::LineageNode>, ReadError> {
         let Some((kind, namespace, name)) = parse_node_id(node_id) else {
             return Ok(None);
         };
@@ -399,18 +469,23 @@ impl LineageStore {
             .filter(|e| e.origin == node_id)
             .cloned()
             .collect();
-        Ok(Some(LineageNode {
+        Ok(Some(pb::LineageNode {
             id: node_id.to_string(),
-            node_type: node_type.into(),
-            data,
+            r#type: node_type.into(),
+            data: struct_field(data),
             in_edges,
             out_edges,
+            ..Default::default()
         }))
     }
 
     /// `GET /api/v1/events/lineage?limit=&offset=` — newest-first page of the
     /// raw event log; each element is the original OpenLineage document.
-    pub async fn events(&self, limit: usize, offset: usize) -> Result<LineageEvents, ReadError> {
+    pub async fn events(
+        &self,
+        limit: usize,
+        offset: usize,
+    ) -> Result<pb::ListEventsResponse, ReadError> {
         let total_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
             .fetch_one(&self.pool)
             .await?;
@@ -425,10 +500,12 @@ impl LineageStore {
         let events = rows
             .iter()
             .filter_map(|r| r.get::<Option<JsonValue>, _>("raw"))
+            .map(struct_from_json)
             .collect();
-        Ok(LineageEvents {
+        Ok(pb::ListEventsResponse {
             events,
-            total_count: total_count as usize,
+            total_count: total_count as i32,
+            ..Default::default()
         })
     }
 
@@ -442,8 +519,8 @@ impl LineageStore {
         name: &str,
         limit: usize,
         offset: usize,
-    ) -> Result<DatasetVersions, ReadError> {
-        // 404 on an unknown dataset (and reuse its source_name for the DTO).
+    ) -> Result<pb::ListDatasetVersionsResponse, ReadError> {
+        // 404 on an unknown dataset (and reuse its source_name for the message).
         let dataset = self.dataset(namespace, name).await?;
 
         let total_count: i64 = sqlx::query_scalar(
@@ -473,43 +550,46 @@ impl LineageStore {
                 let version = version.to_string();
                 let created_at: DateTime<Utc> = r.get("created_at");
                 let fields_json: JsonValue = r.get("fields");
-                let fields = fields_json.as_array().cloned().unwrap_or_default();
-                let facets = if fields.is_empty() {
+                let fields_arr = fields_json.as_array().cloned().unwrap_or_default();
+                let facets = if fields_arr.is_empty() {
                     json!({})
                 } else {
-                    json!({ "schema": { "fields": fields } })
+                    json!({ "schema": { "fields": fields_arr } })
                 };
-                DatasetVersion {
-                    id: DatasetVersionId {
+                pb::DatasetVersion {
+                    id: MessageField::some(pb::DatasetVersionId {
                         namespace: namespace.to_string(),
                         name: name.to_string(),
                         version: version.clone(),
-                    },
-                    dataset_type: dataset.dataset_type.clone(),
+                        ..Default::default()
+                    }),
+                    r#type: dataset.r#type.clone(),
                     name: name.to_string(),
                     physical_name: dataset.physical_name.clone(),
                     created_at: rfc3339(created_at),
                     version,
                     namespace: namespace.to_string(),
                     source_name: dataset.source_name.clone(),
-                    fields,
+                    fields: struct_vec(&fields_json),
                     tags: Vec::new(),
-                    last_modified_at: Some(rfc3339(created_at)),
+                    last_modified_at: rfc3339(created_at),
                     description: dataset.description.clone(),
-                    facets,
+                    facets: struct_field(facets),
+                    ..Default::default()
                 }
             })
             .collect();
 
-        Ok(DatasetVersions {
+        Ok(pb::ListDatasetVersionsResponse {
             versions,
-            total_count: total_count as usize,
+            total_count: total_count as i32,
+            ..Default::default()
         })
     }
 
     /// `GET /api/v1/jobs/runs/{id}/facets` — the run facets carried on the run's
     /// raw events, merged latest-wins. 404 if no event references the run.
-    pub async fn run_facets(&self, run_id: &str) -> Result<RunFacets, ReadError> {
+    pub async fn run_facets(&self, run_id: &str) -> Result<pb::RunFacetsResponse, ReadError> {
         let rows = sqlx::query(
             "SELECT raw FROM events WHERE run_id = $1 ORDER BY event_time ASC NULLS LAST, seq ASC",
         )
@@ -534,9 +614,10 @@ impl LineageStore {
                 }
             }
         }
-        Ok(RunFacets {
+        Ok(pb::RunFacetsResponse {
             run_id: run_id.to_string(),
-            facets: JsonValue::Object(facets),
+            facets: struct_field(JsonValue::Object(facets)),
+            ..Default::default()
         })
     }
 
@@ -544,8 +625,8 @@ impl LineageStore {
     /// served from the projected `column_lineage_edges` table (single-hop
     /// upstream, what the UI's dataset column view renders). Unknown datasets /
     /// no column lineage return an empty graph (200, not 404).
-    pub async fn column_lineage(&self, node_id: &str) -> Result<ColumnLineageGraph, ReadError> {
-        let empty = ColumnLineageGraph { graph: Vec::new() };
+    pub async fn column_lineage(&self, node_id: &str) -> Result<pb::LineageGraph, ReadError> {
+        let empty = pb::LineageGraph::default();
         let Some((namespace, dataset, field_filter)) = parse_column_lineage_node_id(node_id) else {
             return Ok(empty);
         };
@@ -566,8 +647,9 @@ impl LineageStore {
         .await?;
 
         let mut data: std::collections::BTreeMap<String, JsonValue> = Default::default();
-        let mut in_edges: std::collections::BTreeMap<String, Vec<LineageEdge>> = Default::default();
-        let mut out_edges: std::collections::BTreeMap<String, Vec<LineageEdge>> =
+        let mut in_edges: std::collections::BTreeMap<String, Vec<pb::LineageEdge>> =
+            Default::default();
+        let mut out_edges: std::collections::BTreeMap<String, Vec<pb::LineageEdge>> =
             Default::default();
         // Accumulate each output field's inputFields payload (the UI reads it).
         let mut output_inputs: std::collections::BTreeMap<String, Vec<JsonValue>> =
@@ -582,9 +664,10 @@ impl LineageStore {
 
             let out_id = dataset_field_node_id(&namespace, &dataset, &out_field);
             let in_id = dataset_field_node_id(&in_ns, &in_ds, &in_field);
-            let edge = LineageEdge {
+            let edge = pb::LineageEdge {
                 origin: in_id.clone(),
                 destination: out_id.clone(),
+                ..Default::default()
             };
             in_edges
                 .entry(out_id.clone())
@@ -626,30 +709,40 @@ impl LineageStore {
 
         let graph = data
             .into_iter()
-            .map(|(id, data)| LineageNode {
+            .map(|(id, data)| pb::LineageNode {
                 in_edges: in_edges.remove(&id).unwrap_or_default(),
                 out_edges: out_edges.remove(&id).unwrap_or_default(),
-                node_type: "DATASET_FIELD".to_string(),
-                data,
+                r#type: "DATASET_FIELD".to_string(),
+                data: struct_field(data),
                 id,
+                ..Default::default()
             })
             .collect();
-        Ok(ColumnLineageGraph { graph })
+        Ok(pb::LineageGraph {
+            graph,
+            ..Default::default()
+        })
     }
 
     /// `GET /api/v1/tags` — the tag catalog.
-    pub async fn tags(&self) -> Result<Tags, ReadError> {
+    pub async fn tags(&self) -> Result<pb::ListTagsResponse, ReadError> {
         let rows = sqlx::query("SELECT name, description FROM tags ORDER BY name")
             .fetch_all(&self.pool)
             .await?;
         let tags = rows
             .iter()
-            .map(|r| Tag {
+            .map(|r| pb::Tag {
                 name: r.get("name"),
-                description: r.get("description"),
+                description: r
+                    .get::<Option<String>, _>("description")
+                    .unwrap_or_default(),
+                ..Default::default()
             })
             .collect();
-        Ok(Tags { tags })
+        Ok(pb::ListTagsResponse {
+            tags,
+            ..Default::default()
+        })
     }
 
     /// `GET /api/v1/stats/lineage-events` — event counts bucketed by `period`.
@@ -657,7 +750,7 @@ impl LineageStore {
         &self,
         period: &str,
         limit: usize,
-    ) -> Result<Vec<StatBucket>, ReadError> {
+    ) -> Result<pb::StatsResponse, ReadError> {
         let period = normalize_period(period)?;
         // `period` is whitelisted (not user text) so interpolating it into
         // date_trunc is safe; the limit is bound.
@@ -670,13 +763,7 @@ impl LineageStore {
         .bind(limit as i64)
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows
-            .iter()
-            .map(|r| StatBucket {
-                date: r.get("bucket"),
-                count: r.get("n"),
-            })
-            .collect())
+        Ok(stats_response(&rows))
     }
 
     /// `GET /api/v1/stats/:asset` — first-seen counts for `jobs` or `datasets`,
@@ -686,7 +773,7 @@ impl LineageStore {
         asset: &str,
         period: &str,
         limit: usize,
-    ) -> Result<Vec<StatBucket>, ReadError> {
+    ) -> Result<pb::StatsResponse, ReadError> {
         let period = normalize_period(period)?;
         let table = match asset {
             "jobs" | "job" => "jobs",
@@ -703,13 +790,7 @@ impl LineageStore {
         .bind(limit as i64)
         .fetch_all(&self.pool)
         .await?;
-        Ok(rows
-            .iter()
-            .map(|r| StatBucket {
-                date: r.get("bucket"),
-                count: r.get("n"),
-            })
-            .collect())
+        Ok(stats_response(&rows))
     }
 
     /// `GET /api/v1/tags/{tag}/downstream` — the dataset fields reachable
@@ -719,7 +800,7 @@ impl LineageStore {
     /// (field-granularity), seeded from `tag_assignments`: directly-tagged
     /// fields, plus every field of a tagged dataset. Bounded by `MAX_DEPTH`.
     /// "PII" is just a conventional tag name — nothing is special-cased.
-    pub async fn tag_downstream(&self, tag: &str) -> Result<TagPropagation, ReadError> {
+    pub async fn tag_downstream(&self, tag: &str) -> Result<pb::TagPropagation, ReadError> {
         let rows = sqlx::query(
             "WITH RECURSIVE seed(namespace, dataset, field) AS ( \
                  SELECT namespace, name, field FROM tag_assignments \
@@ -755,17 +836,19 @@ impl LineageStore {
                 let dataset: String = r.get("dataset");
                 let field: String = r.get("field");
                 let node_id = dataset_field_node_id(&namespace, &dataset, &field);
-                TaggedField {
+                pb::TaggedField {
                     namespace,
                     dataset,
                     field,
                     node_id,
+                    ..Default::default()
                 }
             })
             .collect();
-        Ok(TagPropagation {
+        Ok(pb::TagPropagation {
             tag: tag.to_string(),
             fields,
+            ..Default::default()
         })
     }
 
@@ -796,8 +879,38 @@ fn normalize_period(period: &str) -> Result<&'static str, ReadError> {
     }
 }
 
-/// Build a Marquez `Run` from a `runs` row.
-fn build_run(r: &sqlx::postgres::PgRow) -> LatestRun {
+/// Build a `StatsResponse` from `(bucket, n)` rows.
+fn stats_response(rows: &[sqlx::postgres::PgRow]) -> pb::StatsResponse {
+    pb::StatsResponse {
+        buckets: rows
+            .iter()
+            .map(|r| pb::StatBucket {
+                date: r.get("bucket"),
+                count: r.get("n"),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    }
+}
+
+/// A single neutral run for jobs whose events carry no `run_id` (pure `job`
+/// events). The dashboard's `latestRuns.reduce(...)` has no initial value and
+/// crashes on an empty array, so we always emit at least this. State is
+/// `COMPLETED` (not flagged as failed); `durationMs` 0 renders a minimal bar.
+fn neutral_run(job_id: &str, updated_at: &str) -> pb::RunDetail {
+    pb::RunDetail {
+        id: format!("norun:{job_id}"),
+        created_at: updated_at.to_string(),
+        updated_at: updated_at.to_string(),
+        state: "COMPLETED".to_string(),
+        duration_ms: 0,
+        ..Default::default()
+    }
+}
+
+/// Build a Marquez `RunDetail` from a `runs` row.
+fn build_run(r: &sqlx::postgres::PgRow) -> pb::RunDetail {
     let started_at: Option<DateTime<Utc>> = r.get("started_at");
     let ended_at: Option<DateTime<Utc>> = r.get("ended_at");
     let duration_ms = match (started_at, ended_at) {
@@ -806,7 +919,7 @@ fn build_run(r: &sqlx::postgres::PgRow) -> LatestRun {
     };
     let nominal_start: Option<DateTime<Utc>> = r.get("nominal_start");
     let nominal_end: Option<DateTime<Utc>> = r.get("nominal_end");
-    LatestRun {
+    pb::RunDetail {
         id: r.get("run_id"),
         created_at: rfc3339(r.get("created_at")),
         updated_at: rfc3339(r.get("updated_at")),
@@ -816,11 +929,12 @@ fn build_run(r: &sqlx::postgres::PgRow) -> LatestRun {
         started_at: opt_rfc3339(started_at),
         ended_at: opt_rfc3339(ended_at),
         duration_ms,
+        ..Default::default()
     }
 }
 
 /// Build a Marquez `Dataset` from a `datasets` row.
-fn build_dataset(r: &sqlx::postgres::PgRow) -> Dataset {
+fn build_dataset(r: &sqlx::postgres::PgRow) -> pb::Dataset {
     let namespace: String = r.get("namespace");
     let name: String = r.get("name");
     let created_at: DateTime<Utc> = r.get("created_at");
@@ -830,45 +944,48 @@ fn build_dataset(r: &sqlx::postgres::PgRow) -> Dataset {
     let description: Option<String> = r.get("description");
     let source_name: Option<String> = r.get("source_name");
     let deleted: bool = r.get("deleted");
-    let fields = fields_json.as_array().cloned().unwrap_or_default();
-    let facets = if fields.is_empty() {
+    let fields_arr = fields_json.as_array().cloned().unwrap_or_default();
+    let facets = if fields_arr.is_empty() {
         json!({})
     } else {
-        json!({ "schema": { "fields": fields } })
+        json!({ "schema": { "fields": fields_arr } })
     };
     // Prefer the dataSource-facet source name; fall back to the namespace
     // (Marquez derives a default source from the namespace too).
     let source = source_name.unwrap_or_else(|| namespace.clone());
-    Dataset {
-        id: EntityId {
+    pb::Dataset {
+        id: MessageField::some(pb::EntityId {
             namespace: namespace.clone(),
             name: name.clone(),
-        },
-        dataset_type: "DB_TABLE".into(),
+            ..Default::default()
+        }),
+        r#type: "DB_TABLE".into(),
         name: name.clone(),
         physical_name: name,
         source_name: source,
         namespace,
         created_at: rfc3339(created_at),
         updated_at: rfc3339(updated_at),
-        description,
-        fields,
-        facets,
+        description: description.unwrap_or_default(),
+        fields: struct_vec(&fields_json),
+        facets: struct_field(facets),
         tags: Vec::new(),
         deleted,
         current_version: current_version.to_string(),
+        ..Default::default()
     }
 }
 
 /// Parse the `[{namespace,name}]` JSON the projector stores into `EntityId`s.
-fn entity_ids(val: &JsonValue) -> Vec<EntityId> {
+fn entity_ids(val: &JsonValue) -> Vec<pb::EntityId> {
     val.as_array()
         .map(|arr| {
             arr.iter()
                 .filter_map(|v| {
-                    Some(EntityId {
+                    Some(pb::EntityId {
                         namespace: v.get("namespace")?.as_str()?.to_string(),
                         name: v.get("name")?.as_str()?.to_string(),
+                        ..Default::default()
                     })
                 })
                 .collect()

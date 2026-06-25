@@ -185,7 +185,7 @@ async fn lineage_graph_connects_job_to_its_datasets() {
     );
 
     let job = graph.graph.iter().find(|n| n.id == node).unwrap();
-    assert_eq!(job.node_type, "JOB");
+    assert_eq!(job.r#type, "JOB");
     assert_eq!(job.in_edges.len(), 1);
     assert_eq!(job.in_edges[0].origin, "dataset:raw:orders");
     assert_eq!(job.out_edges.len(), 1);
@@ -198,7 +198,7 @@ async fn search_matches_job_and_dataset_names() {
     let store = seeded_store(&db).await;
     let hits = store.search("orders", 100).await.unwrap();
     assert!(hits.total_count >= 2, "got {} hits", hits.total_count);
-    assert!(hits.results.iter().all(|r| r.result_type == "DATASET"));
+    assert!(hits.results.iter().all(|r| r.r#type == "DATASET"));
 }
 
 #[tokio::test]
@@ -302,7 +302,7 @@ async fn lineage_resolves_uri_namespace_dataset() {
     assert!(ids.contains(&node), "uri dataset present: {ids:?}");
     assert!(ids.contains(&"job:etl:export"), "connected job: {ids:?}");
     let ds = graph.graph.iter().find(|n| n.id == node).unwrap();
-    assert_eq!(ds.node_type, "DATASET");
+    assert_eq!(ds.r#type, "DATASET");
     let updated = ds.data.get("updatedAt").and_then(|v| v.as_str()).unwrap();
     assert!(!updated.starts_with("1970"), "real timestamp: {updated}");
 }
@@ -443,7 +443,7 @@ async fn column_lineage_serves_latest_facet_as_field_graph() {
         !ids.contains(&"datasetField:raw:customers:id"),
         "the older facet's mapping must not leak in: {ids:?}"
     );
-    assert!(graph.iter().all(|n| n.node_type == "DATASET_FIELD"));
+    assert!(graph.iter().all(|n| n.r#type == "DATASET_FIELD"));
 
     let id_node = graph
         .iter()
@@ -641,19 +641,19 @@ async fn facet_metadata_populates_run_job_dataset() {
 
     // Job: location + parent job name.
     let job = store.job("etl", "build").await.unwrap();
-    assert_eq!(job.location.as_deref(), Some("https://git/repo"));
-    assert_eq!(job.parent_job_name.as_deref(), Some("dag.task"));
+    assert_eq!(job.location, "https://git/repo");
+    assert_eq!(job.parent_job_name, "dag.task");
 
     // Run: nominal window surfaced on the latest run.
     let run = &job.latest_runs[0];
     assert!(
-        run.nominal_start_time.is_some(),
+        !run.nominal_start_time.is_empty(),
         "nominal start surfaced: {run:?}"
     );
 
     // Dataset: description, source_name (from dataSource facet), deleted.
     let ds = store.dataset("warehouse", "gold").await.unwrap();
-    assert_eq!(ds.description.as_deref(), Some("the gold table"));
+    assert_eq!(ds.description, "the gold table");
     assert_eq!(ds.source_name, "warehouse-db");
     assert!(ds.deleted, "lifecycleStateChange DROP soft-deleted it");
 
@@ -684,18 +684,10 @@ async fn facet_metadata_survives_rebuild() {
         .unwrap();
     let store = LineageStore::new(db.pool.clone());
     assert_eq!(
-        store.job("etl", "build").await.unwrap().location.as_deref(),
-        Some("https://git/repo")
+        store.job("etl", "build").await.unwrap().location,
+        "https://git/repo"
     );
-    assert_eq!(
-        store
-            .dataset("w", "d")
-            .await
-            .unwrap()
-            .description
-            .as_deref(),
-        Some("doc")
-    );
+    assert_eq!(store.dataset("w", "d").await.unwrap().description, "doc");
 }
 
 // --- Phase 2: dataset versioning ---------------------------------------------
@@ -874,7 +866,7 @@ async fn stats_lineage_events_buckets_by_day() {
         .await;
     }
     let store = LineageStore::new(db.pool.clone());
-    let buckets = store.stats_lineage_events("day", 30).await.unwrap();
+    let buckets = store.stats_lineage_events("day", 30).await.unwrap().buckets;
     // Two day-buckets; the 14th has 2 events, the 15th has 1.
     let total: i64 = buckets.iter().map(|b| b.count).sum();
     assert_eq!(total, 3);
