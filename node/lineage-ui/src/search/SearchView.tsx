@@ -33,7 +33,7 @@ export function SearchView({
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             placeholder="Search jobs and datasets…"
-            className="w-full rounded-md border border-border bg-background py-2 pl-9 pr-3 text-sm outline-none focus:border-sky-500"
+            className="w-full rounded-md border border-border bg-background py-2 pl-9 pr-3 text-sm outline-none focus:border-ring"
           />
         </div>
       </div>

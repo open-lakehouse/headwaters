@@ -35,7 +35,7 @@ export function LineagePage() {
     return (
       <div className="flex h-full flex-col">
         <header className="border-b border-border px-6 py-4">
-          <h1 className="text-lg font-semibold">Lineage</h1>
+          <h1 className="text-lg font-semibold tracking-tight">Lineage</h1>
         </header>
         <div className="p-6 text-sm text-muted-foreground">
           Select a dataset or job to view its lineage.

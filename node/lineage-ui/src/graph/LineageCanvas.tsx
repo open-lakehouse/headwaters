@@ -1,6 +1,7 @@
 import type { LineageGraph, LineageNode } from "@headwaters/lineage-client";
 import {
   Background,
+  type ColorMode,
   Controls,
   type Node,
   type NodeTypes,
@@ -27,6 +28,12 @@ export interface LineageCanvasProps {
   selectedId?: string;
   /** Called when a node is clicked. */
   onSelect?: (node: LineageNode) => void;
+  /**
+   * Drives ReactFlow's built-in canvas/Controls/Background colors. Defaults to
+   * `"system"` (follows the OS preference); a host with an explicit light/dark
+   * toggle can pass its active theme so the canvas tracks the rest of the app.
+   */
+  colorMode?: ColorMode;
 }
 
 /**
@@ -44,7 +51,12 @@ export function LineageCanvas(props: LineageCanvasProps) {
   );
 }
 
-function LineageFlow({ graph, selectedId, onSelect }: LineageCanvasProps) {
+function LineageFlow({
+  graph,
+  selectedId,
+  onSelect,
+  colorMode = "system",
+}: LineageCanvasProps) {
   const { nodes, edges } = useLineageLayout(graph);
   const { fitView } = useReactFlow();
 
@@ -85,6 +97,7 @@ function LineageFlow({ graph, selectedId, onSelect }: LineageCanvasProps) {
       edges={edges}
       nodeTypes={nodeTypes}
       onNodeClick={handleNodeClick}
+      colorMode={colorMode}
       fitView
       proOptions={{ hideAttribution: true }}
       minZoom={0.1}

@@ -18,8 +18,8 @@ export function BaseNode({ selected, className, children }: BaseNodeProps) {
   return (
     <div
       className={cn(
-        "cursor-pointer rounded-lg border bg-background shadow-sm transition-shadow hover:shadow-md",
-        selected ? "border-sky-500 ring-2 ring-sky-500/30" : "border-border",
+        "cursor-pointer rounded-lg border bg-card text-card-foreground shadow-sm transition-shadow hover:shadow-md",
+        selected ? "border-primary ring-2 ring-primary/30" : "border-border",
         className,
       )}
     >
