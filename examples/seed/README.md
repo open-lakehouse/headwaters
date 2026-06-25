@@ -7,13 +7,18 @@ read-API feature the UI surfaces, not just the happy path.
 ```sh
 just dev              # start Postgres (Docker) + the lineage-service on :8091
 just seed             # ingest the demo data into it (in another shell)
-just ui-dev           # open the UI against it
-just dev-down         # clean shutdown (removes the Postgres container + volume)
+just ui-dev           # open our UI against it       (http://localhost:3010)
+just marquez-ui       # …or the Marquez reference UI (http://localhost:3000)
+just dev-down         # clean shutdown (removes the Postgres + Marquez containers)
 ```
 
 `just dev` brings up a Dockerized Postgres and runs the service against it; see
 [Running](#running) for running the two separately. `just seed` is a thin
 wrapper over [`ingest.sh`](ingest.sh).
+
+Because our read API honors the Marquez wire contract, `just marquez-ui` spawns
+the upstream **Marquez** web UI pointed straight at our service — a handy
+cross-check of the seeded data against the reference frontend.
 
 ## What's here
 
