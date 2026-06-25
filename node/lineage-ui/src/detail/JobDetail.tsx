@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { AsyncBoundary } from "../components/ui/AsyncBoundary.js";
 import { useJob, useJobRuns } from "../hooks/queries.js";
 import { datasetNodeId } from "../lib/nodeId.js";
@@ -9,6 +10,8 @@ export interface JobDetailPanelProps {
   name: string;
   /** Optional: render a "View lineage" affordance + clickable in/out datasets. */
   onViewLineage?: (nodeId: string) => void;
+  /** Optional: render a close button that dismisses the panel. */
+  onClose?: () => void;
 }
 
 /** A job's metadata, inputs/outputs, and run history (read API `GetJob`). */
@@ -16,6 +19,7 @@ export function JobDetailPanel({
   namespace,
   name,
   onViewLineage,
+  onClose,
 }: JobDetailPanelProps) {
   const { data: job, isLoading, error } = useJob(namespace, name);
   const { data: runs } = useJobRuns(namespace, name);
@@ -36,16 +40,31 @@ export function JobDetailPanel({
                 {job.namespace}
               </p>
             </div>
-            {onViewLineage && (
-              <button
-                type="button"
-                className="shrink-0 rounded-md border border-border px-2.5 py-1 text-sm hover:bg-muted"
-                onClick={() =>
-                  onViewLineage(`job:${job.namespace}:${job.name}`)
-                }
-              >
-                View lineage
-              </button>
+            {(onViewLineage || onClose) && (
+              <div className="flex shrink-0 items-center gap-1.5">
+                {onViewLineage && (
+                  <button
+                    type="button"
+                    className="rounded-md border border-border px-2.5 py-1 text-sm hover:bg-muted"
+                    onClick={() =>
+                      onViewLineage(`job:${job.namespace}:${job.name}`)
+                    }
+                  >
+                    View lineage
+                  </button>
+                )}
+                {onClose && (
+                  <button
+                    type="button"
+                    aria-label="Close panel"
+                    title="Close"
+                    className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onClick={onClose}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             )}
           </header>
 

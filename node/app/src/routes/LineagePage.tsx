@@ -67,12 +67,14 @@ export function LineagePage() {
               namespace={selected.namespace}
               name={selected.name}
               onViewLineage={viewLineage}
+              onClose={() => setSelected(null)}
             />
           ) : (
             <JobDetailPanel
               namespace={selected.namespace}
               name={selected.name}
               onViewLineage={viewLineage}
+              onClose={() => setSelected(null)}
             />
           )}
         </aside>
