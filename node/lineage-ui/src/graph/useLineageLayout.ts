@@ -14,11 +14,16 @@ import { collectEdges, type LineageNodeKind } from "./model.js";
 
 const elk = new ELK();
 
-// Per-kind node box sizes (must match the rendered node components).
+// Per-kind node box sizes. These MUST match the fixed heights the node
+// components render (DatasetNode/JobNode `h-[92px]`, FieldNode `h-[54px]`):
+// ELK positions nodes by these sizes and ReactFlow anchors edge handles at the
+// real box center, so any mismatch reintroduces the vertical step on same-row
+// edges. Keep all "row-level" kinds (DATASET/JOB) the same height so their
+// centers line up and the edges between them stay straight.
 const SIZES: Record<LineageNodeKind, { width: number; height: number }> = {
-  DATASET: { width: 240, height: 76 },
-  JOB: { width: 240, height: 76 },
-  DATASET_FIELD: { width: 200, height: 44 },
+  DATASET: { width: 240, height: 92 },
+  JOB: { width: 240, height: 92 },
+  DATASET_FIELD: { width: 200, height: 54 },
 };
 
 const LAYOUT_OPTIONS: Record<string, string> = {

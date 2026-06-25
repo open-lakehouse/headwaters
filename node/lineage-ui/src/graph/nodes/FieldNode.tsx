@@ -9,7 +9,7 @@ export function FieldNode({ data, selected }: NodeProps) {
   const { node } = data as unknown as { node: LineageNode };
   const d = fieldNodeData(node);
   return (
-    <BaseNode selected={selected} className="w-[200px]">
+    <BaseNode selected={selected} className="h-[54px] w-[200px]">
       <div className="flex items-center gap-2 px-3 py-2">
         <Columns3 className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
         <span className="min-w-0">
