@@ -1,0 +1,28 @@
+# release-plz configuration.
+#
+# release-plz drives crates.io releases from the conventional-commit history
+# (PR titles are already gated by .github/workflows/pr-title.yml). It keeps a
+# release PR open that bumps versions + updates CHANGELOG.md; merging it tags
+# and publishes.
+#
+# Only datafusion-open-lineage is published — lineage-service is `publish =
+# false` (a deployable service shipped via Docker, see its Cargo.toml), and
+# release-plz skips unpublishable crates automatically. It is listed below with
+# `release = false` to make that explicit and to keep it out of the changelog.
+
+[workspace]
+# Link PRs/commits in the generated changelog back to the repo.
+repository_url = "https://github.com/open-lakehouse/headwaters"
+# Conventional-commit driven changelog (Keep a Changelog style).
+changelog_update = true
+# Tag as e.g. `datafusion-open-lineage-v0.1.0` so per-crate tags never collide
+# with the `v*` Docker release tags.
+git_tag_name = "{{ package }}-v{{ version }}"
+
+[[package]]
+name = "datafusion-open-lineage"
+# docs.rs builds the default feature set; nothing extra needed here.
+
+[[package]]
+name = "lineage-service"
+release = false

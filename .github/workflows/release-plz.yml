@@ -1,0 +1,92 @@
+name: Release-plz
+
+# Automate crates.io releases of the publishable crates (datafusion-open-lineage)
+# from the conventional-commit history. Two jobs:
+#   - release-pr: keeps a "Release vX.Y.Z" PR open that bumps versions + updates
+#     CHANGELOG.md. Merging that PR is what triggers a release.
+#   - release:    on push to main, publishes any crate whose version was bumped
+#     and creates the git tag + GitHub release.
+#
+# Requires two repo secrets:
+#   CARGO_REGISTRY_TOKEN - crates.io API token with publish scope.
+#   RELEASE_PLZ_TOKEN    - a PAT (or GitHub App token) so the release PR / tag
+#                          push re-triggers CI; the default GITHUB_TOKEN cannot.
+# See release-plz.toml for which crates are released.
+
+on:
+  push:
+    branches: [main]
+
+# Only one release flow at a time; never cancel an in-flight publish.
+concurrency:
+  group: release-plz-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  # Open/refresh the release PR (version bump + changelog).
+  release-pr:
+    name: release-pr
+    # Never run from forks — they lack the secrets and must not publish.
+    if: ${{ github.repository == 'open-lakehouse/headwaters' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          token: ${{ secrets.RELEASE_PLZ_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.96"
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "31.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5.130
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  # Publish crates whose version was bumped, tag, and create the GitHub release.
+  release:
+    name: release
+    if: ${{ github.repository == 'open-lakehouse/headwaters' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          token: ${{ secrets.RELEASE_PLZ_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.96"
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "31.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5.130
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
