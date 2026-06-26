@@ -18,6 +18,7 @@ use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
 use serde::Serialize;
 use tower_http::cors::CorsLayer;
+use tower_http::trace::TraceLayer;
 
 use crate::connect_gen::headwaters::read::v1::ReadServiceExt;
 use crate::ingest::{convert_batch, convert_event};
@@ -61,6 +62,9 @@ pub fn router(state: AppState) -> Router {
         // REST routes are matched explicitly above; everything else (the Connect
         // RPC paths) falls through to the Connect dispatcher.
         .fallback_service(connect_router.into_axum_service())
+        // Per-request tracing (method, path, status, latency) for operability;
+        // verbosity is controlled by the `RUST_LOG`/`tower_http` env filter.
+        .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
 }
 
