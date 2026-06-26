@@ -1,8 +1,16 @@
 [package]
 name = "lineage-service"
 version = "0.1.0"
+description = "OpenLineage ingest + Marquez-compatible read service (HTTP + ConnectRPC + Postgres)"
 edition = "2024"
 rust-version = "1.88"
+license = "Apache-2.0"
+repository = "https://github.com/open-lakehouse/headwaters"
+readme = "README.md"
+# Deployable service, not a reusable library: ship via Docker + GitHub
+# release, never crates.io. `publish = false` makes that contract explicit and
+# prevents an accidental `cargo publish`.
+publish = false
 
 [dependencies]
 buffa = { version = "0.7", features = ["json"] }
