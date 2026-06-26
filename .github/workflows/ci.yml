@@ -36,6 +36,7 @@ jobs:
       pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      proto: ${{ steps.filter.outputs.proto }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -47,6 +48,8 @@ jobs:
           # `code` is true when ANY changed path is NOT one of these docs/meta
           # patterns (negations are anchored at the repo root). Keep this list in
           # sync with the set of files that genuinely can't affect the build.
+          # `proto` gates the codegen-staleness check on changes to the .proto
+          # sources, the buf config, or the committed generated output.
           filters: |
             code:
               - '!**/*.md'
@@ -54,6 +57,13 @@ jobs:
               - '!LICENSE'
               - '!.gitignore'
               - '!.editorconfig'
+            proto:
+              - 'proto/**'
+              - 'buf.yaml'
+              - 'buf.gen.yaml'
+              - 'buf.lock'
+              - 'crates/lineage-service/src/proto/**'
+              - 'crates/lineage-service/src/connect_gen/**'
 
   # fmt, clippy, test and coverage are independent jobs that run in parallel.
   # Splitting them (rather than one sequential job) means a clippy or fmt failure
@@ -161,6 +171,52 @@ jobs:
 
       - name: Build on MSRV
         run: cargo build --workspace --all-features --locked
+
+  # The generated proto + ConnectRPC code under crates/lineage-service/src/
+  # {proto,connect_gen}/ is committed (so the workspace builds without a codegen
+  # step). Regenerate here and fail if the committed output drifts from the
+  # .proto sources — a `proto/` edit must land with its regenerated output.
+  proto-check:
+    name: proto-check
+    needs: changes
+    if: ${{ needs.changes.outputs.proto == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.96"
+          components: rustfmt
+
+      # The two local codegen plugins `buf generate` invokes (the buffa pass
+      # runs remotely on the BSR and needs no install).
+      - name: Install connect codegen plugins
+        run: cargo install protoc-gen-connect-rust protoc-gen-buffa-packaging
+
+      - name: Regenerate proto code
+        run: buf generate
+
+      - name: Format generated code
+        run: cargo fmt -p lineage-service
+
+      # `just proto-gen` is exactly the two steps above; fail if anything moved.
+      - name: Check committed output is up to date
+        run: |
+          if ! git diff --quiet; then
+            echo "::error::Generated proto code is stale. Run \`just proto-gen\` and commit the result."
+            git diff --stat
+            exit 1
+          fi
 
   test:
     name: test
@@ -353,7 +409,7 @@ jobs:
   ci:
     name: ci
     if: ${{ always() }}
-    needs: [fmt, clippy, msrv, test, coverage]
+    needs: [fmt, clippy, msrv, proto-check, test, coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -367,6 +423,7 @@ jobs:
             "fmt:${{ needs.fmt.result }}" \
             "clippy:${{ needs.clippy.result }}" \
             "msrv:${{ needs.msrv.result }}" \
+            "proto-check:${{ needs.proto-check.result }}" \
             "test:${{ needs.test.result }}" \
             "coverage:${{ needs.coverage.result }}"; do
             name="${r%%:*}"; result="${r##*:}"
