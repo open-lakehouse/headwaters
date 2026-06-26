@@ -12,15 +12,21 @@ coverage:
         informational: true
 
 # Exclude code we never want counted against coverage. The big skew is the
-# committed lineage proto codegen (thousands of machine-generated lines tests
-# never exercise directly), which drags the denominator down. Also drop examples
-# and test helpers (exercised by running them, not by assertions).
+# committed codegen (thousands of machine-generated lines tests never exercise
+# directly), which drags the denominator down: the buffa-generated proto message
+# types under src/proto/ and the connectrpc service stubs under src/connect_gen/.
+# Also drop examples and test helpers (exercised by running them, not by
+# assertions).
 #
 # Paths are matched against the report's workspace-relative file paths. Keep this
 # in sync with the CI coverage job's `--ignore-filename-regex`. Regenerate the
-# proto with `just proto-gen`.
+# codegen with `just proto-gen`.
 ignore:
-  - "crates/lineage-service/src/proto/lineage.v1.rs" # generated; sibling mod.rs is hand-written
+  # Generated proto message types. The sibling proto/mod.rs is hand-written, so
+  # it is NOT ignored — only the `@generated` *.v1.rs files.
+  - "crates/lineage-service/src/proto/*.v1.rs"
+  # Every file under connect_gen/ is `@generated` (connectrpc service stubs).
+  - "crates/lineage-service/src/connect_gen/**"
   - "**/examples/**" # runnable examples, not unit-tested
   - "**/tests/**" # integration test harnesses
   - "**/benches/**"
