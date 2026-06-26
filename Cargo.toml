@@ -39,14 +39,3 @@ url = { version = "2.5.2", features = [
     "std",
 ], default-features = false }
 uuid = { version = "1", features = ["v4", "v5"] }
-
-# delta-rs / unitycatalog-rs forks, pinned to pushed git revs so the workspace
-# resolves them without sibling checkouts. These revs are kept in lock-step with
-# the open-lakehouse workspace they were extracted from — bump both together to
-# avoid a single buoyant_kernel / delta-rs version skew across the wider graph.
-# To iterate against in-progress fork changes locally, swap these for
-# `path = "../delta-rs/..."` / `../unitycatalog-rs/...` overrides.
-unitycatalog-client = { git = "https://github.com/unitycatalog-incubator/unitycatalog-rs", rev = "a4814ef98bcb7c95e5eb9de0166d0c086fffead1" }
-unitycatalog-object-store = { git = "https://github.com/unitycatalog-incubator/unitycatalog-rs", rev = "a4814ef98bcb7c95e5eb9de0166d0c086fffead1" }
-datafusion-unitycatalog = { git = "https://github.com/unitycatalog-incubator/unitycatalog-rs", rev = "a4814ef98bcb7c95e5eb9de0166d0c086fffead1" }
-deltalake = { git = "https://github.com/roeap/delta-rs", rev = "10d23f5ca992e497a331e78a03eb82d1bdbd149d", features = ["datafusion"] }
