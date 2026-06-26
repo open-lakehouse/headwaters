@@ -1,0 +1,64 @@
+name: First release (manual, DELETE AFTER USE)
+
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │ THROWAWAY WORKFLOW — DELETE THIS FILE AFTER THE FIRST CRATES.IO RELEASE. │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# crates.io OIDC trusted publishing (used by the steady-state release-plz.yml)
+# can only be configured AFTER a crate first exists on crates.io — so the very
+# first publish is a chicken-and-egg the OIDC `release` job can't solve. This
+# one-off job bootstraps it: trigger it manually, paste a temporary crates.io
+# API token, and it runs `release-plz release` authenticated by
+# CARGO_REGISTRY_TOKEN instead of OIDC. Useful when a local `cargo publish` is
+# blocked by the corporate network.
+#
+# It is intentionally self-contained and isolated from the rest of CI so it can
+# be deleted in a single-file PR with zero impact on release-plz.yml.
+#
+# After it succeeds:
+#   1. Revoke the temporary crates.io token.
+#   2. Configure OIDC trusted publishing for the crate on crates.io.
+#   3. Delete this file — the push-driven release-plz.yml takes over.
+
+on:
+  workflow_dispatch:
+    inputs:
+      crates_io_token:
+        description: "Temporary crates.io API token for the first release (revoke after)."
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  first-release:
+    name: First release
+    if: ${{ github.repository == 'open-lakehouse/headwaters' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: release # same protected env as the steady-state release job
+    permissions:
+      contents: write # create tags + GitHub Releases
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.96"
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "31.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # Mask the pasted token in logs before it is used anywhere.
+      - name: Mask token
+        run: echo "::add-mask::${{ inputs.crates_io_token }}"
+      - name: Run release-plz (release) with temporary token
+        uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5.130
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ inputs.crates_io_token }}
