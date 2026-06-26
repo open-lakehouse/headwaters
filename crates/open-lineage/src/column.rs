@@ -30,7 +30,9 @@ use crate::naming::DatasetName;
 /// A physical source column in a real input dataset.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SourceColumn {
+    /// The input dataset the column lives in.
     pub dataset: DatasetName,
+    /// The physical column name within that dataset.
     pub column: String,
 }
 
@@ -38,12 +40,16 @@ pub struct SourceColumn {
 /// two paths to the same source keeps the strongest claim.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DirectKind {
+    /// The source value flows through unchanged.
     Identity,
+    /// The source value is transformed before reaching the output.
     Transformation,
+    /// The source value is consumed by an aggregate function.
     Aggregation,
 }
 
 impl DirectKind {
+    /// Returns the OpenLineage transformation-type subtype string for this kind.
     pub fn subtype(self) -> &'static str {
         match self {
             DirectKind::Identity => "IDENTITY",
@@ -56,14 +62,20 @@ impl DirectKind {
 /// How a source influences output rows without its value flowing into them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum IndirectKind {
+    /// The source appears in a filter predicate.
     Filter,
+    /// The source appears in a join condition.
     Join,
+    /// The source appears in a group-by key.
     GroupBy,
+    /// The source appears in a sort key.
     Sort,
+    /// The source appears in a window partition or order key.
     Window,
 }
 
 impl IndirectKind {
+    /// Returns the OpenLineage transformation-type subtype string for this kind.
     pub fn subtype(self) -> &'static str {
         match self {
             IndirectKind::Filter => "FILTER",
@@ -113,8 +125,11 @@ impl ColumnSources {
 pub type IndirectSources = BTreeMap<SourceColumn, BTreeSet<IndirectKind>>;
 
 /// Resolved column lineage for one plan node's output.
+///
+/// Internal to the bottom-up resolution; the crate-public result is
+/// [`ResolvedColumns`].
 #[derive(Debug, Clone, Default)]
-pub struct NodeLineage {
+pub(crate) struct NodeLineage {
     /// One entry per output schema field, positionally aligned with the node's
     /// [`DFSchema`](datafusion::common::DFSchema).
     pub columns: Vec<ColumnSources>,
@@ -130,12 +145,14 @@ pub struct NodeLineage {
 /// on output datasets) or when resolution degraded.
 #[derive(Debug, Clone, Default)]
 pub struct ResolvedColumns {
+    /// Output field name -> its direct sources.
     pub fields: BTreeMap<String, ColumnSources>,
+    /// Statement-wide indirect influences, applying to every output field.
     pub indirect: IndirectSources,
 }
 
 /// Resolve the column lineage of the dataset written by `plan`.
-pub fn resolve_output_columns(
+pub(crate) fn resolve_output_columns(
     plan: &LogicalPlan,
     config: &OpenLineageConfig,
 ) -> Option<ResolvedColumns> {

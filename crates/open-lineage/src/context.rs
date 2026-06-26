@@ -21,7 +21,9 @@ use crate::facets::{BaseFacet, ParentJob, ParentRun, ParentRunFacet};
 pub struct LineageContext {
     /// Correlate with an orchestrator-owned run id (else a fresh UUIDv7 is used).
     pub run_id: Option<Uuid>,
+    /// Namespace of the emitting job (else the configured default namespace).
     pub job_namespace: Option<String>,
+    /// Name of the emitting job (else a plan-derived job name).
     pub job_name: Option<String>,
     /// Standard OpenLineage `parent` run facet.
     pub parent_run: Option<ParentRunFacet>,
@@ -77,6 +79,7 @@ fn parent_from_env(config: &OpenLineageConfig) -> Option<ParentRunFacet> {
 /// Supplies per-query [`LineageContext`]. Implemented by the host integration.
 #[async_trait]
 pub trait LineageContextProvider: std::fmt::Debug + Send + Sync {
+    /// Returns the [`LineageContext`] for a query, given its session state.
     async fn context(&self, session_state: &SessionState) -> LineageContext;
 }
 

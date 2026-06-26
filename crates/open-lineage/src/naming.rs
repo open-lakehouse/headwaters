@@ -8,7 +8,9 @@ use url::Url;
 /// An OpenLineage dataset name: a `namespace` plus a `name` unique within it.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DatasetName {
+    /// The dataset's namespace (e.g. a storage root or job namespace).
     pub namespace: String,
+    /// The dataset's name, unique within its namespace.
     pub name: String,
 }
 

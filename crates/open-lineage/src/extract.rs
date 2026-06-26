@@ -27,19 +27,28 @@ const COLUMN_LINEAGE_FACET: &str = "1-2-0/ColumnLineageDatasetFacet.json";
 /// What a query reads and writes.
 #[derive(Debug, Default)]
 pub struct QueryLineage {
+    /// Datasets the query reads from.
     pub inputs: Vec<InputTable>,
+    /// Datasets the query writes to.
     pub outputs: Vec<OutputTable>,
+    /// The query's SQL text, when the host supplies it (the plan walk alone
+    /// cannot recover it).
     pub sql: Option<String>,
 }
 
+/// A dataset a query reads, with its schema.
 #[derive(Debug)]
 pub struct InputTable {
+    /// The OpenLineage dataset identifier.
     pub name: DatasetName,
+    /// The dataset's full table schema (not the projected scan schema).
     pub fields: Vec<SchemaField>,
 }
 
+/// A dataset a query writes, with its schema and optional column lineage.
 #[derive(Debug)]
 pub struct OutputTable {
+    /// The OpenLineage dataset identifier.
     pub name: DatasetName,
     /// The output table's columns, emitted as a `schema` dataset facet so the
     /// written table shows its columns in the lineage graph. Empty when the
@@ -91,7 +100,7 @@ pub(crate) fn dataset_for(table_ref: &TableReference, config: &OpenLineageConfig
 /// Map Arrow fields to OpenLineage [`SchemaField`]s (name + type string). Shared
 /// by input scans and output writers so a dataset's schema facet is consistent
 /// however it's produced.
-pub fn schema_fields(fields: &datafusion::arrow::datatypes::Fields) -> Vec<SchemaField> {
+pub(crate) fn schema_fields(fields: &datafusion::arrow::datatypes::Fields) -> Vec<SchemaField> {
     fields
         .iter()
         .map(|f| SchemaField {
@@ -208,7 +217,10 @@ impl TreeNodeVisitor<'_> for LineageVisitor<'_> {
 ///
 /// Column lineage never appears on inputs — the spec defines the facet on
 /// output datasets, keyed by output field.
-pub fn input_dataset_facets(input: &InputTable, config: &OpenLineageConfig) -> DatasetFacets {
+pub(crate) fn input_dataset_facets(
+    input: &InputTable,
+    config: &OpenLineageConfig,
+) -> DatasetFacets {
     let schema = SchemaDatasetFacet {
         base: BaseFacet::new(&config.producer, SCHEMA_FACET),
         fields: input.fields.clone(),
@@ -226,7 +238,10 @@ pub fn input_dataset_facets(input: &InputTable, config: &OpenLineageConfig) -> D
 /// Each output field lists its direct sources; the statement-wide indirect
 /// influences (filter/join/group/sort keys) are appended to every field's
 /// `inputFields`, matching how the OpenLineage Spark integration emits them.
-pub fn output_dataset_facets(output: &OutputTable, config: &OpenLineageConfig) -> DatasetFacets {
+pub(crate) fn output_dataset_facets(
+    output: &OutputTable,
+    config: &OpenLineageConfig,
+) -> DatasetFacets {
     // Schema facet: emit the output table's columns (when known) so the written
     // dataset shows its columns in the graph — independent of whether column
     // lineage resolved.
