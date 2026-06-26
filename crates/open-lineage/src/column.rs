@@ -116,7 +116,7 @@ pub type IndirectSources = BTreeMap<SourceColumn, BTreeSet<IndirectKind>>;
 #[derive(Debug, Clone, Default)]
 pub struct NodeLineage {
     /// One entry per output schema field, positionally aligned with the node's
-    /// [`DFSchema`].
+    /// [`DFSchema`](datafusion::common::DFSchema).
     pub columns: Vec<ColumnSources>,
     /// Influences gathered at this node and below (filter predicates, join
     /// keys, group keys, sort keys). At the root they apply to every output.
