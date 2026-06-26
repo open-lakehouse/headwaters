@@ -1,6 +1,6 @@
 [package]
 name = "lineage-service"
-version = "0.1.0"
+version = "0.0.1"
 description = "OpenLineage ingest + Marquez-compatible read service (HTTP + ConnectRPC + Postgres)"
 edition = "2024"
 rust-version.workspace = true

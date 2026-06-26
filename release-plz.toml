@@ -25,7 +25,12 @@ git_tag_name = "{{ package }}-v{{ version }}"
 
 [[package]]
 name = "datafusion-open-lineage"
-# docs.rs builds the default feature set; nothing extra needed here.
+# TEMPORARY: this is a fresh, never-published crate name. crates.io OIDC trusted
+# publishing (the steady-state release path) can't create a new name, so hold it
+# out of the release cycle until it's bootstrap-published via
+# .github/workflows/bootstrap-publish.yml. After that first publish, delete this
+# line (and the bootstrap workflow) so release-plz publishes it via OIDC.
+release = false
 
 [[package]]
 name = "lineage-service"
