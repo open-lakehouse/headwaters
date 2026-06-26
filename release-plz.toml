@@ -15,7 +15,7 @@
 
 [workspace]
 # Link PRs/commits in the generated changelog back to the repo.
-repository_url = "https://github.com/open-lakehouse/headwaters"
+repo_url = "https://github.com/open-lakehouse/headwaters"
 # Conventional-commit driven changelog (Keep a Changelog style).
 changelog_update = true
 # Per-crate tags, e.g. `datafusion-open-lineage-v0.1.0` /
