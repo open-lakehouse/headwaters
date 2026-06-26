@@ -20,8 +20,12 @@ use crate::transport::{NoopTransport, Transport};
 /// Default bound on the in-flight event queue.
 const DEFAULT_QUEUE_SIZE: usize = 1024;
 
+/// Error returned when an [`OpenLineageClient`] cannot be constructed.
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
+    /// The client could not be built from the given configuration or
+    /// environment — for example, no Tokio runtime was available to host the
+    /// drain task, or an endpoint URL was malformed.
     #[error("invalid OpenLineage configuration: {0}")]
     Config(String),
 }
@@ -57,6 +61,8 @@ impl OpenLineageClient {
         Self::try_with_queue_size(transport, DEFAULT_QUEUE_SIZE)
     }
 
+    /// [`Self::new`] with an explicit in-flight queue bound.
+    ///
     /// # Panics
     /// Panics if called outside a Tokio runtime; see [`Self::try_with_queue_size`].
     pub fn with_queue_size(transport: Arc<dyn Transport>, queue_size: usize) -> Self {
@@ -64,6 +70,11 @@ impl OpenLineageClient {
             .expect("OpenLineageClient must be constructed within a Tokio runtime")
     }
 
+    /// Fallible [`Self::with_queue_size`]: returns [`ClientError::Config`]
+    /// instead of panicking when no Tokio runtime is available.
+    ///
+    /// # Errors
+    /// Returns [`ClientError::Config`] if called outside a Tokio runtime.
     pub fn try_with_queue_size(
         transport: Arc<dyn Transport>,
         queue_size: usize,
@@ -96,6 +107,7 @@ impl OpenLineageClient {
         })
     }
 
+    /// Returns a builder for configuring a client's transport and queue size.
     pub fn builder() -> OpenLineageClientBuilder {
         OpenLineageClientBuilder::default()
     }
@@ -182,6 +194,9 @@ impl OpenLineageClient {
     }
 }
 
+/// Builder for [`OpenLineageClient`].
+///
+/// Defaults to a [`NoopTransport`] and the default queue size if left unset.
 #[derive(Default)]
 pub struct OpenLineageClientBuilder {
     transport: Option<Arc<dyn Transport>>,
@@ -189,16 +204,22 @@ pub struct OpenLineageClientBuilder {
 }
 
 impl OpenLineageClientBuilder {
+    /// Sets the transport events are drained into.
     pub fn transport(mut self, transport: Arc<dyn Transport>) -> Self {
         self.transport = Some(transport);
         self
     }
 
+    /// Sets the bound on the in-flight event queue.
     pub fn queue_size(mut self, queue_size: usize) -> Self {
         self.queue_size = Some(queue_size);
         self
     }
 
+    /// Builds the client, spawning its background drain task.
+    ///
+    /// # Panics
+    /// Panics if called outside a Tokio runtime.
     pub fn build(self) -> OpenLineageClient {
         let transport = self.transport.unwrap_or_else(|| Arc::new(NoopTransport));
         OpenLineageClient::with_queue_size(transport, self.queue_size.unwrap_or(DEFAULT_QUEUE_SIZE))

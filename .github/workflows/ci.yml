@@ -36,6 +36,7 @@ jobs:
       pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      proto: ${{ steps.filter.outputs.proto }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -47,6 +48,8 @@ jobs:
           # `code` is true when ANY changed path is NOT one of these docs/meta
           # patterns (negations are anchored at the repo root). Keep this list in
           # sync with the set of files that genuinely can't affect the build.
+          # `proto` gates the codegen-staleness check on changes to the .proto
+          # sources, the buf config, or the committed generated output.
           filters: |
             code:
               - '!**/*.md'
@@ -54,6 +57,13 @@ jobs:
               - '!LICENSE'
               - '!.gitignore'
               - '!.editorconfig'
+            proto:
+              - 'proto/**'
+              - 'buf.yaml'
+              - 'buf.gen.yaml'
+              - 'buf.lock'
+              - 'crates/lineage-service/src/proto/**'
+              - 'crates/lineage-service/src/connect_gen/**'
 
   # fmt, clippy, test and coverage are independent jobs that run in parallel.
   # Splitting them (rather than one sequential job) means a clippy or fmt failure
@@ -82,6 +92,24 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
 
+  # Catch dangling dependencies (declared in Cargo.toml but never used). Cheap
+  # and self-contained like fmt, so it always runs. Scoped to `crates/` — the
+  # only Rust manifests; the action runs `cargo-machete` with no build needed.
+  machete:
+    name: machete
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: bnjbvr/cargo-machete@ac30a525c0a8d163a92d727b3ff079ee3f6ecb08 # v0.9.2
+        with:
+          args: crates
+
   clippy:
     name: clippy
     runs-on: ubuntu-latest
@@ -93,8 +121,9 @@ jobs:
         with:
           persist-credentials: false
 
-      # edition 2024 / rust-version 1.91 (see the workspace Cargo.toml). The pin
-      # tracks that floor so CI fails the same way a local 1.91 build would.
+      # clippy runs on a recent pinned stable for the best lints; the declared
+      # MSRV floor (workspace rust-version) is verified separately by the `msrv`
+      # job below.
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
           toolchain: "1.96"
@@ -122,6 +151,90 @@ jobs:
       # feature (incl. `governance` and the opt-in `tpcds` bench scaffolding).
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  # Verify the workspace actually builds on its declared MSRV floor
+  # (rust-version in the workspace Cargo.toml). The other jobs run on a recent
+  # pinned stable, so without this nothing would catch a dependency or syntax
+  # bump that quietly raises the real minimum below what we promise on docs.rs.
+  msrv:
+    name: msrv
+    # Skip on docs-only PRs (no code change can move the build result).
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Pinned to the workspace's declared rust-version. Bump in lock-step with
+      # Cargo.toml's `rust-version` so this job tests exactly what we promise.
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.91"
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "31.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        with:
+          shared-key: msrv
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build on MSRV
+        run: cargo build --workspace --all-features --locked
+
+  # The generated proto + ConnectRPC code under crates/lineage-service/src/
+  # {proto,connect_gen}/ is committed (so the workspace builds without a codegen
+  # step). Regenerate here and fail if the committed output drifts from the
+  # .proto sources — a `proto/` edit must land with its regenerated output.
+  proto-check:
+    name: proto-check
+    needs: changes
+    if: ${{ needs.changes.outputs.proto == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.96"
+          components: rustfmt
+
+      # The two local codegen plugins `buf generate` invokes (the buffa pass
+      # runs remotely on the BSR and needs no install).
+      - name: Install connect codegen plugins
+        run: cargo install protoc-gen-connect-rust protoc-gen-buffa-packaging
+
+      - name: Regenerate proto code
+        run: buf generate
+
+      - name: Format generated code
+        run: cargo fmt -p lineage-service
+
+      # `just proto-gen` is exactly the two steps above; fail if anything moved.
+      - name: Check committed output is up to date
+        run: |
+          if ! git diff --quiet; then
+            echo "::error::Generated proto code is stale. Run \`just proto-gen\` and commit the result."
+            git diff --stat
+            exit 1
+          fi
 
   test:
     name: test
@@ -314,7 +427,7 @@ jobs:
   ci:
     name: ci
     if: ${{ always() }}
-    needs: [fmt, clippy, test, coverage]
+    needs: [fmt, machete, clippy, msrv, proto-check, test, coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -326,7 +439,10 @@ jobs:
           # isn't success fails the gate.
           for r in \
             "fmt:${{ needs.fmt.result }}" \
+            "machete:${{ needs.machete.result }}" \
             "clippy:${{ needs.clippy.result }}" \
+            "msrv:${{ needs.msrv.result }}" \
+            "proto-check:${{ needs.proto-check.result }}" \
             "test:${{ needs.test.result }}" \
             "coverage:${{ needs.coverage.result }}"; do
             name="${r%%:*}"; result="${r##*:}"

@@ -14,11 +14,16 @@
 //! event after a crash mid-batch — reproduces the same read tables. That is
 //! what makes [`rebuild`] (truncate + reset cursor + re-fold) safe.
 
+// The projection extension surface: the `FacetProcessor` trait (custom
+// processors are passed to `Projector::spawn_with`), the backend-agnostic
+// `Mutation` IR they emit, and the `MutationApplier` seam a new storage backend
+// implements. `processors` holds the concrete built-in impls and is an internal
+// detail of `registry::with_well_known`.
 pub mod applier;
 pub mod backend;
 pub mod mutation;
 pub mod processor;
-pub mod processors;
+pub(crate) mod processors;
 pub mod registry;
 
 use std::sync::Arc;
@@ -114,6 +119,7 @@ async fn run(
 /// tables, in a single transaction, advancing the cursor. Returns the number of
 /// events applied (0 when the log has caught up).
 async fn project_once(pool: &PgPool, registry: &ProcessorRegistry) -> Result<usize, sqlx::Error> {
+    let started = std::time::Instant::now();
     let applier = PgApplier;
     let mut tx = pool.begin().await?;
 
@@ -154,6 +160,12 @@ async fn project_once(pool: &PgPool, registry: &ProcessorRegistry) -> Result<usi
         .await?;
 
     tx.commit().await?;
+    tracing::debug!(
+        events = n,
+        cursor = max_seq,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "projected batch"
+    );
     Ok(n)
 }
 

@@ -1,0 +1,40 @@
+# release-plz configuration.
+#
+# release-plz drives releases from the conventional-commit history (PR titles
+# are gated by .github/workflows/pr-title.yml). It keeps a release PR open that
+# bumps per-crate versions + updates CHANGELOG.md; merging it creates the
+# per-crate git tags + GitHub releases.
+#
+# Both crates are versioned, changelogged, tagged and GitHub-released — but they
+# diverge at the publish step:
+#   - datafusion-open-lineage -> published to crates.io (a library).
+#   - lineage-service          -> `publish = false`: NOT published to crates.io
+#     (a deployable app). Its git tag `lineage-service-v<version>` instead
+#     triggers the Docker image build/push to GHCR (see
+#     .github/workflows/docker-release.yml).
+
+[workspace]
+# Link PRs/commits in the generated changelog back to the repo.
+repository_url = "https://github.com/open-lakehouse/headwaters"
+# Conventional-commit driven changelog (Keep a Changelog style).
+changelog_update = true
+# Per-crate tags, e.g. `datafusion-open-lineage-v0.1.0` /
+# `lineage-service-v0.1.0`. The lineage-service tag is what the Docker release
+# workflow keys off, and the prefix keeps the two crates' tags distinct.
+git_tag_name = "{{ package }}-v{{ version }}"
+
+[[package]]
+name = "datafusion-open-lineage"
+# TEMPORARY: this is a fresh, never-published crate name. crates.io OIDC trusted
+# publishing (the steady-state release path) can't create a new name, so hold it
+# out of the release cycle until it's bootstrap-published via
+# .github/workflows/bootstrap-publish.yml. After that first publish, delete this
+# line (and the bootstrap workflow) so release-plz publishes it via OIDC.
+release = false
+
+[[package]]
+name = "lineage-service"
+# Version + changelog + git tag + GitHub release, but no `cargo publish` — the
+# tag drives the Docker release instead. (Cargo.toml also sets publish = false
+# as a belt-and-suspenders guard against an accidental publish.)
+publish = false

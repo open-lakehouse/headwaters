@@ -8,10 +8,13 @@ use async_trait::async_trait;
 
 use crate::event::RunEvent;
 
+/// Error returned when a [`Transport`] fails to send an event.
 #[derive(Debug, thiserror::Error)]
 pub enum TransportError {
+    /// The event could not be serialized to JSON.
     #[error("failed to serialize lineage event: {0}")]
     Serialize(#[from] serde_json::Error),
+    /// A transport-specific delivery failure (e.g. network or backend error).
     #[error("transport error: {0}")]
     Other(String),
 }
@@ -19,6 +22,11 @@ pub enum TransportError {
 /// A sink that delivers OpenLineage events to a backend.
 #[async_trait]
 pub trait Transport: std::fmt::Debug + Send + Sync {
+    /// Delivers a single OpenLineage event to the backend.
+    ///
+    /// # Errors
+    /// Returns a [`TransportError`] if the event cannot be serialized or
+    /// delivered.
     async fn emit(&self, event: &RunEvent) -> Result<(), TransportError>;
 }
 

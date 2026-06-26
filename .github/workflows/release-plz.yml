@@ -1,0 +1,123 @@
+name: Release-plz
+
+# Automated releases. On every push to `main`, release-plz opens/updates a
+# single "Release PR" containing per-crate version bumps + regenerated
+# changelogs. When that PR is merged, release-plz creates the per-crate git
+# tags + GitHub Releases. Both crates are versioned/tagged/released; they
+# diverge at publish: datafusion-open-lineage publishes to crates.io via OIDC
+# trusted publishing, while lineage-service is `publish = false` (a deployable
+# app) and instead has its container image built by the `docker` job here.
+# See release-plz.toml; CONTRIBUTING.md has the full flow.
+
+on:
+  push:
+    branches:
+      - main
+
+# Least privilege: grant per job, nothing at the top level.
+permissions: {}
+
+jobs:
+  # --- Open/update the Release PR (version bumps + changelogs) ---
+  release-plz-pr:
+    name: Release PR
+    # Never run from forks — they must not open release PRs.
+    if: ${{ github.repository == 'open-lakehouse/headwaters' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # push the release-plz-* branch
+      pull-requests: write # create/update the Release PR
+    # Avoid two pushes to main racing to open/update the same PR.
+    concurrency:
+      group: release-plz-pr
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0 # release-plz needs full history to analyze commits
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.96"
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "31.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run release-plz (release-pr)
+        uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5.130
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # --- Tag + GitHub Release + cargo publish, after the Release PR is merged ---
+  # datafusion-open-lineage publishes to crates.io (OIDC); lineage-service is
+  # `publish = false` in release-plz.toml, so it is only tagged + GitHub-
+  # released here — its Docker image is built by the `docker` job below from the
+  # version this step reports in its `releases` output.
+  release-plz-release:
+    name: Release
+    if: ${{ github.repository == 'open-lakehouse/headwaters' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: release # protected env gating the crates.io publish
+    permissions:
+      contents: write # create tags + GitHub Releases
+      id-token: write # crates.io OIDC trusted publishing
+    outputs:
+      # Version + tag of lineage-service IF it was released this run, else empty.
+      service_version: ${{ steps.service.outputs.version }}
+      service_tag: ${{ steps.service.outputs.tag }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.96"
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "31.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # No CARGO_REGISTRY_TOKEN: release-plz does the crates.io OIDC token
+      # exchange itself via `id-token: write`.
+      - name: Run release-plz (release)
+        id: release
+        uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5.130
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Pull lineage-service's version + tag out of the `releases` output (an
+      # array of {package_name, version, tag}) so the Docker job can build it.
+      # Leaves the outputs empty when this run didn't release the service.
+      - name: Extract lineage-service release
+        id: service
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
+        env:
+          RELEASES: ${{ steps.release.outputs.releases }}
+        run: |
+          version=$(jq -r '.[] | select(.package_name == "lineage-service") | .version' <<< "$RELEASES")
+          tag=$(jq -r '.[] | select(.package_name == "lineage-service") | .tag' <<< "$RELEASES")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  # --- Build + push the lineage-service Docker image, iff it was released ---
+  # Reuses .github/workflows/docker-release.yml with the exact version release-
+  # plz reported. Skips when the service wasn't part of this release.
+  docker:
+    name: Docker release
+    needs: release-plz-release
+    if: ${{ needs.release-plz-release.outputs.service_version != '' }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/docker-release.yml
+    with:
+      version: ${{ needs.release-plz-release.outputs.service_version }}
+      ref: ${{ needs.release-plz-release.outputs.service_tag }}

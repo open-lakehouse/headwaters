@@ -29,7 +29,12 @@
 //! # let _ = state;
 //! # }
 //! ```
+#![deny(missing_docs)]
 
+// Event builders. Reachable for integration tests that assert on the emitted
+// event shape, but not part of the advertised API — callers instrument a
+// session rather than building events by hand.
+#[doc(hidden)]
 pub mod builder;
 pub mod client;
 pub mod column;

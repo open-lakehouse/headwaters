@@ -30,8 +30,11 @@ use crate::writer::sink::EventSink;
 /// Tuning knobs for the buffered writer. Defaults mirror the Go forwarder.
 #[derive(Debug, Clone, Copy)]
 pub struct BufferedWriterConfig {
+    /// Flush once this many events are buffered.
     pub buffer_size: usize,
+    /// Flush at least this often, even below `buffer_size`.
     pub flush_interval: Duration,
+    /// Bounded ingestion channel depth; enqueue applies backpressure once full.
     pub channel_capacity: usize,
 }
 

@@ -13,11 +13,14 @@
 //! is a `WITH RECURSIVE` walk over `lineage_edges`; the events feed, run facets,
 //! and column-lineage endpoints read the raw `events` log directly.
 
-pub mod connect;
+// The ConnectRPC impl, nodeId parsing, Marquez response shaping, and the SQL
+// query layer are internals of the read facade — only `http` (the router) and
+// `LineageStore`/`ReadError` below are consumed outside this module.
+pub(crate) mod connect;
 pub mod http;
-pub mod ids;
-pub mod marquez_compat;
-pub mod queries;
+pub(crate) mod ids;
+pub(crate) mod marquez_compat;
+pub(crate) mod queries;
 
 use sqlx::PgPool;
 

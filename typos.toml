@@ -25,10 +25,15 @@ criticals = "criticals"
 # on its own and flagged as a misspelling of miss/mist.
 mis = "mis"
 
-# We only want typos to police code we own. The generated lineage proto carries
-# tokens we don't control; exclude it (its sibling mod.rs is hand-written and
-# stays in scope).
+# We only want typos to police code we own. Generated proto/ConnectRPC code
+# carries tokens we don't control — including base64-encoded descriptors that
+# trip the checker (e.g. "IY"->"IT", "IZ"->"IS"). Exclude the generated trees
+# wholesale (their mod.rs stitching is generated too, "DO NOT EDIT").
 [files]
 extend-exclude = [
-    "crates/lineage-service/src/proto/lineage.v1.rs",
+    # Rust: buffa messages + ConnectRPC facade for the lineage-service.
+    "crates/lineage-service/src/proto/**",
+    "crates/lineage-service/src/connect_gen/**",
+    # TypeScript: the generated ConnectRPC client for the web UI.
+    "node/lineage-client/src/gen/**",
 ]
