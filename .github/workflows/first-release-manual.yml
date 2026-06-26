@@ -7,26 +7,24 @@ name: First release (manual, DELETE AFTER USE)
 # crates.io OIDC trusted publishing (used by the steady-state release-plz.yml)
 # can only be configured AFTER a crate first exists on crates.io — so the very
 # first publish is a chicken-and-egg the OIDC `release` job can't solve. This
-# one-off job bootstraps it: trigger it manually, paste a temporary crates.io
-# API token, and it runs `release-plz release` authenticated by
-# CARGO_REGISTRY_TOKEN instead of OIDC. Useful when a local `cargo publish` is
-# blocked by the corporate network.
+# one-off job bootstraps it: trigger it manually and it runs `release-plz
+# release` authenticated by the temporary `CARGO_REGISTRY_TOKEN` repo secret
+# instead of OIDC. Handy when a local `cargo publish` is blocked by the
+# corporate network.
 #
 # It is intentionally self-contained and isolated from the rest of CI so it can
 # be deleted in a single-file PR with zero impact on release-plz.yml.
 #
+# Prerequisite: add a temporary `CARGO_REGISTRY_TOKEN` secret (a crates.io API
+# token with publish scope) to the repo / the `release` environment.
+#
 # After it succeeds:
-#   1. Revoke the temporary crates.io token.
+#   1. Delete the CARGO_REGISTRY_TOKEN secret (and revoke it on crates.io).
 #   2. Configure OIDC trusted publishing for the crate on crates.io.
 #   3. Delete this file — the push-driven release-plz.yml takes over.
 
 on:
-  workflow_dispatch:
-    inputs:
-      crates_io_token:
-        description: "Temporary crates.io API token for the first release (revoke after)."
-        required: true
-        type: string
+  workflow_dispatch: {}
 
 permissions: {}
 
@@ -52,13 +50,12 @@ jobs:
         with:
           version: "31.1"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      # Mask the pasted token in logs before it is used anywhere.
-      - name: Mask token
-        run: echo "::add-mask::${{ inputs.crates_io_token }}"
-      - name: Run release-plz (release) with temporary token
+      - name: Run release-plz (release) with the temporary token
         uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5.130
         with:
           command: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CARGO_REGISTRY_TOKEN: ${{ inputs.crates_io_token }}
+          # Temporary crates.io token (a GitHub secret). Delete after the first
+          # release; the steady-state workflow uses OIDC, not this secret.
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
