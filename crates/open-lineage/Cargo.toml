@@ -14,8 +14,6 @@ categories = ["database", "development-tools::debugging"]
 
 [dependencies]
 datafusion = { workspace = true }
-datafusion-common = { workspace = true }
-datafusion-expr = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -30,11 +28,10 @@ thiserror = { workspace = true }
 
 olai-http = { workspace = true, optional = true }
 reqwest = { version = "0.12", optional = true }
-serde_yaml = { version = "0.9", optional = true }
 
 [features]
 default = ["http"]
-http = ["dep:olai-http", "dep:reqwest", "dep:serde_yaml"]
+http = ["dep:olai-http", "dep:reqwest"]
 # Opt-in: the live Marquez reference-backend acceptance test (tests/marquez_acceptance.rs).
 # It additionally needs Docker; the test is also `#[ignore]`d so even with the
 # feature on it only runs under `-- --ignored`. Requires `http` for the transport.

@@ -92,6 +92,24 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
 
+  # Catch dangling dependencies (declared in Cargo.toml but never used). Cheap
+  # and self-contained like fmt, so it always runs. Scoped to `crates/` — the
+  # only Rust manifests; the action runs `cargo-machete` with no build needed.
+  machete:
+    name: machete
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: bnjbvr/cargo-machete@ac30a525c0a8d163a92d727b3ff079ee3f6ecb08 # v0.9.2
+        with:
+          args: crates
+
   clippy:
     name: clippy
     runs-on: ubuntu-latest
@@ -409,7 +427,7 @@ jobs:
   ci:
     name: ci
     if: ${{ always() }}
-    needs: [fmt, clippy, msrv, proto-check, test, coverage]
+    needs: [fmt, machete, clippy, msrv, proto-check, test, coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -421,6 +439,7 @@ jobs:
           # isn't success fails the gate.
           for r in \
             "fmt:${{ needs.fmt.result }}" \
+            "machete:${{ needs.machete.result }}" \
             "clippy:${{ needs.clippy.result }}" \
             "msrv:${{ needs.msrv.result }}" \
             "proto-check:${{ needs.proto-check.result }}" \
