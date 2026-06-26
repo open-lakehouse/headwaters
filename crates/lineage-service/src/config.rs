@@ -95,11 +95,16 @@ fn default_port() -> u16 {
     8091
 }
 
+/// Top-level service configuration: defaults, overlaid by an optional config
+/// file, overlaid by `LINEAGE__*` environment variables.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    /// TCP port the HTTP + ConnectRPC server listens on.
     pub port: u16,
+    /// Postgres connection + projection settings.
     pub postgres: PostgresConfig,
+    /// Buffered-writer tuning for the ingest path.
     pub writer: WriterConfig,
 }
 

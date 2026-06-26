@@ -27,6 +27,7 @@ use crate::writer::buffered::BufferedWriterHandle;
 /// Shared handler state: a handle onto the buffered writer.
 #[derive(Clone)]
 pub struct AppState {
+    /// Enqueue handle onto the buffered writer for the ingest endpoints.
     pub writer: BufferedWriterHandle,
     /// Read-only handle onto the events table for the Marquez-compatible API.
     pub store: LineageStore,

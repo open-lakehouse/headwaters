@@ -14,11 +14,16 @@
 //! event after a crash mid-batch — reproduces the same read tables. That is
 //! what makes [`rebuild`] (truncate + reset cursor + re-fold) safe.
 
+// The projection extension surface: the `FacetProcessor` trait (custom
+// processors are passed to `Projector::spawn_with`), the backend-agnostic
+// `Mutation` IR they emit, and the `MutationApplier` seam a new storage backend
+// implements. `processors` holds the concrete built-in impls and is an internal
+// detail of `registry::with_well_known`.
 pub mod applier;
 pub mod backend;
 pub mod mutation;
 pub mod processor;
-pub mod processors;
+pub(crate) mod processors;
 pub mod registry;
 
 use std::sync::Arc;
