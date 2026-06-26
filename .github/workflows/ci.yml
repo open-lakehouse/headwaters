@@ -93,8 +93,9 @@ jobs:
         with:
           persist-credentials: false
 
-      # edition 2024 / rust-version 1.91 (see the workspace Cargo.toml). The pin
-      # tracks that floor so CI fails the same way a local 1.91 build would.
+      # clippy runs on a recent pinned stable for the best lints; the declared
+      # MSRV floor (workspace rust-version) is verified separately by the `msrv`
+      # job below.
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
           toolchain: "1.96"
@@ -122,6 +123,44 @@ jobs:
       # feature (incl. `governance` and the opt-in `tpcds` bench scaffolding).
       - name: Clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  # Verify the workspace actually builds on its declared MSRV floor
+  # (rust-version in the workspace Cargo.toml). The other jobs run on a recent
+  # pinned stable, so without this nothing would catch a dependency or syntax
+  # bump that quietly raises the real minimum below what we promise on docs.rs.
+  msrv:
+    name: msrv
+    # Skip on docs-only PRs (no code change can move the build result).
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Pinned to the workspace's declared rust-version. Bump in lock-step with
+      # Cargo.toml's `rust-version` so this job tests exactly what we promise.
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.91"
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "31.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+        with:
+          shared-key: msrv
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build on MSRV
+        run: cargo build --workspace --all-features --locked
 
   test:
     name: test
@@ -314,7 +353,7 @@ jobs:
   ci:
     name: ci
     if: ${{ always() }}
-    needs: [fmt, clippy, test, coverage]
+    needs: [fmt, clippy, msrv, test, coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -327,6 +366,7 @@ jobs:
           for r in \
             "fmt:${{ needs.fmt.result }}" \
             "clippy:${{ needs.clippy.result }}" \
+            "msrv:${{ needs.msrv.result }}" \
             "test:${{ needs.test.result }}" \
             "coverage:${{ needs.coverage.result }}"; do
             name="${r%%:*}"; result="${r##*:}"
