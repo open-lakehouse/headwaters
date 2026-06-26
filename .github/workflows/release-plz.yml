@@ -12,6 +12,18 @@ on:
   push:
     branches:
       - main
+  # Manual first-release path. The steady-state `release` job publishes via
+  # crates.io OIDC (no token), but OIDC trusted publishing must be configured
+  # on crates.io *after* a crate first exists there — so the very first publish
+  # is a chicken-and-egg. Trigger this job once, pasting a temporary crates.io
+  # API token, to bootstrap the initial release. REVOKE the token afterwards and
+  # let the automatic OIDC path take over.
+  workflow_dispatch:
+    inputs:
+      crates_io_token:
+        description: "Temporary crates.io API token for the FIRST manual release (revoke after)."
+        required: true
+        type: string
 
 # Least privilege: grant per job, nothing at the top level.
 permissions: {}
@@ -20,8 +32,8 @@ jobs:
   # --- Open/update the Release PR (version bumps + changelogs) ---
   release-plz-pr:
     name: Release PR
-    # Never run from forks — they must not open release PRs.
-    if: ${{ github.repository == 'open-lakehouse/headwaters' }}
+    # Push-driven only (not the manual first-release dispatch); never from forks.
+    if: ${{ github.event_name == 'push' && github.repository == 'open-lakehouse/headwaters' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -55,9 +67,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # --- Tag + GitHub Release + cargo publish, after the Release PR is merged ---
+  # Steady state: publishes via crates.io OIDC (no token). Push-driven only.
   release-plz-release:
     name: Release
-    if: ${{ github.repository == 'open-lakehouse/headwaters' }}
+    if: ${{ github.event_name == 'push' && github.repository == 'open-lakehouse/headwaters' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: release # protected env gating the crates.io publish
@@ -85,3 +98,44 @@ jobs:
           command: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # --- One-time manual first release (workflow_dispatch only) ---
+  # Bootstraps the initial crates.io publish using a temporary token pasted at
+  # dispatch time, since OIDC trusted publishing can only be configured after
+  # the crate first exists on crates.io. Same `release` command as the steady
+  # state, but authenticated by CARGO_REGISTRY_TOKEN instead of OIDC.
+  #
+  # After this succeeds: REVOKE the temporary token on crates.io and configure
+  # OIDC trusted publishing for the crate — the push-driven `release` job takes
+  # over from then on.
+  first-release-manual:
+    name: First release (manual)
+    if: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'open-lakehouse/headwaters' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: release # same protected env as the steady-state release
+    permissions:
+      contents: write # create tags + GitHub Releases
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: "1.96"
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "31.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # Mask the pasted token in logs before it is used anywhere.
+      - name: Mask token
+        run: echo "::add-mask::${{ inputs.crates_io_token }}"
+      - name: Run release-plz (release) with temporary token
+        uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5.130
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ inputs.crates_io_token }}
