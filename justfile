@@ -200,6 +200,24 @@ conformance-it:
 marquez-it:
     cargo test -p datafusion-open-lineage --features marquez-it --test marquez_acceptance -- --ignored --nocapture
 
+# the same coverage CI publishes to Codecov: nextest + doctests, all features, the
+# committed codegen / entry points filtered out (keep the regex in sync with the
+# `coverage` job in .github/workflows/ci.yml and the `ignore` list in codecov.yml).
+# Writes an HTML report under target/llvm-cov/html (open with `just coverage-open`).
+# Doctest coverage needs the nightly compiler. Because `--all-features` enables
+# `postgres-it`/`conformance-it`, this brings up Docker containers — on
+# colima/Docker Desktop, point DOCKER_HOST at the right socket first (e.g.
+# `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock just coverage`).
+coverage:
+    cargo llvm-cov --no-report nextest --workspace --all-features
+    cargo +nightly llvm-cov --no-report --doc --workspace --all-features
+    cargo +nightly llvm-cov report --doctests --html \
+        --ignore-filename-regex 'headwaters/src/(proto/[^/]+\.v1\.rs|connect_gen/|main\.rs|projection/applier\.rs)'
+
+# open the HTML coverage report produced by `just coverage`
+coverage-open:
+    open target/llvm-cov/html/index.html
+
 # regenerate headwaters's protobuf message types + the read-API ConnectRPC
 # facade from the lineage protos (events, facets, read DTOs, service defs). The
 # buffa plugin runs remotely on the BSR (no local install); the two connect

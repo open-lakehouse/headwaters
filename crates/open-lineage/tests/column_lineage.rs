@@ -5,6 +5,8 @@
 //! old name-based extraction removed (fabricated datasets from aliases,
 //! same-name clobbering, facet on the wrong dataset side).
 
+mod common;
+
 use datafusion::prelude::SessionContext;
 use datafusion_openlineage::builder::start_event;
 use datafusion_openlineage::config::OpenLineageConfig;
@@ -13,11 +15,10 @@ use datafusion_openlineage::extract::extract;
 use serde_json::Value;
 use uuid::Uuid;
 
+/// Column-lineage extraction doesn't depend on the engine identity, so this uses
+/// the plain (non-DataFusion) config in `test-ns`.
 fn config() -> OpenLineageConfig {
-    OpenLineageConfig {
-        job_namespace: "test-ns".to_string(),
-        ..Default::default()
-    }
+    common::config("test-ns", false)
 }
 
 /// Plan + optimize `sql`, extract lineage, and return the START event as JSON.

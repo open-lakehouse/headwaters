@@ -27,6 +27,13 @@ ignore:
   - "crates/headwaters/src/proto/*.v1.rs"
   # Every file under connect_gen/ is `@generated` (connectrpc service stubs).
   - "crates/headwaters/src/connect_gen/**"
+  # Process entry point: pure runtime wiring (pool, server, signal handling) that
+  # in-process integration tests don't drive — counting it only depresses the
+  # honest number, same rationale as the generated code above.
+  - "crates/headwaters/src/main.rs"
+  # A documented contract trait with no direct callers (the Postgres applier
+  # bypasses it; see the module docs), so there is nothing to exercise.
+  - "crates/headwaters/src/projection/applier.rs"
   - "**/examples/**" # runnable examples, not unit-tested
   - "**/tests/**" # integration test harnesses
   - "**/benches/**"

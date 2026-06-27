@@ -18,3 +18,12 @@ pub mod ingest;
 pub mod projection;
 pub mod read;
 pub mod writer;
+
+// Shared Postgres/testcontainers scaffolding for the integration tests. Lives in
+// `src/` (not `tests/common/`) so inline `#[cfg(test)]` modules — notably the
+// ConnectRPC handler tests in `read::connect`, which touch crate-private proto
+// types — can share one bootstrap with the rest of the suite. Gated on
+// `postgres-it` (the same feature its consumers need) so the default test build
+// neither compiles the Docker scaffolding nor warns about it going unused.
+#[cfg(all(test, feature = "postgres-it"))]
+mod test_support;

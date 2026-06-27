@@ -21,28 +21,13 @@
 #[path = "../examples/e2e_pipeline/journey.rs"]
 mod journey;
 
-use std::sync::{Arc, Mutex};
+mod common;
 
-use async_trait::async_trait;
+use std::sync::Arc;
+
+use common::RecordingTransport;
 use datafusion_openlineage::event::{RunEvent, RunEventType};
-use datafusion_openlineage::transport::{Transport, TransportError};
 use serde_json::Value;
-
-/// A network-free [`Transport`] that records every emitted event for the test
-/// to assert on. (The Marquez acceptance test's `TeeTransport` can't be reused:
-/// it's feature-gated and forwards over HTTP.)
-#[derive(Debug, Default, Clone)]
-struct RecordingTransport {
-    seen: Arc<Mutex<Vec<RunEvent>>>,
-}
-
-#[async_trait]
-impl Transport for RecordingTransport {
-    async fn emit(&self, event: &RunEvent) -> Result<(), TransportError> {
-        self.seen.lock().unwrap().push(event.clone());
-        Ok(())
-    }
-}
 
 /// Whether any output dataset named `dataset` (in any captured event) has a
 /// `columnLineage` mapping for output field `field` that draws from
@@ -92,7 +77,7 @@ fn output_names(events: &[Value]) -> Vec<String> {
 #[tokio::test(flavor = "multi_thread")]
 async fn e2e_pipeline_emits_full_lineage() {
     let transport = RecordingTransport::default();
-    let seen = transport.seen.clone();
+    let seen = transport.events.clone();
     let client = datafusion_openlineage::OpenLineageClient::new(Arc::new(transport));
 
     // A unique per-process lake root so a concurrent `just demo` or a second

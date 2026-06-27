@@ -12,16 +12,15 @@
 //!     against their individual facet schemas, since the core schema treats
 //!     facet bodies as open `additionalProperties` and won't deep-check them.
 
-use std::sync::{Arc, Mutex, OnceLock};
+mod common;
 
-use async_trait::async_trait;
+use std::sync::{Arc, OnceLock};
+
+use common::RecordingTransport;
 use datafusion::prelude::SessionContext;
 use datafusion_openlineage::config::OpenLineageConfig;
 use datafusion_openlineage::event::RunEvent;
-use datafusion_openlineage::transport::{Transport, TransportError};
-use datafusion_openlineage::{
-    DataFusionConfig, OpenLineageClient, instrument_session_state_simple,
-};
+use datafusion_openlineage::{OpenLineageClient, instrument_session_state_simple};
 use jsonschema::{Registry, Resource, Validator};
 use serde_json::Value;
 
@@ -97,24 +96,9 @@ fn wrapped(key: &str, body: &Value) -> Value {
 // Emit harness.
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Default, Clone)]
-struct RecordingTransport {
-    events: Arc<Mutex<Vec<RunEvent>>>,
-}
-
-#[async_trait]
-impl Transport for RecordingTransport {
-    async fn emit(&self, event: &RunEvent) -> Result<(), TransportError> {
-        self.events.lock().unwrap().push(event.clone());
-        Ok(())
-    }
-}
-
+/// The DataFusion-flavored config these conformance runs emit under.
 fn config() -> OpenLineageConfig {
-    OpenLineageConfig {
-        job_namespace: "conformance-ns".to_string(),
-        ..OpenLineageConfig::for_datafusion()
-    }
+    common::config("conformance-ns", true)
 }
 
 /// Run `setup` (DDL to seed tables) then `query`, fully draining it, and return
