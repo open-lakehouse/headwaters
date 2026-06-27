@@ -1700,10 +1700,8 @@ dependencies = [
  "jsonschema",
  "openlineage-client",
  "reqwest 0.12.28",
- "serde",
  "serde_json",
  "testcontainers",
- "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -3467,7 +3465,6 @@ version = "0.0.1"
 dependencies = [
  "async-trait",
  "olai-http",
- "reqwest 0.12.28",
  "serde",
  "serde_json",
  "thiserror",

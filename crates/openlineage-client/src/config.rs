@@ -64,7 +64,7 @@ impl OpenLineageConfig {
     /// [`Self::from_env`] with the `OPENLINEAGE_NAMESPACE` / `OPENLINEAGE_TIMEOUT_MS`
     /// values injected, so the fallback logic is unit-testable without mutating
     /// process-global env. An absent or empty namespace falls back to
-    /// [`DEFAULT_NAMESPACE`]; an absent/empty/unparseable timeout falls back to
+    /// [`DEFAULT_NAMESPACE`]; an absent/empty/unparsable timeout falls back to
     /// [`DEFAULT_REQUEST_TIMEOUT`].
     pub fn with_env(namespace: Option<String>, timeout_ms: Option<String>) -> Self {
         let request_timeout = timeout_ms
@@ -136,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn timeout_falls_back_when_unparseable() {
+    fn timeout_falls_back_when_unparsable() {
         let cfg = OpenLineageConfig::with_env(None, Some("not-a-number".to_string()));
         assert_eq!(cfg.request_timeout, DEFAULT_REQUEST_TIMEOUT);
     }

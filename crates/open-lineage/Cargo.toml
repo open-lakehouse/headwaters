@@ -17,7 +17,6 @@ categories = ["database", "development-tools::debugging"]
 openlineage-client = { path = "../openlineage-client", default-features = false }
 datafusion = { workspace = true }
 async-trait = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
@@ -25,7 +24,6 @@ futures = { workspace = true }
 uuid = { workspace = true, features = ["v7", "serde"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
-thiserror = { workspace = true }
 
 [features]
 default = ["http"]
