@@ -16,24 +16,24 @@
 
 > [!NOTE]
 > Headwaters stands on the shoulders of the [Marquez](https://marquezproject.ai)
-> project: it implements a Marquez-compatible read API and is diffed against
-> Marquez for conformance. Marquez is the mature, production-ready OpenLineage
-> metadata service — **if you need a production solution today, use
-> [Marquez](https://marquezproject.ai).** Headwaters is an experimental,
-> Rust-native take for the open lakehouse stack.
+> project, whose read API and data model inspired this work. Marquez is the
+> mature, production-ready OpenLineage metadata service — **if you need a
+> production solution today, use [Marquez](https://marquezproject.ai).**
+> Headwaters is an experimental, Rust-native take for the open lakehouse stack
+> and does not aim to be a drop-in Marquez replacement.
 
 Headwaters is a set of Rust building blocks for [OpenLineage](https://openlineage.io)
 on the open lakehouse stack. It emits column-level data lineage from
 [Apache DataFusion](https://datafusion.apache.org) sessions at planning time, and
 ingests OpenLineage events into a queryable lineage store that serves a
-[Marquez](https://marquezproject.ai)-compatible read API for visualization.
+read API for visualization, inspired by [Marquez](https://marquezproject.ai).
 
 ## Crates
 
 | Crate | Package | What it does |
 |---|---|---|
 | [`crates/open-lineage`](crates/open-lineage) | `datafusion-open-lineage` | OpenLineage integration for DataFusion sessions — emits run events (START/COMPLETE/FAIL) with input/output datasets and column-level lineage, extracted at planning time. |
-| [`crates/headwaters`](crates/headwaters) | `headwaters` | An HTTP service that ingests OpenLineage events into an append-only Postgres event log, projects them asynchronously into normalized read tables, and serves a [Marquez](https://marquezproject.ai)-compatible read API for visualization. |
+| [`crates/headwaters`](crates/headwaters) | `headwaters` | An HTTP service that ingests OpenLineage events into an append-only Postgres event log, projects them asynchronously into normalized read tables, and serves a read API for visualization (inspired by [Marquez](https://marquezproject.ai)). |
 
 ## Build & test
 
@@ -66,9 +66,8 @@ The generated Rust types are committed under
 the workspace builds without a codegen step. Regenerate with `just proto-gen`
 (uses [`buf`](https://buf.build) + the remote `buffa` plugin).
 
-The read API is served by a hand-written Axum server (`src/read/`) that honors
-the exact Marquez wire contract; the proto is the canonical shape it (and the
-future generated clients) agree on. See ADR
+The read API is served by a hand-written Axum server (`src/read/`); the proto is
+the canonical shape it (and the future generated clients) agree on. See ADR
 [0010](docs/adr/0010-read-api-proto-source-of-truth.md) for why serving is kept
 hand-written for now and the Trestle-codegen follow-ups that would let it be
 generated.
