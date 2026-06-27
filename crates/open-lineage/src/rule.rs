@@ -1,7 +1,7 @@
 //! Plan-carried lineage marker and its lowering into the terminal node.
 //!
 //! OpenLineage instrumentation has three concerns with different needs (see ADR
-//! 0014): lineage *extraction* needs the optimized `LogicalPlan`; the START event
+//! 0005): lineage *extraction* needs the optimized `LogicalPlan`; the START event
 //! and orchestration context need `&SessionState` and are async; the terminal
 //! COMPLETE/FAIL node needs to sit at the physical root and observe execution.
 //! Only the [`QueryPlanner`] seam has `&SessionState`, so the planning-time work

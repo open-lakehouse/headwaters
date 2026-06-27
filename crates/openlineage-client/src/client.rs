@@ -2,9 +2,11 @@
 //!
 //! Emission must never break or slow the host query. [`OpenLineageClient::emit`]
 //! is non-blocking: it hands the event to a bounded channel drained by a
-//! background task that calls the transport and swallows + logs any error. If
-//! the channel is full the event is dropped with a warning (back-pressure must
-//! not stall planning).
+//! background task that delivers events to the transport (coalescing queued
+//! events into batches when the upstream is slow) and swallows + logs any error.
+//! If the channel is full the event is dropped with a warning (back-pressure must
+//! not stall planning). [`OpenLineageClient::shutdown`] drains the queue and
+//! flushes the transport before exit.
 
 use std::sync::Arc;
 use std::sync::Mutex;

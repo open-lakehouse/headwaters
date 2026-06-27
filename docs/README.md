@@ -1,5 +1,8 @@
 # Headwaters documentation
 
+- [Emitting OpenLineage — getting started](emitting-lineage.md) — how to emit
+  lineage events from DataFusion or any other source, and how to write a custom
+  `Transport`.
 - [Architecture Decision Records](adr/README.md) — the numbered design decisions
   behind the lineage crates (run-id correlation, column lineage, storage, the
   projection pipeline, tags, PII propagation).

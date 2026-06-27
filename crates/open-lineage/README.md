@@ -30,26 +30,31 @@ latest published facet versions (see
 
 ```rust,no_run
 use datafusion::execution::SessionStateBuilder;
-use datafusion_open_lineage::{
-    instrument_session_state_simple, OpenLineageClient, OpenLineageConfig,
-};
+use datafusion_open_lineage::OpenLineage;
 
-# async fn wire() {
+# fn wire() -> Result<(), Box<dyn std::error::Error>> {
 let state = SessionStateBuilder::new_with_default_features().build();
-// Reads OPENLINEAGE_URL / OPENLINEAGE_API_KEY; a no-op client if unset.
-let client = OpenLineageClient::from_env().unwrap();
-let state = instrument_session_state_simple(state, client, OpenLineageConfig::default());
+// Reads OPENLINEAGE_URL / OPENLINEAGE_API_KEY / OPENLINEAGE_NAMESPACE; a no-op
+// client if OPENLINEAGE_URL is unset.
+let state = OpenLineage::builder().from_env()?.instrument(state);
 // Build a SessionContext from `state` and run queries as usual.
 # let _ = state;
+# Ok(())
 # }
 ```
 
 Inject orchestration metadata (parent run, job name, custom facets, SQL text) per
-query with a [`LineageContextProvider`]; use `instrument_session_state` to supply one.
+query with a [`LineageContextProvider`]: `OpenLineage::builder().context(provider)`.
+The lower-level `instrument_session_state` / `instrument_session_state_simple`
+free functions remain for advanced cases (e.g. sharing one client across many
+sessions, each with its own context provider).
 
 ## Transports
 
-The event sink is the pluggable `Transport` trait.
+The event sink is the pluggable `Transport` trait, which lives in the
+engine-agnostic [`openlineage-client`](../openlineage-client) crate (re-exported
+here). A transport can target an OpenLineage REST API, a Kafka topic, or anything
+else — see that crate to write your own.
 
 | Transport               | Feature | Use                                                        |
 | ----------------------- | ------- | ---------------------------------------------------------- |
@@ -57,9 +62,9 @@ The event sink is the pluggable `Transport` trait.
 | `ConsoleTransport`      | —       | Log each event as JSON via `tracing`. Development.         |
 | `NoopTransport`         | —       | Drop events. The safe default when lineage isn't wired up. |
 
-`http` is on by default and pulls in `olai-http`, which handles bearer-token,
-Databricks, and AWS/GCP credential auth out of the box. Disable default features to
-drop the HTTP stack and bring your own `Transport`.
+`http` is on by default and forwards to `openlineage-client/http`, which pulls in
+`olai-http` (bearer-token, Databricks, and AWS/GCP credential auth out of the box).
+Disable default features to drop the HTTP stack and bring your own `Transport`.
 
 ## Correctness testing
 
