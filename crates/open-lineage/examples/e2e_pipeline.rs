@@ -4,7 +4,7 @@
 //! instrumentation path — it builds instrumented [`SessionContext`]s, executes
 //! genuine multi-stage SQL transformations over Parquet files on disk, and lets
 //! the crate extract lineage from the query plans and POST it to a running
-//! `lineage-service`. Run the service, run this, open the UI: the bronze →
+//! `headwaters`. Run the service, run this, open the UI: the bronze →
 //! silver → gold graph appears, covering schema facets, column-level lineage
 //! (with TRANSFORMATION / FILTER / JOIN / AGGREGATION / GROUP_BY subtypes),
 //! input statistics, run history, and parent/child run correlation.
@@ -17,7 +17,7 @@
 //! ## Running
 //!
 //! ```sh
-//! just dev      # Postgres + lineage-service on :8091 (in one shell)
+//! just dev      # Postgres + headwaters on :8091 (in one shell)
 //! cargo run -p datafusion-open-lineage --example e2e_pipeline   # in another
 //! just ui-dev   # then open the UI and explore the graph
 //! ```

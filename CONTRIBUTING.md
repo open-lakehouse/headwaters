@@ -24,7 +24,7 @@ and the offline OpenLineage spec-conformance suite validates against vendored
 JSON Schemas. The Docker-gated suites:
 
 ```sh
-just postgres-it    # lineage-service read/projection tests (Postgres via testcontainers)
+just postgres-it    # headwaters read/projection tests (Postgres via testcontainers)
 just conformance-it # differential conformance against the real Marquez
 just marquez-it      # open-lineage acceptance test against the Marquez reference backend
 ```
@@ -32,7 +32,7 @@ just marquez-it      # open-lineage acceptance test against the Marquez referenc
 ## Local dev environment
 
 ```sh
-just dev            # Postgres + lineage-service, clean start
+just dev            # Postgres + headwaters, clean start
 just seed           # post the demo lineage graph (see examples/seed/README.md)
 just dev-down       # tear it down
 ```
@@ -54,7 +54,7 @@ cargo doc --no-deps                  # must be warning-free (datafusion-open-lin
 
 ### Protobuf changes
 
-The generated Rust (`crates/lineage-service/src/{proto,connect_gen}/`) and the
+The generated Rust (`crates/headwaters/src/{proto,connect_gen}/`) and the
 TypeScript client (`node/lineage-client/src/gen/`) are committed so the
 workspace builds without a codegen step. If you edit anything under `proto/`,
 regenerate and commit the output in the same change:

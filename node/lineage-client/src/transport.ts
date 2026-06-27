@@ -22,7 +22,7 @@ import { createConnectTransport } from "@connectrpc/connect-web";
 
 // Default: Connect-over-fetch against the current origin. An empty base resolves
 // against the dev origin; a Vite proxy forwards the RPC path prefix
-// (/headwaters.read.v1.ReadService/*) to the lineage-service. See the app's
+// (/headwaters.read.v1.ReadService/*) to headwaters. See the app's
 // vite.config.ts.
 const defaultTransport: Transport = createConnectTransport({
   baseUrl: "/",

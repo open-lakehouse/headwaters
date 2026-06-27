@@ -96,7 +96,7 @@ fn default_port() -> u16 {
 }
 
 /// Top-level service configuration: defaults, overlaid by an optional config
-/// file, overlaid by `LINEAGE__*` environment variables.
+/// file, overlaid by `HEADWATERS__*` environment variables.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -120,11 +120,11 @@ impl Default for Config {
 
 /// Environment variable holding the path to the config file. Also accepted as
 /// the binary's first positional argument (see `main`).
-pub const CONFIG_PATH_ENV: &str = "LINEAGE_CONFIG";
+pub const CONFIG_PATH_ENV: &str = "HEADWATERS_CONFIG";
 
 /// Prefix and separator for environment overrides of structured config keys,
-/// e.g. `LINEAGE__PORT=9000` or `LINEAGE__WRITER__BUFFER_SIZE=200`.
-const ENV_PREFIX: &str = "LINEAGE";
+/// e.g. `HEADWATERS__PORT=9000` or `HEADWATERS__WRITER__BUFFER_SIZE=200`.
+const ENV_PREFIX: &str = "HEADWATERS";
 const ENV_SEPARATOR: &str = "__";
 
 impl Config {
@@ -132,9 +132,9 @@ impl Config {
     ///
     /// 1. struct defaults,
     /// 2. the config file (TOML/YAML/… — `path` if given, otherwise the
-    ///    `LINEAGE_CONFIG` path if set; a missing file is only an error when the
-    ///    path was explicitly requested),
-    /// 3. `LINEAGE__*` environment overrides (e.g. `LINEAGE__PORT=9000`).
+    ///    `HEADWATERS_CONFIG` path if set; a missing file is only an error when
+    ///    the path was explicitly requested),
+    /// 3. `HEADWATERS__*` environment overrides (e.g. `HEADWATERS__PORT=9000`).
     ///
     /// The Postgres DSN is then overlaid from `DATABASE_URL` if set, so the
     /// credential never needs to live in the checked-in file.
@@ -274,6 +274,6 @@ mod tests {
 
     #[test]
     fn test_load_missing_explicit_path_is_error() {
-        assert!(Config::load(Some("/nonexistent/lineage-service.toml")).is_err());
+        assert!(Config::load(Some("/nonexistent/headwaters.toml")).is_err());
     }
 }

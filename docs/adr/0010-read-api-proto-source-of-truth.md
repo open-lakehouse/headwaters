@@ -4,7 +4,7 @@
 > `proto/headwaters/read/v1/{read,service}.proto` (package `headwaters.read.v1`,
 > service `ReadService`); the OpenLineage-aligned event/facet model and ingest
 > stay in `proto/lineage/v1` (`IngestService`). The hand-written REST server in
-> `crates/lineage-service/src/read/` remains the serving path. Builds on the
+> `crates/headwaters/src/read/` remains the serving path. Builds on the
 > CQRS read model in ADR [0006](0006-hybrid-cqrs-postgres-storage.md).
 
 ## Context
@@ -116,7 +116,7 @@ once the UI is in place and there's a measured latency/payload problem to solve.
 
 - **One source of truth for the shape.** `proto/headwaters/read/v1` is the
   canonical definition the hand-written server, the future generated clients, and
-  the UI all reference. `crates/lineage-service/src/read/model.rs` and the proto
+  the UI all reference. `crates/headwaters/src/read/model.rs` and the proto
   are kept in lockstep (the proto matches the serde structs field-for-field,
   including `currentVersion` and the tag/stats messages the old proto omitted).
 - **Clean spec/non-spec boundary.** `lineage.v1` is now purely OpenLineage-aligned

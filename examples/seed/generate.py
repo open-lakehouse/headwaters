@@ -18,7 +18,7 @@ every read-API feature the UI surfaces:
 
 The output is a single JSON array of OpenLineage events on stdout (or to a file
 with -o), ordered so a naive replay reconstructs the graph correctly. The
-companion `ingest.sh` POSTs it to a running lineage-service.
+companion `ingest.sh` POSTs it to a running headwaters instance.
 
 Deterministic: no wall-clock, no randomness — re-running produces byte-identical
 output, so the seeded DB is reproducible.

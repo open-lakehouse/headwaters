@@ -2462,6 +2462,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "headwaters"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum 0.7.9",
+ "buffa",
+ "buffa-types",
+ "chrono",
+ "config",
+ "connectrpc",
+ "http-body",
+ "http-body-util",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "testcontainers",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3109,36 +3139,6 @@ checksum = "2e99fb7a497b1e3339bc746195567ed8d3e24945ecd636e3619d20b9de9e9149"
 dependencies = [
  "pkg-config",
  "vcpkg",
-]
-
-[[package]]
-name = "lineage-service"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum 0.7.9",
- "buffa",
- "buffa-types",
- "chrono",
- "config",
- "connectrpc",
- "http-body",
- "http-body-util",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sqlx",
- "tempfile",
- "testcontainers",
- "thiserror",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
 ]
 
 [[package]]

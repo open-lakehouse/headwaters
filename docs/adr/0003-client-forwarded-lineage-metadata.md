@@ -4,7 +4,7 @@
 > implemented in the host Flight SQL service (an upstream open-lakehouse service,
 > not part of this repo); the spec-correct facet structs live in
 > `crates/open-lineage/src/facets.rs` and the read-side surfacing in
-> `crates/lineage-service/src/read/queries.rs`. Refines
+> `crates/headwaters/src/read/queries.rs`. Refines
 > [`docs/open-lineage-design.md`](../open-lineage-design.md); builds on
 > [ADR 0001](0001-per-statement-run-id-correlation.md) (run identity) and an
 > upstream per-query agent-governance-context decision.

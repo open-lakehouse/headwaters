@@ -1,15 +1,15 @@
 # 0006 — Hybrid-CQRS Postgres storage: raw event log + async projection
 
 > Status: **Accepted** (2026-06). Implemented in
-> `crates/lineage-service/src/writer/` (ingest → `events`), `src/projection/`
+> `crates/headwaters/src/writer/` (ingest → `events`), `src/projection/`
 > (the async projector), `src/read/` (the read store), and
 > `migrations/0001_init.sql` + `0002_uuidv7_and_audit.sql`. Supersedes the
-> earlier Delta-Lake/Unity storage for `lineage-service`. See also
+> earlier Delta-Lake/Unity storage for `headwaters`. See also
 > [`docs/marquez-compatibility.md`](../marquez-compatibility.md).
 
 ## Context
 
-`lineage-service` ingests OpenLineage events and serves a Marquez-compatible
+`headwaters` ingests OpenLineage events and serves a Marquez-compatible
 read API. The lineage UI needs a *materialized* model (namespaces, jobs,
 datasets, runs, a lineage graph), but the ingest side only ever receives raw
 events. We had to choose how to store and serve them.

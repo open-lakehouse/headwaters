@@ -9,24 +9,31 @@
 [![CI](https://github.com/open-lakehouse/headwaters/actions/workflows/ci.yml/badge.svg)](https://github.com/open-lakehouse/headwaters/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/open-lakehouse/headwaters/branch/main/graph/badge.svg)](https://codecov.io/gh/open-lakehouse/headwaters)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![OpenLineage](https://img.shields.io/badge/OpenLineage-compatible-blue.svg)](https://openlineage.io)
+[![Open Lakehouse](https://img.shields.io/badge/Open%20Lakehouse-2e2e2e.svg)](https://openlakehouse.io)
 
 </div>
+
+> [!NOTE]
+> Headwaters stands on the shoulders of the [Marquez](https://marquezproject.ai)
+> project, whose read API and data model inspired this work. Marquez is the
+> mature, production-ready OpenLineage metadata service — **if you need a
+> production solution today, use [Marquez](https://marquezproject.ai).**
+> Headwaters is an experimental, Rust-native take for the open lakehouse stack
+> and does not aim to be a drop-in Marquez replacement.
 
 Headwaters is a set of Rust building blocks for [OpenLineage](https://openlineage.io)
 on the open lakehouse stack. It emits column-level data lineage from
 [Apache DataFusion](https://datafusion.apache.org) sessions at planning time, and
 ingests OpenLineage events into a queryable lineage store that serves a
-[Marquez](https://marquezproject.ai)-compatible read API for visualization. The
-crates here were extracted from
-[`open-lakehouse`](https://github.com/open-lakehouse) and are being prepared for
-independent release.
+read API for visualization, inspired by [Marquez](https://marquezproject.ai).
 
 ## Crates
 
 | Crate | Package | What it does |
 |---|---|---|
 | [`crates/open-lineage`](crates/open-lineage) | `datafusion-open-lineage` | OpenLineage integration for DataFusion sessions — emits run events (START/COMPLETE/FAIL) with input/output datasets and column-level lineage, extracted at planning time. |
-| [`crates/lineage-service`](crates/lineage-service) | `lineage-service` | An HTTP service that ingests OpenLineage events into an append-only Postgres event log, projects them asynchronously into normalized read tables, and serves a [Marquez](https://marquezproject.ai)-compatible read API for visualization. |
+| [`crates/headwaters`](crates/headwaters) | `headwaters` | An HTTP service that ingests OpenLineage events into an append-only Postgres event log, projects them asynchronously into normalized read tables, and serves a read API for visualization (inspired by [Marquez](https://marquezproject.ai)). |
 
 ## Build & test
 
@@ -55,13 +62,12 @@ Two protobuf packages define the service surface:
   search, events, run facets, dataset versions, tags, PII propagation, stats).
 
 The generated Rust types are committed under
-`crates/lineage-service/src/proto/` (`lineage.v1.rs`, `headwaters.read.v1.rs`) so
+`crates/headwaters/src/proto/` (`lineage.v1.rs`, `headwaters.read.v1.rs`) so
 the workspace builds without a codegen step. Regenerate with `just proto-gen`
 (uses [`buf`](https://buf.build) + the remote `buffa` plugin).
 
-The read API is served by a hand-written Axum server (`src/read/`) that honors
-the exact Marquez wire contract; the proto is the canonical shape it (and the
-future generated clients) agree on. See ADR
+The read API is served by a hand-written Axum server (`src/read/`); the proto is
+the canonical shape it (and the future generated clients) agree on. See ADR
 [0010](docs/adr/0010-read-api-proto-source-of-truth.md) for why serving is kept
 hand-written for now and the Trestle-codegen follow-ups that would let it be
 generated.
@@ -77,7 +83,7 @@ language clients. See [`node/README.md`](node/README.md).
 
 ```bash
 just ui-install   # install workspace deps
-just ui-dev       # dev server (proxies ConnectRPC to a local lineage-service)
+just ui-dev       # dev server (proxies ConnectRPC to a local headwaters instance)
 just ui-sb        # Storybook (mocked, no backend)
 ```
 

@@ -266,7 +266,7 @@ impl ::core::fmt::Debug for SchemaDatasetFacetField {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("SchemaDatasetFacetField")
             .field("name", &self.name)
-            .field("type", &self.r#type)
+            .field("r#type", &self.r#type)
             .field("description", &self.description)
             .field("fields", &self.fields)
             .finish()
@@ -1675,7 +1675,7 @@ pub struct FieldTransformation {
 impl ::core::fmt::Debug for FieldTransformation {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("FieldTransformation")
-            .field("type", &self.r#type)
+            .field("r#type", &self.r#type)
             .field("subtype", &self.subtype)
             .field("description", &self.description)
             .field("masking", &self.masking)
@@ -2771,7 +2771,7 @@ impl ::core::fmt::Debug for Owner {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("Owner")
             .field("name", &self.name)
-            .field("type", &self.r#type)
+            .field("r#type", &self.r#type)
             .finish()
     }
 }

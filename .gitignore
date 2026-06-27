@@ -44,7 +44,7 @@ node_modules
 dist
 dist-ssr
 # Staged SPA bundle for `just lineage-ui` (served from ./web; see UI_DIR in
-# crates/lineage-service/src/http.rs).
+# crates/headwaters/src/http.rs).
 /web
 *.tsbuildinfo
 *.local

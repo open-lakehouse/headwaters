@@ -1,7 +1,7 @@
 # 0008 — Tags are discovered facts carried as OpenLineage events
 
 > Status: **Accepted** (2026-06). Implemented in
-> `crates/lineage-service/src/projection/processors/tags.rs` (the tags
+> `crates/headwaters/src/projection/processors/tags.rs` (the tags
 > processor) and the `tags` / `tag_assignments` projection tables
 > (`migrations/0003_facet_model.sql`). Builds on the projection model in ADR
 > [0007](0007-mutation-ir-projection-pipeline.md); the propagation that consumes

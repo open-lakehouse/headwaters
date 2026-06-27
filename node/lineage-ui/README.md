@@ -74,8 +74,8 @@ function LineagePanel({ nodeId }: { nodeId: string }) {
 ```
 
 Three hosts, one component, no changes to `lineage-ui`:
-- **scaffold app** — default transport over the current origin (Vite proxy → the
-  local `lineage-service`);
+- **scaffold app** — default transport over the current origin (Vite proxy → a
+  local `headwaters` instance);
 - **Storybook** — a fake `ReadClient` passed to `ReadClientProvider` (see
   `src/testing/fake-client.tsx`);
 - **hydrofoil** — `registerTransport(...)` pointed at its own gateway, or its own

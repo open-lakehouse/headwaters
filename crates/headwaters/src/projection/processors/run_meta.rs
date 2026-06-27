@@ -91,7 +91,7 @@ fn typed<T: serde::de::DeserializeOwned>(facets: &JsonValue, name: &str) -> Opti
     serde_json::from_value::<T>(facets.get(name)?.clone()).ok()
 }
 
-/// Parse an RFC3339 timestamp to UTC; `None` for empty/unparseable.
+/// Parse an RFC3339 timestamp to UTC; `None` for empty/unparsable.
 fn parse_ts(s: &str) -> Option<DateTime<Utc>> {
     if s.is_empty() {
         return None;

@@ -5,7 +5,7 @@ name: Release-plz
 # changelogs. When that PR is merged, release-plz creates the per-crate git
 # tags + GitHub Releases. Both crates are versioned/tagged/released; they
 # diverge at publish: datafusion-open-lineage publishes to crates.io via OIDC
-# trusted publishing, while lineage-service is `publish = false` (a deployable
+# trusted publishing, while headwaters is `publish = false` (a deployable
 # app) and instead has its container image built by the `docker` job here.
 # See release-plz.toml; CONTRIBUTING.md has the full flow.
 
@@ -53,7 +53,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # --- Tag + GitHub Release + cargo publish, after the Release PR is merged ---
-  # datafusion-open-lineage publishes to crates.io (OIDC); lineage-service is
+  # datafusion-open-lineage publishes to crates.io (OIDC); headwaters is
   # `publish = false` in release-plz.toml, so it is only tagged + GitHub-
   # released here — its Docker image is built by the `docker` job below from the
   # version this step reports in its `releases` output.
@@ -67,7 +67,7 @@ jobs:
       contents: write # create tags + GitHub Releases
       id-token: write # crates.io OIDC trusted publishing
     outputs:
-      # Version + tag of lineage-service IF it was released this run, else empty.
+      # Version + tag of headwaters IF it was released this run, else empty.
       service_version: ${{ steps.service.outputs.version }}
       service_tag: ${{ steps.service.outputs.tag }}
     steps:
@@ -92,21 +92,21 @@ jobs:
           command: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Pull lineage-service's version + tag out of the `releases` output (an
+      # Pull headwaters's version + tag out of the `releases` output (an
       # array of {package_name, version, tag}) so the Docker job can build it.
       # Leaves the outputs empty when this run didn't release the service.
-      - name: Extract lineage-service release
+      - name: Extract headwaters release
         id: service
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         env:
           RELEASES: ${{ steps.release.outputs.releases }}
         run: |
-          version=$(jq -r '.[] | select(.package_name == "lineage-service") | .version' <<< "$RELEASES")
-          tag=$(jq -r '.[] | select(.package_name == "lineage-service") | .tag' <<< "$RELEASES")
+          version=$(jq -r '.[] | select(.package_name == "headwaters") | .version' <<< "$RELEASES")
+          tag=$(jq -r '.[] | select(.package_name == "headwaters") | .tag' <<< "$RELEASES")
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-  # --- Build + push the lineage-service Docker image, iff it was released ---
+  # --- Build + push the headwaters Docker image, iff it was released ---
   # Reuses .github/workflows/docker-release.yml with the exact version release-
   # plz reported. Skips when the service wasn't part of this release.
   docker:

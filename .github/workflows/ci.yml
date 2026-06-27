@@ -62,8 +62,8 @@ jobs:
               - 'buf.yaml'
               - 'buf.gen.yaml'
               - 'buf.lock'
-              - 'crates/lineage-service/src/proto/**'
-              - 'crates/lineage-service/src/connect_gen/**'
+              - 'crates/headwaters/src/proto/**'
+              - 'crates/headwaters/src/connect_gen/**'
 
   # fmt, clippy, test and coverage are independent jobs that run in parallel.
   # Splitting them (rather than one sequential job) means a clippy or fmt failure
@@ -190,7 +190,7 @@ jobs:
       - name: Build on MSRV
         run: cargo build --workspace --all-features --locked
 
-  # The generated proto + ConnectRPC code under crates/lineage-service/src/
+  # The generated proto + ConnectRPC code under crates/headwaters/src/
   # {proto,connect_gen}/ is committed (so the workspace builds without a codegen
   # step). Regenerate here and fail if the committed output drifts from the
   # .proto sources — a `proto/` edit must land with its regenerated output.
@@ -216,16 +216,16 @@ jobs:
           toolchain: "1.96"
           components: rustfmt
 
-      # The two local codegen plugins `buf generate` invokes (the buffa pass
-      # runs remotely on the BSR and needs no install).
-      - name: Install connect codegen plugins
-        run: cargo install protoc-gen-connect-rust protoc-gen-buffa-packaging
+      # The only local codegen plugin `buf generate` invokes (the buffa and
+      # connect-rust passes run remotely on the BSR and need no install).
+      - name: Install packaging codegen plugin
+        run: cargo install protoc-gen-buffa-packaging
 
       - name: Regenerate proto code
         run: buf generate
 
       - name: Format generated code
-        run: cargo fmt -p lineage-service
+        run: cargo fmt -p headwaters
 
       # `just proto-gen` is exactly the two steps above; fail if anything moved.
       - name: Check committed output is up to date
@@ -369,7 +369,7 @@ jobs:
           cargo llvm-cov --no-report nextest --workspace --all-features
           cargo +nightly llvm-cov --no-report --doc --workspace --all-features
           cargo +nightly llvm-cov report --doctests --codecov --output-path codecov.json \
-            --ignore-filename-regex 'lineage-service/src/(proto/[^/]+\.v1\.rs|connect_gen/)'
+            --ignore-filename-regex 'headwaters/src/(proto/[^/]+\.v1\.rs|connect_gen/)'
 
       # Codecov rejects tokenless uploads for this repo
       # ("Token required - not valid tokenless upload"), so authenticate with

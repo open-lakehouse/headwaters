@@ -9,7 +9,7 @@
 > (`hydrofoil`) that embeds the integration; that service is an upstream
 > open-lakehouse component and is **not** part of this repo. Headwaters ships the
 > reusable pieces: the `datafusion-open-lineage` crate (this document) and the
-> standalone `lineage-service`. Where the text refers to `hydrofoil` or
+> standalone `headwaters`. Where the text refers to `hydrofoil` or
 > `crates/hydrofoil/...`, read it as "the embedding host service" — the design
 > holds for any `SessionContext` the crate is instrumented into.
 

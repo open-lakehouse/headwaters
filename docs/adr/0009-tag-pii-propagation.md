@@ -1,7 +1,7 @@
 # 0009 — Tag / PII propagation as a query-time graph traversal
 
 > Status: **Accepted** (2026-06). Implemented in
-> `crates/lineage-service/src/read/queries.rs`
+> `crates/headwaters/src/read/queries.rs`
 > (`LineageStore::tag_downstream`) and exposed at
 > `GET /api/v1/tags/{tag}/downstream` (`read/http.rs`). Consumes the tags from
 > ADR [0008](0008-tags-as-discovered-facts.md) and the `column_lineage_edges`
