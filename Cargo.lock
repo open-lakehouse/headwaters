@@ -971,14 +971,18 @@ dependencies = [
  "http-body",
  "http-body-util",
  "hyper",
+ "hyper-rustls",
  "hyper-util",
  "libc",
  "percent-encoding",
  "pin-project",
+ "rustls",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
+ "tokio-rustls",
  "tokio-util",
  "tower",
  "tower-http",
@@ -2472,7 +2476,8 @@ dependencies = [
  "chrono",
  "config",
  "connectrpc",
- "http-body",
+ "headwaters-client",
+ "headwaters-proto",
  "http-body-util",
  "reqwest 0.12.28",
  "serde",
@@ -2488,6 +2493,31 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "headwaters-client"
+version = "0.0.2"
+dependencies = [
+ "buffa-types",
+ "connectrpc",
+ "headwaters-proto",
+ "http",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "headwaters-proto"
+version = "0.0.2"
+dependencies = [
+ "buffa",
+ "buffa-types",
+ "bytes",
+ "connectrpc",
+ "http-body",
+ "serde",
 ]
 
 [[package]]

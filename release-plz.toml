@@ -12,6 +12,9 @@
 #   - openlineage-client     -> published to crates.io (a library).
 #   - datafusion-openlineage -> published to crates.io (depends on the client,
 #     so release-plz publishes the client first).
+#   - headwaters-proto       -> published to crates.io (generated proto + stubs).
+#   - headwaters-client      -> published to crates.io (depends on headwaters-proto,
+#     so release-plz publishes the proto crate first).
 #   - headwaters             -> `git_only = true`: a deployable app, NOT
 #     published to crates.io. release-plz versions/changelogs/tags it from git
 #     (not the registry), and its git tag `headwaters-v<version>` triggers the
@@ -108,5 +111,5 @@ commit_parsers = [
 # Strip the redundant "(scope)" from each rendered line — each crate's changelog
 # is already crate-scoped.
 commit_preprocessors = [
-  { pattern = '\((openlineage-client|client|datafusion-openlineage|open-lineage|headwaters)\)', replace = "" },
+  { pattern = '\((openlineage-client|client|datafusion-openlineage|open-lineage|headwaters|headwaters-proto|proto|headwaters-client)\)', replace = "" },
 ]

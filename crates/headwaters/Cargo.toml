@@ -13,12 +13,14 @@ readme = "README.md"
 publish = false
 
 [dependencies]
-buffa = { version = "0.7", features = ["json"] }
-buffa-types = { version = "0.7", features = ["json"] }
-# ConnectRPC server runtime for the read-API facade (generated under
-# src/connect_gen/). The read REST server and the Connect surface serve the same
-# buffa messages on one port.
-connectrpc = { version = "0.7", features = ["server", "axum"] }
+# Generated proto types + the ConnectRPC facade (the `ReadService` server trait
+# this crate implements + mounts). `server` pulls the hyper/axum runtime.
+headwaters-proto = { workspace = true, features = ["server"] }
+buffa = { workspace = true, features = ["json"] }
+buffa-types = { workspace = true, features = ["json"] }
+# ConnectRPC server runtime: the read REST server and the Connect surface serve
+# the same buffa messages on one port.
+connectrpc = { workspace = true, features = ["server", "axum"] }
 sqlx = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
@@ -30,7 +32,6 @@ axum = "0.7"
 tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 serde = { workspace = true }
 serde_json = "1"
-http-body = "1"
 http-body-util = "0.1"
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -47,6 +48,9 @@ postgres-it = []
 conformance-it = []
 
 [dev-dependencies]
+# Round-trips the read API through the real Rust client over a live ConnectRPC
+# listener (the `client-it` test); exercises the generated client end to end.
+headwaters-client = { workspace = true }
 tempfile = "3"
 # For exercising the read router over HTTP in tests (ServiceExt::oneshot), which
 # catches route-syntax regressions the direct store-call tests can't.

@@ -229,7 +229,7 @@ jobs:
         run: buf generate
 
       - name: Format generated code
-        run: cargo fmt -p headwaters
+        run: cargo fmt -p headwaters-proto
 
       # `just proto-gen` is exactly the two steps above; fail if anything moved.
       - name: Check committed output is up to date

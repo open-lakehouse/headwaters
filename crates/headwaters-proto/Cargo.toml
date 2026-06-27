@@ -1,0 +1,37 @@
+[package]
+name = "headwaters-proto"
+version = "0.0.2"
+description = "Generated protobuf types and ConnectRPC stubs for the Headwaters read API (headwaters.read.v1) and OpenLineage event model (lineage.v1)"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository = "https://github.com/open-lakehouse/headwaters"
+homepage = "https://github.com/open-lakehouse/headwaters/tree/main/crates/headwaters-proto"
+documentation = "https://docs.rs/headwaters-proto"
+readme = "README.md"
+keywords = ["openlineage", "lineage", "protobuf", "connectrpc"]
+categories = ["database", "api-bindings"]
+
+[dependencies]
+buffa = { workspace = true, features = ["json"] }
+buffa-types = { workspace = true, features = ["json"] }
+connectrpc = { workspace = true }
+# Referenced by the generated message + connect code via fully-qualified paths
+# (`::bytes::Bytes`, `::http_body::Body`) with no `use` statement, so
+# cargo-machete can't see the usage — both are genuinely required to compile.
+bytes = "1"
+http-body = "1"
+serde = { workspace = true }
+
+[package.metadata.cargo-machete]
+ignored = ["bytes", "http-body"]
+
+[features]
+default = []
+# Server-side ConnectRPC integration (the generated `ReadService` trait is always
+# present; this pulls the hyper/axum server runtime the headwaters service mounts).
+server = ["connectrpc/server", "connectrpc/axum"]
+# Client-side ConnectRPC transport. The generated `ReadServiceClient` is always
+# present; this pulls the hyper client `HttpClient::plaintext()` uses.
+client = ["connectrpc/client"]
+client-tls = ["connectrpc/client-tls"]
