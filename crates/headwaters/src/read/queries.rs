@@ -303,45 +303,68 @@ impl LineageStore {
     }
 
     /// `GET /api/v1/search?q=`
-    pub async fn search(&self, q: &str, limit: usize) -> Result<pb::SearchResponse, ReadError> {
+    ///
+    /// `kind` restricts to jobs or datasets (`None` returns both); `namespace`
+    /// restricts to one namespace (`None` matches all). Both filters are applied
+    /// in SQL so they bound the scan rather than post-filtering.
+    pub async fn search(
+        &self,
+        q: &str,
+        limit: usize,
+        kind: Option<pb::EntityKind>,
+        namespace: Option<&str>,
+    ) -> Result<pb::SearchResponse, ReadError> {
         let pattern = format!("%{}%", q.to_lowercase());
-        // Jobs + datasets whose name matches, unioned and sorted by name.
-        let job_rows =
-            sqlx::query("SELECT namespace, name, updated_at FROM jobs WHERE LOWER(name) LIKE $1")
-                .bind(&pattern)
-                .fetch_all(&self.pool)
-                .await?;
-        let ds_rows = sqlx::query(
-            "SELECT namespace, name, updated_at FROM datasets WHERE LOWER(name) LIKE $1",
-        )
-        .bind(&pattern)
-        .fetch_all(&self.pool)
-        .await?;
+        let want_jobs = !matches!(kind, Some(pb::EntityKind::DATASET));
+        let want_datasets = !matches!(kind, Some(pb::EntityKind::JOB));
+
+        // `namespace = $2 OR $2 IS NULL` keeps one query shape for both the
+        // scoped and the all-namespaces case.
+        let select = |table: &str| {
+            format!(
+                "SELECT namespace, name, updated_at FROM {table} \
+                 WHERE LOWER(name) LIKE $1 AND (namespace = $2 OR $2 IS NULL)"
+            )
+        };
 
         let mut results: Vec<pb::SearchResult> = Vec::new();
-        for r in &job_rows {
-            let ns: String = r.get("namespace");
-            let name: String = r.get("name");
-            results.push(pb::SearchResult {
-                node_id: job_node_id(&ns, &name),
-                name,
-                namespace: ns,
-                r#type: pb::EntityKind::JOB.into(),
-                updated_at: rfc3339(r.get("updated_at")),
-                ..Default::default()
-            });
+        if want_jobs {
+            let job_rows = sqlx::query(&select("jobs"))
+                .bind(&pattern)
+                .bind(namespace)
+                .fetch_all(&self.pool)
+                .await?;
+            for r in &job_rows {
+                let ns: String = r.get("namespace");
+                let name: String = r.get("name");
+                results.push(pb::SearchResult {
+                    node_id: job_node_id(&ns, &name),
+                    name,
+                    namespace: ns,
+                    r#type: pb::EntityKind::JOB.into(),
+                    updated_at: rfc3339(r.get("updated_at")),
+                    ..Default::default()
+                });
+            }
         }
-        for r in &ds_rows {
-            let ns: String = r.get("namespace");
-            let name: String = r.get("name");
-            results.push(pb::SearchResult {
-                node_id: dataset_node_id(&ns, &name),
-                name,
-                namespace: ns,
-                r#type: pb::EntityKind::DATASET.into(),
-                updated_at: rfc3339(r.get("updated_at")),
-                ..Default::default()
-            });
+        if want_datasets {
+            let ds_rows = sqlx::query(&select("datasets"))
+                .bind(&pattern)
+                .bind(namespace)
+                .fetch_all(&self.pool)
+                .await?;
+            for r in &ds_rows {
+                let ns: String = r.get("namespace");
+                let name: String = r.get("name");
+                results.push(pb::SearchResult {
+                    node_id: dataset_node_id(&ns, &name),
+                    name,
+                    namespace: ns,
+                    r#type: pb::EntityKind::DATASET.into(),
+                    updated_at: rfc3339(r.get("updated_at")),
+                    ..Default::default()
+                });
+            }
         }
         results.sort_by(|a, b| a.name.cmp(&b.name));
         let total_count = results.len() as i32;

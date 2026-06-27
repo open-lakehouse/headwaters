@@ -150,8 +150,14 @@ message ListDatasetVersionsRequest {
 }
 
 message SearchRequest {
+  // Case-insensitive substring matched against job and dataset names.
   string q = 1;
   int32 limit = 2;
+  // Restrict results to one kind. `ENTITY_KIND_UNSPECIFIED` (the default) returns
+  // both jobs and datasets; `DATASET_FIELD` matches nothing (search is entity-level).
+  EntityKind type = 3;
+  // Restrict results to one namespace; empty matches all.
+  string namespace = 4;
 }
 
 message GetLineageRequest {

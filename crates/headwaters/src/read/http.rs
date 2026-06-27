@@ -15,6 +15,7 @@ use axum::routing::get;
 use serde::Deserialize;
 
 use super::{LineageStore, ReadError};
+use crate::proto::headwaters::read::v1 as pb;
 
 /// Build the read router. Routes carry the full `/api/v1` prefix (the Marquez
 /// web client prefixes every call with its `__API_URL__`, which we configure to
@@ -236,13 +237,34 @@ struct SearchParams {
     q: String,
     #[serde(default = "default_limit")]
     limit: usize,
+    /// `job` | `dataset` (case-insensitive); absent or unrecognized returns both.
+    #[serde(default)]
+    r#type: Option<String>,
+    #[serde(default)]
+    namespace: Option<String>,
 }
 
 async fn search(
     State(store): State<LineageStore>,
     Query(params): Query<SearchParams>,
 ) -> Result<impl IntoResponse, ReadError> {
-    Ok(Json(store.search(&params.q, params.limit).await?))
+    let kind = params.r#type.as_deref().and_then(parse_entity_kind);
+    Ok(Json(
+        store
+            .search(&params.q, params.limit, kind, params.namespace.as_deref())
+            .await?,
+    ))
+}
+
+/// Map a `?type=` query value (`job` / `dataset`, case-insensitive) to an
+/// [`pb::EntityKind`] filter. Returns `None` for absent/unrecognized values, so
+/// the search returns both kinds.
+fn parse_entity_kind(s: &str) -> Option<pb::EntityKind> {
+    match s.to_ascii_lowercase().as_str() {
+        "job" => Some(pb::EntityKind::JOB),
+        "dataset" => Some(pb::EntityKind::DATASET),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Deserialize)]

@@ -7922,6 +7922,8 @@ pub const __LIST_DATASET_VERSIONS_REQUEST_JSON_ANY: ::buffa::type_registry::Json
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct SearchRequest {
+    /// Case-insensitive substring matched against job and dataset names.
+    ///
     /// Field 1: `q`
     #[serde(
         rename = "q",
@@ -7936,6 +7938,25 @@ pub struct SearchRequest {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_zero_i32"
     )]
     pub limit: i32,
+    /// Restrict results to one kind. `ENTITY_KIND_UNSPECIFIED` (the default) returns
+    /// both jobs and datasets; `DATASET_FIELD` matches nothing (search is entity-level).
+    ///
+    /// Field 3: `type`
+    #[serde(
+        rename = "type",
+        with = "::buffa::json_helpers::proto_enum",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_default_enum_value"
+    )]
+    pub r#type: ::buffa::EnumValue<EntityKind>,
+    /// Restrict results to one namespace; empty matches all.
+    ///
+    /// Field 4: `namespace`
+    #[serde(
+        rename = "namespace",
+        with = "::buffa::json_helpers::proto_string",
+        skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
+    )]
+    pub namespace: ::buffa::alloc::string::String,
     #[serde(skip)]
     #[doc(hidden)]
     pub __buffa_unknown_fields: ::buffa::UnknownFields,
@@ -7945,6 +7966,8 @@ impl ::core::fmt::Debug for SearchRequest {
         f.debug_struct("SearchRequest")
             .field("q", &self.q)
             .field("limit", &self.limit)
+            .field("r#type", &self.r#type)
+            .field("namespace", &self.namespace)
             .finish()
     }
 }
@@ -7984,6 +8007,15 @@ impl ::buffa::Message for SearchRequest {
         if self.limit != 0i32 {
             size += 1u32 + ::buffa::types::int32_encoded_len(self.limit) as u32;
         }
+        {
+            let val = self.r#type.to_i32();
+            if val != 0 {
+                size += 1u32 + ::buffa::types::int32_encoded_len(val) as u32;
+            }
+        }
+        if !self.namespace.is_empty() {
+            size += 1u32 + ::buffa::types::string_encoded_len(&self.namespace) as u32;
+        }
         size += self.__buffa_unknown_fields.encoded_len() as u32;
         size
     }
@@ -8006,6 +8038,22 @@ impl ::buffa::Message for SearchRequest {
             ::buffa::encoding::Tag::new(2u32, ::buffa::encoding::WireType::Varint)
                 .encode(buf);
             ::buffa::types::encode_int32(self.limit, buf);
+        }
+        {
+            let val = self.r#type.to_i32();
+            if val != 0 {
+                ::buffa::encoding::Tag::new(3u32, ::buffa::encoding::WireType::Varint)
+                    .encode(buf);
+                ::buffa::types::encode_int32(val, buf);
+            }
+        }
+        if !self.namespace.is_empty() {
+            ::buffa::encoding::Tag::new(
+                    4u32,
+                    ::buffa::encoding::WireType::LengthDelimited,
+                )
+                .encode(buf);
+            ::buffa::types::encode_string(&self.namespace, buf);
         }
         self.__buffa_unknown_fields.write_to(buf);
     }
@@ -8040,6 +8088,28 @@ impl ::buffa::Message for SearchRequest {
                 }
                 self.limit = ::buffa::types::decode_int32(buf)?;
             }
+            3u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 3u32,
+                        expected: 0u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                self.r#type = ::buffa::EnumValue::from(
+                    ::buffa::types::decode_int32(buf)?,
+                );
+            }
+            4u32 => {
+                if tag.wire_type() != ::buffa::encoding::WireType::LengthDelimited {
+                    return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                        field_number: 4u32,
+                        expected: 2u8,
+                        actual: tag.wire_type() as u8,
+                    });
+                }
+                ::buffa::types::merge_string(&mut self.namespace, buf)?;
+            }
             _ => {
                 self.__buffa_unknown_fields
                     .push(::buffa::encoding::decode_unknown_field(tag, buf, depth)?);
@@ -8050,6 +8120,8 @@ impl ::buffa::Message for SearchRequest {
     fn clear(&mut self) {
         self.q.clear();
         self.limit = 0i32;
+        self.r#type = ::buffa::EnumValue::from(0);
+        self.namespace.clear();
         self.__buffa_unknown_fields.clear();
     }
 }
@@ -22854,10 +22926,21 @@ pub mod __buffa {
         }
         #[derive(Clone, Debug, Default)]
         pub struct SearchRequestView<'a> {
+            /// Case-insensitive substring matched against job and dataset names.
+            ///
             /// Field 1: `q`
             pub q: &'a str,
             /// Field 2: `limit`
             pub limit: i32,
+            /// Restrict results to one kind. `ENTITY_KIND_UNSPECIFIED` (the default) returns
+            /// both jobs and datasets; `DATASET_FIELD` matches nothing (search is entity-level).
+            ///
+            /// Field 3: `type`
+            pub r#type: ::buffa::EnumValue<super::super::EntityKind>,
+            /// Restrict results to one namespace; empty matches all.
+            ///
+            /// Field 4: `namespace`
+            pub namespace: &'a str,
             pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
         }
         impl<'a> SearchRequestView<'a> {
@@ -22920,6 +23003,30 @@ pub mod __buffa {
                             }
                             view.limit = ::buffa::types::decode_int32(&mut cur)?;
                         }
+                        3u32 => {
+                            if tag.wire_type() != ::buffa::encoding::WireType::Varint {
+                                return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                                    field_number: 3u32,
+                                    expected: 0u8,
+                                    actual: tag.wire_type() as u8,
+                                });
+                            }
+                            view.r#type = ::buffa::EnumValue::from(
+                                ::buffa::types::decode_int32(&mut cur)?,
+                            );
+                        }
+                        4u32 => {
+                            if tag.wire_type()
+                                != ::buffa::encoding::WireType::LengthDelimited
+                            {
+                                return ::core::result::Result::Err(::buffa::DecodeError::WireTypeMismatch {
+                                    field_number: 4u32,
+                                    expected: 2u8,
+                                    actual: tag.wire_type() as u8,
+                                });
+                            }
+                            view.namespace = ::buffa::types::borrow_str(&mut cur)?;
+                        }
                         _ => {
                             ::buffa::encoding::skip_field_depth(tag, &mut cur, depth)?;
                             let span_len = before_tag.len() - cur.len();
@@ -22958,6 +23065,8 @@ pub mod __buffa {
                 super::super::SearchRequest {
                     q: self.q.to_string(),
                     limit: self.limit,
+                    r#type: self.r#type,
+                    namespace: self.namespace.to_string(),
                     __buffa_unknown_fields: self
                         .__buffa_unknown_fields
                         .to_owned()
@@ -22978,6 +23087,17 @@ pub mod __buffa {
                 }
                 if self.limit != 0i32 {
                     size += 1u32 + ::buffa::types::int32_encoded_len(self.limit) as u32;
+                }
+                {
+                    let val = self.r#type.to_i32();
+                    if val != 0 {
+                        size += 1u32 + ::buffa::types::int32_encoded_len(val) as u32;
+                    }
+                }
+                if !self.namespace.is_empty() {
+                    size
+                        += 1u32
+                            + ::buffa::types::string_encoded_len(&self.namespace) as u32;
                 }
                 size += self.__buffa_unknown_fields.encoded_len() as u32;
                 size
@@ -23005,6 +23125,25 @@ pub mod __buffa {
                         )
                         .encode(buf);
                     ::buffa::types::encode_int32(self.limit, buf);
+                }
+                {
+                    let val = self.r#type.to_i32();
+                    if val != 0 {
+                        ::buffa::encoding::Tag::new(
+                                3u32,
+                                ::buffa::encoding::WireType::Varint,
+                            )
+                            .encode(buf);
+                        ::buffa::types::encode_int32(val, buf);
+                    }
+                }
+                if !self.namespace.is_empty() {
+                    ::buffa::encoding::Tag::new(
+                            4u32,
+                            ::buffa::encoding::WireType::LengthDelimited,
+                        )
+                        .encode(buf);
+                    ::buffa::types::encode_string(&self.namespace, buf);
                 }
                 self.__buffa_unknown_fields.write_to(buf);
             }
@@ -23041,6 +23180,12 @@ pub mod __buffa {
                         }
                     }
                     __map.serialize_entry("limit", &_W(self.limit))?;
+                }
+                if !::buffa::json_helpers::skip_if::is_default_enum_value(&self.r#type) {
+                    __map.serialize_entry("type", &self.r#type)?;
+                }
+                if !::buffa::json_helpers::skip_if::is_empty_str(self.namespace) {
+                    __map.serialize_entry("namespace", self.namespace)?;
                 }
                 __map.end()
             }
@@ -23145,6 +23290,8 @@ pub mod __buffa {
             pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
                 self.0.into_bytes()
             }
+            /// Case-insensitive substring matched against job and dataset names.
+            ///
             /// Field 1: `q`
             #[must_use]
             pub fn q(&self) -> &'_ str {
@@ -23154,6 +23301,21 @@ pub mod __buffa {
             #[must_use]
             pub fn limit(&self) -> i32 {
                 self.0.reborrow().limit
+            }
+            /// Restrict results to one kind. `ENTITY_KIND_UNSPECIFIED` (the default) returns
+            /// both jobs and datasets; `DATASET_FIELD` matches nothing (search is entity-level).
+            ///
+            /// Field 3: `type`
+            #[must_use]
+            pub fn r#type(&self) -> ::buffa::EnumValue<super::super::EntityKind> {
+                self.0.reborrow().r#type
+            }
+            /// Restrict results to one namespace; empty matches all.
+            ///
+            /// Field 4: `namespace`
+            #[must_use]
+            pub fn namespace(&self) -> &'_ str {
+                self.0.reborrow().namespace
             }
         }
         impl ::core::convert::From<::buffa::OwnedView<SearchRequestView<'static>>>

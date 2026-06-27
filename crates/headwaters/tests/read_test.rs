@@ -197,12 +197,50 @@ async fn lineage_graph_connects_job_to_its_datasets() {
 async fn search_matches_job_and_dataset_names() {
     let db = start_postgres().await;
     let store = seeded_store(&db).await;
-    let hits = store.search("orders", 100).await.unwrap();
+    let hits = store.search("orders", 100, None, None).await.unwrap();
     assert!(hits.total_count >= 2, "got {} hits", hits.total_count);
     assert!(
         hits.results
             .iter()
             .all(|r| r.r#type == pb::EntityKind::DATASET)
+    );
+}
+
+#[tokio::test]
+async fn search_filters_by_kind_and_namespace() {
+    let db = start_postgres().await;
+    let store = seeded_store(&db).await;
+    // "daily" matches the job `build_daily` and the dataset `daily_orders`.
+    let both = store.search("daily", 100, None, None).await.unwrap();
+    assert!(
+        both.results.iter().any(|r| r.r#type == pb::EntityKind::JOB)
+            && both
+                .results
+                .iter()
+                .any(|r| r.r#type == pb::EntityKind::DATASET),
+        "unfiltered search sees both kinds: {both:?}"
+    );
+
+    let jobs_only = store
+        .search("daily", 100, Some(pb::EntityKind::JOB), None)
+        .await
+        .unwrap();
+    assert!(
+        jobs_only
+            .results
+            .iter()
+            .all(|r| r.r#type == pb::EntityKind::JOB),
+        "kind filter restricts to jobs: {jobs_only:?}"
+    );
+
+    // Namespace filter: the job lives in `etl`, the dataset in `marts`.
+    let in_marts = store
+        .search("daily", 100, None, Some("marts"))
+        .await
+        .unwrap();
+    assert!(
+        in_marts.results.iter().all(|r| r.namespace == "marts"),
+        "namespace filter restricts to marts: {in_marts:?}"
     );
 }
 
@@ -507,7 +545,7 @@ async fn http_column_lineage_serves_stored_facet() {
 async fn search_total_count_is_full_match_count() {
     let db = start_postgres().await;
     let store = seeded_store(&db).await;
-    let hits = store.search("orders", 1).await.unwrap();
+    let hits = store.search("orders", 1, None, None).await.unwrap();
     assert_eq!(hits.results.len(), 1, "page is truncated to limit");
     assert!(hits.total_count >= 2, "totalCount: {}", hits.total_count);
 }
