@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# Build for the lineage-service binary. The build context is the repo root: the
+# Build for the headwaters binary. The build context is the repo root: the
 # build needs the whole workspace — the Cargo.lock, all crates, and the
 # git-pinned delta-rs / unitycatalog-rs forks resolve from there, so no sibling
 # checkouts are needed. cargo-chef caches the dependency graph as a separate
@@ -58,17 +58,17 @@ RUN npm run build --workspace @headwaters/lineage-app
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 # Build dependencies only — this is the cached layer.
-RUN $NO_CHEF || cargo chef cook --release --recipe-path recipe.json --bin lineage-service
+RUN $NO_CHEF || cargo chef cook --release --recipe-path recipe.json --bin headwaters
 # Build the application.
 COPY . .
-RUN cargo build --release --bin lineage-service
+RUN cargo build --release --bin headwaters
 
 # Minimal runtime: distroless cc (glibc + openssl) for the dynamically-linked
 # binary, nonroot. No shell/package manager — run healthchecks from compose.
 FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 ARG EXPIRES=Never
-LABEL org.opencontainers.image.title="lineage-service" quay.expires-after="${EXPIRES}"
-COPY --from=builder /app/target/release/lineage-service /usr/local/bin/app
+LABEL org.opencontainers.image.title="headwaters" quay.expires-after="${EXPIRES}"
+COPY --from=builder /app/target/release/headwaters /usr/local/bin/app
 # The service serves the bundled SPA from `./web` relative to its working
 # directory (see `UI_DIR` in src/http.rs), so run from /app and drop the bundle
 # there. Absent the bundle the static routes just 404 — the API still serves.

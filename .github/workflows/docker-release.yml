@@ -1,11 +1,11 @@
 name: Release Docker Images
 
-# Build and publish the lineage-service container image to GHCR.
+# Build and publish the headwaters container image to GHCR.
 #
-# lineage-service is NOT published to crates.io (it's a deployable app).
+# headwaters is NOT published to crates.io (it's a deployable app).
 # release-plz versions it from the conventional-commit history; when the Release
 # PR merges, the release-plz workflow reads its own `releases` output and, if
-# lineage-service was released, calls THIS workflow (workflow_call) with that
+# headwaters was released, calls THIS workflow (workflow_call) with that
 # exact version. So the image version is the per-crate version release-plz
 # computed — no git-tag string parsing. See .github/workflows/release-plz.yml
 # and release-plz.toml.
@@ -16,11 +16,11 @@ name: Release Docker Images
 # registry secret).
 
 on:
-  # Called by the release-plz workflow after lineage-service is released.
+  # Called by the release-plz workflow after headwaters is released.
   workflow_call:
     inputs:
       version:
-        description: "Released lineage-service version, e.g. 0.1.0 (no v prefix)."
+        description: "Released headwaters version, e.g. 0.1.0 (no v prefix)."
         required: true
         type: string
       ref:
@@ -31,11 +31,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "lineage-service version to tag the image, e.g. 0.1.0."
+        description: "headwaters version to tag the image, e.g. 0.1.0."
         required: true
         type: string
       ref:
-        description: "Git ref/tag to build from, e.g. lineage-service-v0.1.0."
+        description: "Git ref/tag to build from, e.g. headwaters-v0.1.0."
         required: true
         type: string
 
@@ -51,7 +51,7 @@ jobs:
   # Build each platform on its NATIVE runner and push BY DIGEST (no tags).
   # Native arm64 avoids slow QEMU emulation of the Rust/cargo compile.
   build:
-    name: Build lineage-service (${{ matrix.platform.arch }})
+    name: Build headwaters (${{ matrix.platform.arch }})
     runs-on: ${{ matrix.platform.runner }}
 
     # Guard against forks publishing to the canonical GHCR namespace.
@@ -98,10 +98,10 @@ jobs:
         env:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest
         with:
-          images: ghcr.io/open-lakehouse/lineage-service
+          images: ghcr.io/open-lakehouse/headwaters
           labels: |
-            org.opencontainers.image.title=lineage-service
-            org.opencontainers.image.description=open-lakehouse lineage-service
+            org.opencontainers.image.title=headwaters
+            org.opencontainers.image.description=open-lakehouse headwaters
             org.opencontainers.image.vendor=open-lakehouse
             org.opencontainers.image.licenses=Apache-2.0
             org.opencontainers.image.source=https://github.com/open-lakehouse/headwaters
@@ -119,11 +119,11 @@ jobs:
           platforms: ${{ matrix.platform.os }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          outputs: type=image,name=ghcr.io/open-lakehouse/lineage-service,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/open-lakehouse/headwaters,push-by-digest=true,name-canonical=true,push=true
           sbom: true
           provenance: mode=max
-          cache-from: type=gha,scope=lineage-service-${{ matrix.platform.arch }}
-          cache-to: type=gha,mode=max,scope=lineage-service-${{ matrix.platform.arch }}
+          cache-from: type=gha,scope=headwaters-${{ matrix.platform.arch }}
+          cache-to: type=gha,mode=max,scope=headwaters-${{ matrix.platform.arch }}
 
       - name: Export digest
         # Route the digest through env (not inline ${{ }}) so it is never
@@ -182,7 +182,7 @@ jobs:
         env:
           DOCKER_METADATA_ANNOTATIONS_LEVELS: index
         with:
-          images: ghcr.io/open-lakehouse/lineage-service
+          images: ghcr.io/open-lakehouse/headwaters
           # `latest=auto` tags latest only for a non-prerelease semver, so an
           # `0.1.0-rc.1` won't claim `latest`.
           tags: |
@@ -190,8 +190,8 @@ jobs:
           flavor: |
             latest=auto
           labels: |
-            org.opencontainers.image.title=lineage-service
-            org.opencontainers.image.description=open-lakehouse lineage-service
+            org.opencontainers.image.title=headwaters
+            org.opencontainers.image.description=open-lakehouse headwaters
             org.opencontainers.image.vendor=open-lakehouse
             org.opencontainers.image.licenses=Apache-2.0
             org.opencontainers.image.source=https://github.com/open-lakehouse/headwaters
@@ -203,7 +203,7 @@ jobs:
       - name: Create and push manifest list
         working-directory: /tmp/digests
         env:
-          IMAGE: ghcr.io/open-lakehouse/lineage-service
+          IMAGE: ghcr.io/open-lakehouse/headwaters
         run: |
           # Build arrays so no unquoted word-splitting is needed.
           mapfile -t tags < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
