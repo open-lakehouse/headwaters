@@ -4,9 +4,9 @@ name: Release-plz
 # single "Release PR" containing per-crate version bumps + regenerated
 # changelogs. When that PR is merged, release-plz creates the per-crate git
 # tags + GitHub Releases. Both crates are versioned/tagged/released; they
-# diverge at publish: datafusion-openlineage publishes to crates.io via OIDC
-# trusted publishing, while headwaters is `publish = false` (a deployable
-# app) and instead has its container image built by the `docker` job here.
+# diverge at publish: datafusion-openlineage publishes to crates.io, while
+# headwaters is `publish = false` (a deployable app) and instead has its
+# container image built by the `docker` job here.
 # See release-plz.toml; CONTRIBUTING.md has the full flow.
 
 on:
@@ -53,7 +53,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # --- Tag + GitHub Release + cargo publish, after the Release PR is merged ---
-  # datafusion-openlineage publishes to crates.io (OIDC); headwaters is
+  # datafusion-openlineage publishes to crates.io; headwaters is
   # `publish = false` in release-plz.toml, so it is only tagged + GitHub-
   # released here — its Docker image is built by the `docker` job below from the
   # version this step reports in its `releases` output.
@@ -65,7 +65,7 @@ jobs:
     environment: release # protected env gating the crates.io publish
     permissions:
       contents: write # create tags + GitHub Releases
-      id-token: write # crates.io OIDC trusted publishing
+      id-token: write # crates.io OIDC publish
     outputs:
       # Version + tag of headwaters IF it was released this run, else empty.
       service_version: ${{ steps.service.outputs.version }}
@@ -83,8 +83,8 @@ jobs:
         with:
           version: "31.1"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      # No CARGO_REGISTRY_TOKEN: release-plz does the crates.io OIDC token
-      # exchange itself via `id-token: write`.
+      # No CARGO_REGISTRY_TOKEN: crates.io publish authenticates via OIDC
+      # (`id-token: write`).
       - name: Run release-plz (release)
         id: release
         uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5.130
