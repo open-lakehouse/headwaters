@@ -77,10 +77,10 @@ jobs:
           # publishing cannot create a never-before-published crate name. This
           # one-shot token bootstrap is removed once the name exists.
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Publish datafusion-openlineage
-        run: |
-          cargo publish -p datafusion-openlineage --locked \
-            ${{ inputs.dry_run && '--dry-run' || '' }}
-        env:
-          # zizmor: ignore[use-trusted-publishing] — see above.
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      # - name: Publish datafusion-openlineage
+      #   run: |
+      #     cargo publish -p datafusion-openlineage --locked \
+      #       ${{ inputs.dry_run && '--dry-run' || '' }}
+      #   env:
+      #     # zizmor: ignore[use-trusted-publishing] — see above.
+      #     CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
