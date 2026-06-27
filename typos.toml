@@ -31,9 +31,9 @@ mis = "mis"
 # wholesale (their mod.rs stitching is generated too, "DO NOT EDIT").
 [files]
 extend-exclude = [
-    # Rust: buffa messages + ConnectRPC facade for the lineage-service.
-    "crates/lineage-service/src/proto/**",
-    "crates/lineage-service/src/connect_gen/**",
+    # Rust: buffa messages + ConnectRPC facade for the headwaters.
+    "crates/headwaters/src/proto/**",
+    "crates/headwaters/src/connect_gen/**",
     # TypeScript: the generated ConnectRPC client for the web UI.
     "node/lineage-client/src/gen/**",
 ]

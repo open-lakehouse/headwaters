@@ -8,8 +8,8 @@
 # Both crates are versioned, changelogged, tagged and GitHub-released — but they
 # diverge at the publish step:
 #   - datafusion-open-lineage -> published to crates.io (a library).
-#   - lineage-service          -> `publish = false`: NOT published to crates.io
-#     (a deployable app). Its git tag `lineage-service-v<version>` instead
+#   - headwaters          -> `publish = false`: NOT published to crates.io
+#     (a deployable app). Its git tag `headwaters-v<version>` instead
 #     triggers the Docker image build/push to GHCR (see
 #     .github/workflows/docker-release.yml).
 
@@ -19,7 +19,7 @@ repo_url = "https://github.com/open-lakehouse/headwaters"
 # Conventional-commit driven changelog (Keep a Changelog style).
 changelog_update = true
 # Per-crate tags, e.g. `datafusion-open-lineage-v0.1.0` /
-# `lineage-service-v0.1.0`. The lineage-service tag is what the Docker release
+# `headwaters-v0.1.0`. The headwaters tag is what the Docker release
 # workflow keys off, and the prefix keeps the two crates' tags distinct.
 git_tag_name = "{{ package }}-v{{ version }}"
 
@@ -33,7 +33,7 @@ name = "datafusion-open-lineage"
 release = false
 
 [[package]]
-name = "lineage-service"
+name = "headwaters"
 # Version + changelog + git tag + GitHub release, but no `cargo publish` — the
 # tag drives the Docker release instead. (Cargo.toml also sets publish = false
 # as a belt-and-suspenders guard against an accidental publish.)

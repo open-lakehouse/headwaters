@@ -24,9 +24,9 @@ coverage:
 ignore:
   # Generated proto message types. The sibling proto/mod.rs is hand-written, so
   # it is NOT ignored — only the `@generated` *.v1.rs files.
-  - "crates/lineage-service/src/proto/*.v1.rs"
+  - "crates/headwaters/src/proto/*.v1.rs"
   # Every file under connect_gen/ is `@generated` (connectrpc service stubs).
-  - "crates/lineage-service/src/connect_gen/**"
+  - "crates/headwaters/src/connect_gen/**"
   - "**/examples/**" # runnable examples, not unit-tested
   - "**/tests/**" # integration test harnesses
   - "**/benches/**"
