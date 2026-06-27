@@ -54,7 +54,7 @@ The DuckDB graph lives in the `duckdb` namespace; the DataFusion demo's lives in
 ## How duck_lineage differs from our integration (notes from the review)
 
 Reviewing duck_lineage informed the "safe wins" we folded into
-`datafusion-open-lineage`, and is worth recording:
+`datafusion-openlineage`, and is worth recording:
 
 - **Config is SQL-`SET`-driven, not env/YAML.** It reads `duck_lineage_url`,
   `duck_lineage_namespace`, `duck_lineage_api_key`, etc. via DuckDB `SET`, and does

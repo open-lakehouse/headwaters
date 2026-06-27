@@ -10,7 +10,7 @@
 ## Why
 
 Headwaters today produces **rich, column-level OpenLineage** from Apache
-DataFusion query plans (the `datafusion-open-lineage` crate; see
+DataFusion query plans (the `datafusion-openlineage` crate; see
 [`open-lineage-design.md`](open-lineage-design.md)) and ingests / serves it
 through a CQRS HTTP service (`headwaters`; see
 [ADR 0006](adr/0006-hybrid-cqrs-postgres-storage.md)). That signal is

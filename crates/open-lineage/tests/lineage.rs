@@ -5,13 +5,13 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use datafusion::physical_plan::ExecutionPlanProperties;
 use datafusion::prelude::SessionContext;
-use datafusion_open_lineage::builder::{complete_event, fail_event, start_event};
-use datafusion_open_lineage::config::OpenLineageConfig;
-use datafusion_open_lineage::context::LineageContext;
-use datafusion_open_lineage::event::{RunEvent, RunEventType};
-use datafusion_open_lineage::extract::extract;
-use datafusion_open_lineage::transport::{NoopTransport, Transport, TransportError};
-use datafusion_open_lineage::{
+use datafusion_openlineage::builder::{complete_event, fail_event, start_event};
+use datafusion_openlineage::config::OpenLineageConfig;
+use datafusion_openlineage::context::LineageContext;
+use datafusion_openlineage::event::{RunEvent, RunEventType};
+use datafusion_openlineage::extract::extract;
+use datafusion_openlineage::transport::{NoopTransport, Transport, TransportError};
+use datafusion_openlineage::{
     DataFusionConfig, LineageContextProvider, OpenLineageClient, instrument_session_state,
     instrument_session_state_simple,
 };
@@ -729,7 +729,7 @@ async fn read_only_query_has_no_column_lineage() {
 
 #[tokio::test]
 async fn parent_run_facet_flows_to_start_event() {
-    use datafusion_open_lineage::facets::{BaseFacet, ParentJob, ParentRun, ParentRunFacet};
+    use datafusion_openlineage::facets::{BaseFacet, ParentJob, ParentRun, ParentRunFacet};
 
     let transport = RecordingTransport::default();
     let client = OpenLineageClient::new(Arc::new(transport.clone()));
@@ -1050,8 +1050,8 @@ impl datafusion::physical_plan::ExecutionPlan for OkExec {
 
 #[tokio::test]
 async fn execute_error_emits_fail_exactly_once() {
-    use datafusion_open_lineage::OpenLineageExec;
-    use datafusion_open_lineage::builder::complete_event;
+    use datafusion_openlineage::OpenLineageExec;
+    use datafusion_openlineage::builder::complete_event;
 
     let transport = RecordingTransport::default();
     let client = OpenLineageClient::new(Arc::new(transport.clone()));
@@ -1093,8 +1093,8 @@ async fn execute_error_emits_fail_exactly_once() {
 #[tokio::test]
 async fn partition_count_change_emits_one_terminal() {
     use datafusion::physical_plan::ExecutionPlan;
-    use datafusion_open_lineage::OpenLineageExec;
-    use datafusion_open_lineage::builder::complete_event;
+    use datafusion_openlineage::OpenLineageExec;
+    use datafusion_openlineage::builder::complete_event;
 
     let transport = RecordingTransport::default();
     let client = OpenLineageClient::new(Arc::new(transport.clone()));

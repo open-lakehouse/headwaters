@@ -8,9 +8,9 @@ name: Bootstrap publish (one-shot, DELETE AFTER USE)
 # network. A plain `cargo publish` (not release-plz) keeps the bootstrap simple
 # and independent of the OIDC release path.
 #
-# Scope: publishes `openlineage-client` then `datafusion-open-lineage` (the two
+# Scope: publishes `openlineage-client` then `datafusion-openlineage` (the two
 # crates.io crates; headwaters is publish = false and ships as a Docker image).
-# Order matters — datafusion-open-lineage depends on openlineage-client, so the
+# Order matters — datafusion-openlineage depends on openlineage-client, so the
 # dependency must exist on crates.io first.
 #
 # Prerequisite: add a temporary `CARGO_REGISTRY_TOKEN` repo secret (a crates.io
@@ -22,7 +22,7 @@ name: Bootstrap publish (one-shot, DELETE AFTER USE)
 #
 # After the real publish, decommission:
 #   1. Register Trusted Publishing for openlineage-client AND
-#      datafusion-open-lineage on crates.io (repo open-lakehouse/headwaters,
+#      datafusion-openlineage on crates.io (repo open-lakehouse/headwaters,
 #      workflow release-plz.yml, environment release) so release-plz manages them
 #      via OIDC going forward.
 #   2. Remove `release = false` from both crates in release-plz.toml so
@@ -64,7 +64,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       # --locked keeps the artifact reproducible against the committed Cargo.lock.
-      # Publish the dependency (openlineage-client) first; datafusion-open-lineage
+      # Publish the dependency (openlineage-client) first; datafusion-openlineage
       # depends on it and won't resolve on crates.io until it exists. A dry-run
       # of the dependent can't see the not-yet-published dependency, so skip it
       # when dry_run=true (the dependency's dry-run is enough of a package check).
@@ -77,9 +77,9 @@ jobs:
           # publishing cannot create a never-before-published crate name. This
           # one-shot token bootstrap is removed once the name exists.
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Publish datafusion-open-lineage
+      - name: Publish datafusion-openlineage
         if: ${{ !inputs.dry_run }}
-        run: cargo publish -p datafusion-open-lineage --locked
+        run: cargo publish -p datafusion-openlineage --locked
         env:
           # zizmor: ignore[use-trusted-publishing] — see above.
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

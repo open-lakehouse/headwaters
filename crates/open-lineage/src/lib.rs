@@ -19,7 +19,7 @@
 //!
 //! ```no_run
 //! use datafusion::execution::SessionStateBuilder;
-//! use datafusion_open_lineage::OpenLineage;
+//! use datafusion_openlineage::OpenLineage;
 //!
 //! # fn wire() -> Result<(), Box<dyn std::error::Error>> {
 //! let state = SessionStateBuilder::new_with_default_features().build();
@@ -45,7 +45,7 @@ pub mod rule;
 pub mod session;
 
 // Re-export the engine-agnostic emission surface so the flat
-// `datafusion_open_lineage::{RunEvent, Transport, OpenLineageClient, ...}` paths
+// `datafusion_openlineage::{RunEvent, Transport, OpenLineageClient, ...}` paths
 // keep working and callers need not depend on `openlineage-client` directly.
 pub use openlineage_client::{
     ClientError, ConsoleTransport, Dataset, DatasetName, Job, LineageContext, NoopTransport,

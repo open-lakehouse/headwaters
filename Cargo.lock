@@ -1690,7 +1690,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "datafusion-open-lineage"
+name = "datafusion-openlineage"
 version = "0.0.1"
 dependencies = [
  "async-trait",

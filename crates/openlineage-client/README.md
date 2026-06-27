@@ -6,7 +6,7 @@ client for Rust, with **no engine dependency**.
 This crate owns the emission side of OpenLineage: the `RunEvent` model and its
 typed facets, a pluggable `Transport` sink, and a non-blocking `OpenLineageClient`
 that hands events to a background drain task. Engine integrations such as
-[`datafusion-open-lineage`](https://docs.rs/datafusion-open-lineage) build on top
+[`datafusion-openlineage`](https://docs.rs/datafusion-openlineage) build on top
 of it — and so can any other emitter or transport.
 
 ## The transport seam

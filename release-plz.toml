@@ -8,7 +8,7 @@
 # All crates are versioned, changelogged, tagged and GitHub-released — but they
 # diverge at the publish step:
 #   - openlineage-client     -> published to crates.io (a library).
-#   - datafusion-open-lineage -> published to crates.io (a library).
+#   - datafusion-openlineage -> published to crates.io (a library).
 #   - headwaters          -> `publish = false`: NOT published to crates.io
 #     (a deployable app). Its git tag `headwaters-v<version>` instead
 #     triggers the Docker image build/push to GHCR (see
@@ -19,7 +19,7 @@
 repo_url = "https://github.com/open-lakehouse/headwaters"
 # Conventional-commit driven changelog (Keep a Changelog style).
 changelog_update = true
-# Per-crate tags, e.g. `datafusion-open-lineage-v0.1.0` /
+# Per-crate tags, e.g. `datafusion-openlineage-v0.1.0` /
 # `headwaters-v0.1.0`. The headwaters tag is what the Docker release
 # workflow keys off, and the prefix keeps the two crates' tags distinct.
 git_tag_name = "{{ package }}-v{{ version }}"
@@ -31,11 +31,11 @@ name = "openlineage-client"
 # out of the release cycle until it's bootstrap-published via
 # .github/workflows/bootstrap-publish.yml. After that first publish, delete this
 # line so release-plz publishes it via OIDC. Must be published BEFORE
-# datafusion-open-lineage, which depends on it.
+# datafusion-openlineage, which depends on it.
 release = false
 
 [[package]]
-name = "datafusion-open-lineage"
+name = "datafusion-openlineage"
 # TEMPORARY: this is a fresh, never-published crate name. crates.io OIDC trusted
 # publishing (the steady-state release path) can't create a new name, so hold it
 # out of the release cycle until it's bootstrap-published via

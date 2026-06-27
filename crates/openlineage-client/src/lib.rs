@@ -4,7 +4,7 @@
 //! its typed facets, a pluggable [`Transport`] sink, and a non-blocking
 //! [`OpenLineageClient`] that hands events to a background drain task. It has
 //! **no DataFusion (or any engine) dependency** — engine integrations such as
-//! [`datafusion-open-lineage`](https://docs.rs/datafusion-open-lineage) build on
+//! [`datafusion-openlineage`](https://docs.rs/datafusion-openlineage) build on
 //! top of it, and so can any other emitter.
 //!
 //! # The transport seam

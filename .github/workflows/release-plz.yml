@@ -4,7 +4,7 @@ name: Release-plz
 # single "Release PR" containing per-crate version bumps + regenerated
 # changelogs. When that PR is merged, release-plz creates the per-crate git
 # tags + GitHub Releases. Both crates are versioned/tagged/released; they
-# diverge at publish: datafusion-open-lineage publishes to crates.io via OIDC
+# diverge at publish: datafusion-openlineage publishes to crates.io via OIDC
 # trusted publishing, while headwaters is `publish = false` (a deployable
 # app) and instead has its container image built by the `docker` job here.
 # See release-plz.toml; CONTRIBUTING.md has the full flow.
@@ -53,7 +53,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # --- Tag + GitHub Release + cargo publish, after the Release PR is merged ---
-  # datafusion-open-lineage publishes to crates.io (OIDC); headwaters is
+  # datafusion-openlineage publishes to crates.io (OIDC); headwaters is
   # `publish = false` in release-plz.toml, so it is only tagged + GitHub-
   # released here — its Docker image is built by the `docker` job below from the
   # version this step reports in its `releases` output.

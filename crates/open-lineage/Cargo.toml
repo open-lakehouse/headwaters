@@ -1,5 +1,5 @@
 [package]
-name = "datafusion-open-lineage"
+name = "datafusion-openlineage"
 version = "0.0.1"
 description = "OpenLineage integration for Apache DataFusion sessions"
 edition.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 repository = "https://github.com/open-lakehouse/headwaters"
 homepage = "https://github.com/open-lakehouse/headwaters/tree/main/crates/open-lineage"
-documentation = "https://docs.rs/datafusion-open-lineage"
+documentation = "https://docs.rs/datafusion-openlineage"
 readme = "README.md"
 keywords = ["datafusion", "openlineage", "lineage", "observability"]
 categories = ["database", "development-tools::debugging"]

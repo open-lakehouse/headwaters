@@ -1,4 +1,4 @@
-# datafusion-open-lineage
+# datafusion-openlineage
 
 [OpenLineage](https://openlineage.io) integration for [Apache DataFusion](https://datafusion.apache.org).
 
@@ -30,7 +30,7 @@ latest published facet versions (see
 
 ```rust,no_run
 use datafusion::execution::SessionStateBuilder;
-use datafusion_open_lineage::OpenLineage;
+use datafusion_openlineage::OpenLineage;
 
 # fn wire() -> Result<(), Box<dyn std::error::Error>> {
 let state = SessionStateBuilder::new_with_default_features().build();
@@ -80,7 +80,7 @@ Two layers (see [`PUBLISHING.md`](PUBLISHING.md) for how they run):
    feature **and** `#[ignore]`; requires Docker:
 
    ```sh
-   cargo test -p datafusion-open-lineage --features marquez-it -- --ignored
+   cargo test -p datafusion-openlineage --features marquez-it -- --ignored
    ```
 
 ## License

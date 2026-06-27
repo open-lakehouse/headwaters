@@ -49,7 +49,7 @@ the MSRV build. Run the same checks locally:
 cargo fmt --all
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo nextest run --workspace --all-features
-cargo doc --no-deps                  # must be warning-free (datafusion-open-lineage ships to docs.rs)
+cargo doc --no-deps                  # must be warning-free (datafusion-openlineage ships to docs.rs)
 ```
 
 ### Protobuf changes
