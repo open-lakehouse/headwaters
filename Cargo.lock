@@ -2468,6 +2468,7 @@ dependencies = [
  "axum 0.7.9",
  "buffa",
  "buffa-types",
+ "bytes",
  "chrono",
  "config",
  "connectrpc",

@@ -51,6 +51,9 @@ tempfile = "3"
 # For exercising the read router over HTTP in tests (ServiceExt::oneshot), which
 # catches route-syntax regressions the direct store-call tests can't.
 tower = { version = "0.5", features = ["util"] }
+# Building a `ServiceRequest` for the ConnectRPC handler tests needs an owned
+# `Bytes` to back the decoded view (connectrpc::ServiceRequest::from_parts).
+bytes = "1"
 testcontainers = { version = "0.27", features = ["http_wait"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 # The conformance harness posts events to / reads from the real Marquez over HTTP.

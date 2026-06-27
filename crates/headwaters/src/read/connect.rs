@@ -209,3 +209,276 @@ impl ReadService for LineageStore {
         Response::ok(self.stats_asset(request.asset, period, limit).await?)
     }
 }
+
+#[cfg(test)]
+mod limit_tests {
+    use super::*;
+
+    #[test]
+    fn limit_or_maps_unset_and_negative_to_default() {
+        // proto3 scalars default to 0 on the wire; 0 and anything ≤ 0 means
+        // "unset" and must fall back to the REST-parity default.
+        assert_eq!(limit_or(0, 100), 100);
+        assert_eq!(limit_or(-5, 100), 100);
+    }
+
+    #[test]
+    fn limit_or_passes_through_positive() {
+        assert_eq!(limit_or(25, 100), 25);
+        assert_eq!(limit_or(1, 100), 1);
+    }
+
+    #[test]
+    fn read_error_maps_onto_connect_error_codes() {
+        use connectrpc::ErrorCode;
+
+        let nf: ConnectError = ReadError::NotFound("missing".into()).into();
+        assert_eq!(nf.code, ErrorCode::NotFound);
+
+        let internal: ConnectError = ReadError::Query("boom".into()).into();
+        assert_eq!(internal.code, ErrorCode::Internal);
+    }
+}
+
+// End-to-end ConnectRPC handler tests. These run *inside* the crate because the
+// handlers and their request/response types (`crate::proto`, `crate::connect_gen`)
+// are crate-private — an external `tests/` integration crate cannot reach them.
+// Postgres-gated like the REST tests in `tests/read_test.rs`; they share the same
+// seed helpers via `crate::test_support`.
+#[cfg(all(test, feature = "postgres-it"))]
+mod handler_tests {
+    use super::*;
+    use crate::test_support::{
+        column_lineage_seeded_store, seeded_store, start_postgres, uri_seeded_store,
+    };
+    use buffa::Message;
+    use buffa::view::MessageView;
+    use bytes::Bytes;
+    use connectrpc::{ErrorCode, RequestContext};
+
+    /// Invoke a `ReadService` handler with a request built from an owned proto
+    /// message. The encode→decode-view→`from_parts` dance has to happen in the
+    /// caller's scope so the `Bytes` and view outlive the borrow the
+    /// `ServiceRequest` holds; a macro keeps those bindings local.
+    macro_rules! call {
+        ($store:expr, $method:ident, $req:expr, $view:ty) => {{
+            let bytes = Bytes::from($req.encode_to_vec());
+            let view = <$view>::decode_view(&bytes).expect("decode view");
+            let request = ServiceRequest::from_parts(&view, &bytes);
+            // Fully-qualified trait call: `search` collides with the inherent
+            // `LineageStore::search`, so dispatch through `ReadService` explicitly
+            // for every method.
+            ReadService::$method(&$store, RequestContext::default(), request).await
+        }};
+    }
+
+    #[tokio::test]
+    async fn list_jobs_unset_limit_uses_rest_default() {
+        let db = start_postgres().await;
+        let store = seeded_store(&db).await;
+        // limit/offset left at proto3 zero — the handler must apply DEFAULT_LIMIT,
+        // not request a zero-row page.
+        let resp = call!(
+            store,
+            list_jobs,
+            pb::ListJobsRequest {
+                namespace: "etl".into(),
+                ..Default::default()
+            },
+            pb::ListJobsRequestView
+        )
+        .expect("list_jobs ok");
+        assert_eq!(resp.body.total_count, 1);
+        assert_eq!(resp.body.jobs[0].name, "build_daily");
+    }
+
+    #[tokio::test]
+    async fn list_jobs_empty_namespace_means_all() {
+        let db = start_postgres().await;
+        let store = seeded_store(&db).await;
+        let resp = call!(
+            store,
+            list_jobs,
+            pb::ListJobsRequest::default(),
+            pb::ListJobsRequestView
+        )
+        .expect("list_jobs ok");
+        assert_eq!(resp.body.total_count, 1, "empty namespace lists all jobs");
+    }
+
+    #[tokio::test]
+    async fn get_job_returns_inputs_and_outputs() {
+        let db = start_postgres().await;
+        let store = seeded_store(&db).await;
+        let resp = call!(
+            store,
+            get_job,
+            pb::GetJobRequest {
+                namespace: "etl".into(),
+                name: "build_daily".into(),
+                ..Default::default()
+            },
+            pb::GetJobRequestView
+        )
+        .expect("get_job ok");
+        assert_eq!(resp.body.inputs[0].name, "orders");
+        assert_eq!(resp.body.outputs[0].name, "daily_orders");
+    }
+
+    #[tokio::test]
+    async fn get_job_unknown_maps_to_connect_not_found() {
+        let db = start_postgres().await;
+        let store = seeded_store(&db).await;
+        let err = call!(
+            store,
+            get_job,
+            pb::GetJobRequest {
+                namespace: "etl".into(),
+                name: "nope".into(),
+                ..Default::default()
+            },
+            pb::GetJobRequestView
+        )
+        .expect_err("missing job is an error");
+        assert_eq!(err.code, ErrorCode::NotFound);
+    }
+
+    #[tokio::test]
+    async fn list_namespaces_serves_seeded_namespaces() {
+        let db = start_postgres().await;
+        let store = seeded_store(&db).await;
+        let resp = call!(
+            store,
+            list_namespaces,
+            pb::ListNamespacesRequest::default(),
+            pb::ListNamespacesRequestView
+        )
+        .expect("list_namespaces ok");
+        let names: Vec<&str> = resp
+            .body
+            .namespaces
+            .iter()
+            .map(|n| n.name.as_str())
+            .collect();
+        assert!(names.contains(&"etl"), "namespaces: {names:?}");
+    }
+
+    #[tokio::test]
+    async fn search_unset_limit_uses_default_and_finds_matches() {
+        let db = start_postgres().await;
+        let store = seeded_store(&db).await;
+        let resp = call!(
+            store,
+            search,
+            pb::SearchRequest {
+                q: "orders".into(),
+                ..Default::default()
+            },
+            pb::SearchRequestView
+        )
+        .expect("search ok");
+        assert!(resp.body.total_count >= 2, "got {}", resp.body.total_count);
+    }
+
+    #[tokio::test]
+    async fn get_lineage_unset_depth_resolves_graph() {
+        let db = start_postgres().await;
+        let store = seeded_store(&db).await;
+        // depth left at 0 (proto3 unset) must fall back to DEFAULT_DEPTH and still
+        // walk out to the connected datasets.
+        let resp = call!(
+            store,
+            get_lineage,
+            pb::GetLineageRequest {
+                node_id: "job:etl:build_daily".into(),
+                ..Default::default()
+            },
+            pb::GetLineageRequestView
+        )
+        .expect("get_lineage ok");
+        let ids: Vec<&str> = resp.body.graph.iter().map(|n| n.id.as_str()).collect();
+        assert!(ids.contains(&"dataset:raw:orders"), "graph: {ids:?}");
+        assert!(
+            ids.contains(&"dataset:marts:daily_orders"),
+            "graph: {ids:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_lineage_unknown_seed_maps_to_not_found() {
+        let db = start_postgres().await;
+        let store = seeded_store(&db).await;
+        let err = call!(
+            store,
+            get_lineage,
+            pb::GetLineageRequest {
+                node_id: "dataset:nope:missing".into(),
+                ..Default::default()
+            },
+            pb::GetLineageRequestView
+        )
+        .expect_err("unknown seed is an error");
+        assert_eq!(err.code, ErrorCode::NotFound);
+    }
+
+    #[tokio::test]
+    async fn get_run_facets_merges_run_facets() {
+        let db = start_postgres().await;
+        let store = uri_seeded_store(&db).await;
+        let resp = call!(
+            store,
+            get_run_facets,
+            pb::GetRunFacetsRequest {
+                run_id: "r1".into(),
+                ..Default::default()
+            },
+            pb::GetRunFacetsRequestView
+        )
+        .expect("get_run_facets ok");
+        assert_eq!(resp.body.run_id, "r1");
+    }
+
+    #[tokio::test]
+    async fn get_column_lineage_serves_field_graph() {
+        let db = start_postgres().await;
+        let store = column_lineage_seeded_store(&db).await;
+        let resp = call!(
+            store,
+            get_column_lineage,
+            pb::GetColumnLineageRequest {
+                node_id: "dataset:warehouse:silver.customers".into(),
+                ..Default::default()
+            },
+            pb::GetColumnLineageRequestView
+        )
+        .expect("get_column_lineage ok");
+        let ids: Vec<&str> = resp.body.graph.iter().map(|n| n.id.as_str()).collect();
+        assert!(
+            ids.contains(&"datasetField:warehouse:silver.customers:id"),
+            "field graph: {ids:?}"
+        );
+        // The latest facet wins: `id` maps from customer_key, not the older `id`.
+        assert!(
+            ids.contains(&"datasetField:raw:customers:customer_key"),
+            "latest mapping: {ids:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_lineage_event_stats_empty_period_uses_default() {
+        let db = start_postgres().await;
+        let store = seeded_store(&db).await;
+        // Empty period string (proto3 unset) must fall back to DEFAULT_PERIOD
+        // ("day") rather than passing an empty bucket spec to the query layer.
+        let resp = call!(
+            store,
+            get_lineage_event_stats,
+            pb::GetLineageEventStatsRequest::default(),
+            pb::GetLineageEventStatsRequestView
+        )
+        .expect("get_lineage_event_stats ok");
+        // One COMPLETE event was seeded; it lands in a single day bucket.
+        let total: i64 = resp.body.buckets.iter().map(|b| b.count).sum();
+        assert_eq!(total, 1);
+    }
+}
