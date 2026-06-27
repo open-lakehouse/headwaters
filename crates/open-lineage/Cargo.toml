@@ -46,3 +46,6 @@ jsonschema = "0.46"
 # feature + `#[ignore]`; see tests/marquez_acceptance.rs).
 testcontainers = { version = "0.27", features = ["http_wait"] }
 reqwest = { version = "0.12", features = ["json"] }
+# The e2e_pipeline example installs a subscriber so its `console` dry-run mode
+# (ConsoleTransport, which logs events via tracing) actually prints.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

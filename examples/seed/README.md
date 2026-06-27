@@ -16,6 +16,12 @@ just dev-down         # clean shutdown (removes the Postgres + Marquez container
 [Running](#running) for running the two separately. `just seed` is a thin
 wrapper over [`ingest.sh`](ingest.sh).
 
+> **Want lineage from a real engine instead of hand-authored JSON?** `just demo`
+> runs the [`e2e_pipeline`](../../crates/open-lineage/examples/e2e_pipeline.rs)
+> example: it instruments a live DataFusion session, runs a bronze→silver→gold
+> pipeline, and emits the resulting lineage to the service — exercising the full
+> instrumentation path end to end, not just the ingest API.
+
 Because our read API honors the Marquez wire contract, `just marquez-ui` spawns
 the upstream **Marquez** web UI pointed straight at our service — a handy
 cross-check of the seeded data against the reference frontend. (A small
