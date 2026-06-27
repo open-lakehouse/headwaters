@@ -54,9 +54,17 @@ jobs:
 
   # --- Tag + GitHub Release + cargo publish, after the Release PR is merged ---
   # datafusion-openlineage publishes to crates.io; headwaters is
-  # `publish = false` in release-plz.toml, so it is only tagged + GitHub-
-  # released here — its Docker image is built by the `docker` job below from the
-  # version this step reports in its `releases` output.
+  # `publish = false` + `git_only = true` in release-plz.toml, so it is only
+  # tagged + GitHub-released — its Docker image is built by the `docker` job
+  # below.
+  #
+  # NOTE: release-plz does NOT include `git_only` packages in the `releases`
+  # JSON its `release` command emits — so we cannot key the Docker trigger off
+  # that array (doing so silently skips headwaters forever). Instead the
+  # `service` step below derives the version from crates/headwaters/Cargo.toml
+  # (which the merged Release PR already bumped) and, if no matching
+  # `headwaters-v<version>` tag exists yet, creates it + a GitHub Release. The
+  # presence of a freshly-created tag is what fires the Docker job.
   release-plz-release:
     name: Release
     if: ${{ github.repository == 'open-lakehouse/headwaters' }}
@@ -67,7 +75,8 @@ jobs:
       contents: write # create tags + GitHub Releases
       id-token: write # crates.io OIDC publish
     outputs:
-      # Version + tag of headwaters IF it was released this run, else empty.
+      # Version + tag of headwaters IF this run released it (i.e. the manifest
+      # version was ahead of the tags and we created the tag), else empty.
       service_version: ${{ steps.service.outputs.version }}
       service_tag: ${{ steps.service.outputs.tag }}
     steps:
@@ -92,17 +101,47 @@ jobs:
           command: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Pull headwaters's version + tag out of the `releases` output (an
-      # array of {package_name, version, tag}) so the Docker job can build it.
-      # Leaves the outputs empty when this run didn't release the service.
-      - name: Extract headwaters release
+      # Tag + release headwaters ourselves. release-plz omits `git_only`
+      # packages from its `releases` output, so we cannot read the version from
+      # there. Read it from the manifest the Release PR already bumped, and if
+      # the `headwaters-v<version>` tag does not exist yet, create it + a GitHub
+      # Release. Setting `version`/`tag` then fires the Docker job. When the tag
+      # already exists (e.g. a re-run, or a push that did not bump headwaters),
+      # the outputs stay empty and Docker is skipped — idempotent by design.
+      - name: Tag + release headwaters
         id: service
-        if: ${{ steps.release.outputs.releases_created == 'true' }}
         env:
-          RELEASES: ${{ steps.release.outputs.releases }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          version=$(jq -r '.[] | select(.package_name == "headwaters") | .version' <<< "$RELEASES")
-          tag=$(jq -r '.[] | select(.package_name == "headwaters") | .tag' <<< "$RELEASES")
+          version=$(grep -m1 '^version = ' crates/headwaters/Cargo.toml \
+            | sed -E 's/^version = "([^"]+)".*/\1/')
+          if [ -z "$version" ]; then
+            echo "::error::could not parse headwaters version from Cargo.toml"
+            exit 1
+          fi
+          tag="headwaters-v${version}"
+          # The remote is the source of truth (this checkout has persist-
+          # credentials=false, so we don't push via git here — `gh release
+          # create` creates the tag at HEAD and authenticates via GH_TOKEN).
+          if gh release view "$tag" >/dev/null 2>&1 \
+            || git ls-remote --exit-code --tags origin "$tag" >/dev/null 2>&1; then
+            echo "Tag/release ${tag} already exists — headwaters not released this run."
+            exit 0
+          fi
+          echo "Releasing headwaters ${version} (tag ${tag})."
+          # `gh release create` creates the tag at the current commit (the merge
+          # commit that bumped the manifest) and the GitHub Release in one step.
+          # Body is the crate's changelog section for THIS version (skipping the
+          # leading `## [Unreleased]`), matching what release-plz produces for
+          # the published crates.
+          notes=$(awk -v ver="$version" '
+            $0 ~ "^## \\[" ver "\\]" {grab=1; next}
+            grab && /^## \[/ {exit}
+            grab {print}' crates/headwaters/CHANGELOG.md)
+          gh release create "$tag" \
+            --target "$GITHUB_SHA" \
+            --title "headwaters v${version}" \
+            --notes "${notes:-headwaters v${version}}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
