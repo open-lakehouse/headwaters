@@ -63,24 +63,10 @@ jobs:
           version: "31.1"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # --locked keeps the artifact reproducible against the committed Cargo.lock.
-      # Publish the dependency (openlineage-client) first; datafusion-openlineage
-      # depends on it and won't resolve on crates.io until it exists. A dry-run
-      # of the dependent can't see the not-yet-published dependency, so skip it
-      # when dry_run=true (the dependency's dry-run is enough of a package check).
-      - name: Publish openlineage-client
+      - name: Publish datafusion-openlineage
         run: |
-          cargo publish -p openlineage-client --locked \
+          cargo publish -p datafusion-openlineage --locked \
             ${{ inputs.dry_run && '--dry-run' || '' }}
         env:
-          # zizmor: ignore[use-trusted-publishing] — intentional: OIDC trusted
-          # publishing cannot create a never-before-published crate name. This
-          # one-shot token bootstrap is removed once the name exists.
+          # zizmor: ignore[use-trusted-publishing] — see above.
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      # - name: Publish datafusion-openlineage
-      #   run: |
-      #     cargo publish -p datafusion-openlineage --locked \
-      #       ${{ inputs.dry_run && '--dry-run' || '' }}
-      #   env:
-      #     # zizmor: ignore[use-trusted-publishing] — see above.
-      #     CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
