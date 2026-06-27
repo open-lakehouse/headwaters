@@ -9,17 +9,24 @@
 [![CI](https://github.com/open-lakehouse/headwaters/actions/workflows/ci.yml/badge.svg)](https://github.com/open-lakehouse/headwaters/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/open-lakehouse/headwaters/branch/main/graph/badge.svg)](https://codecov.io/gh/open-lakehouse/headwaters)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![OpenLineage](https://img.shields.io/badge/OpenLineage-compatible-blue.svg)](https://openlineage.io)
+[![Open Lakehouse](https://img.shields.io/badge/Open%20Lakehouse-2e2e2e.svg)](https://openlakehouse.io)
 
 </div>
+
+> [!NOTE]
+> Headwaters stands on the shoulders of the [Marquez](https://marquezproject.ai)
+> project: it implements a Marquez-compatible read API and is diffed against
+> Marquez for conformance. Marquez is the mature, production-ready OpenLineage
+> metadata service — **if you need a production solution today, use
+> [Marquez](https://marquezproject.ai).** Headwaters is an experimental,
+> Rust-native take for the open lakehouse stack.
 
 Headwaters is a set of Rust building blocks for [OpenLineage](https://openlineage.io)
 on the open lakehouse stack. It emits column-level data lineage from
 [Apache DataFusion](https://datafusion.apache.org) sessions at planning time, and
 ingests OpenLineage events into a queryable lineage store that serves a
-[Marquez](https://marquezproject.ai)-compatible read API for visualization. The
-crates here were extracted from
-[`open-lakehouse`](https://github.com/open-lakehouse) and are being prepared for
-independent release.
+[Marquez](https://marquezproject.ai)-compatible read API for visualization.
 
 ## Crates
 
