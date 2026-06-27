@@ -8,8 +8,10 @@ name: Bootstrap publish (one-shot, DELETE AFTER USE)
 # network. A plain `cargo publish` (not release-plz) keeps the bootstrap simple
 # and independent of the OIDC release path.
 #
-# Scope: publishes `datafusion-open-lineage` (the only crates.io crate;
-# headwaters is publish = false and ships as a Docker image).
+# Scope: publishes `openlineage-client` then `datafusion-open-lineage` (the two
+# crates.io crates; headwaters is publish = false and ships as a Docker image).
+# Order matters — datafusion-open-lineage depends on openlineage-client, so the
+# dependency must exist on crates.io first.
 #
 # Prerequisite: add a temporary `CARGO_REGISTRY_TOKEN` repo secret (a crates.io
 # API token with publish scope), e.g. on the protected `release` environment.
@@ -19,11 +21,12 @@ name: Bootstrap publish (one-shot, DELETE AFTER USE)
 # actually publish.
 #
 # After the real publish, decommission:
-#   1. Register Trusted Publishing for datafusion-open-lineage on crates.io
-#      (repo open-lakehouse/headwaters, workflow release-plz.yml, environment
-#      release) so release-plz manages it via OIDC going forward.
-#   2. Remove `release = false` from datafusion-open-lineage in release-plz.toml
-#      so release-plz bumps + publishes it via OIDC from then on.
+#   1. Register Trusted Publishing for openlineage-client AND
+#      datafusion-open-lineage on crates.io (repo open-lakehouse/headwaters,
+#      workflow release-plz.yml, environment release) so release-plz manages them
+#      via OIDC going forward.
+#   2. Remove `release = false` from both crates in release-plz.toml so
+#      release-plz bumps + publishes them via OIDC from then on.
 #   3. Delete the CARGO_REGISTRY_TOKEN secret (and revoke it on crates.io).
 #   4. Delete this workflow file.
 # Steady-state releases are then handled by release-plz.yml via OIDC (no token).
@@ -61,12 +64,22 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       # --locked keeps the artifact reproducible against the committed Cargo.lock.
-      - name: Publish datafusion-open-lineage
+      # Publish the dependency (openlineage-client) first; datafusion-open-lineage
+      # depends on it and won't resolve on crates.io until it exists. A dry-run
+      # of the dependent can't see the not-yet-published dependency, so skip it
+      # when dry_run=true (the dependency's dry-run is enough of a package check).
+      - name: Publish openlineage-client
         run: |
-          cargo publish -p datafusion-open-lineage --locked \
+          cargo publish -p openlineage-client --locked \
             ${{ inputs.dry_run && '--dry-run' || '' }}
         env:
           # zizmor: ignore[use-trusted-publishing] — intentional: OIDC trusted
           # publishing cannot create a never-before-published crate name. This
           # one-shot token bootstrap is removed once the name exists.
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Publish datafusion-open-lineage
+        if: ${{ !inputs.dry_run }}
+        run: cargo publish -p datafusion-open-lineage --locked
+        env:
+          # zizmor: ignore[use-trusted-publishing] — see above.
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

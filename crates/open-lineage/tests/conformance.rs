@@ -19,7 +19,9 @@ use datafusion::prelude::SessionContext;
 use datafusion_open_lineage::config::OpenLineageConfig;
 use datafusion_open_lineage::event::RunEvent;
 use datafusion_open_lineage::transport::{Transport, TransportError};
-use datafusion_open_lineage::{OpenLineageClient, instrument_session_state_simple};
+use datafusion_open_lineage::{
+    DataFusionConfig, OpenLineageClient, instrument_session_state_simple,
+};
 use jsonschema::{Registry, Resource, Validator};
 use serde_json::Value;
 
@@ -111,7 +113,7 @@ impl Transport for RecordingTransport {
 fn config() -> OpenLineageConfig {
     OpenLineageConfig {
         job_namespace: "conformance-ns".to_string(),
-        ..Default::default()
+        ..OpenLineageConfig::for_datafusion()
     }
 }
 

@@ -12,7 +12,7 @@ use datafusion_open_lineage::event::{RunEvent, RunEventType};
 use datafusion_open_lineage::extract::extract;
 use datafusion_open_lineage::transport::{NoopTransport, Transport, TransportError};
 use datafusion_open_lineage::{
-    LineageContextProvider, OpenLineageClient, instrument_session_state,
+    DataFusionConfig, LineageContextProvider, OpenLineageClient, instrument_session_state,
     instrument_session_state_simple,
 };
 use serde_json::Value;
@@ -46,7 +46,7 @@ impl Transport for FailingTransport {
 fn config() -> OpenLineageConfig {
     OpenLineageConfig {
         job_namespace: "test-ns".to_string(),
-        ..Default::default()
+        ..OpenLineageConfig::for_datafusion()
     }
 }
 

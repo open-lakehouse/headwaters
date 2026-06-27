@@ -20,6 +20,15 @@ pub enum TransportError {
 }
 
 /// A sink that delivers OpenLineage events to a backend.
+///
+/// The only required method is [`emit`](Transport::emit). [`emit_batch`](Transport::emit_batch)
+/// and [`flush`](Transport::flush) have default implementations; override them
+/// when the backend can deliver events in bulk or buffers internally.
+///
+/// Implementations must never apply back-pressure that could stall the host
+/// workload — emission happens on a background drain task, but a transport that
+/// blocks indefinitely (e.g. on a hung upstream) can still starve every queued
+/// event. Bound your own IO with a timeout.
 #[async_trait]
 pub trait Transport: std::fmt::Debug + Send + Sync {
     /// Delivers a single OpenLineage event to the backend.
@@ -28,6 +37,31 @@ pub trait Transport: std::fmt::Debug + Send + Sync {
     /// Returns a [`TransportError`] if the event cannot be serialized or
     /// delivered.
     async fn emit(&self, event: &RunEvent) -> Result<(), TransportError>;
+
+    /// Delivers a batch of events. The default implementation calls
+    /// [`emit`](Transport::emit) for each event in order, stopping at the first
+    /// error. Override when the backend has a bulk endpoint (e.g. a batch POST).
+    ///
+    /// # Errors
+    /// Returns a [`TransportError`] if any event cannot be serialized or
+    /// delivered.
+    async fn emit_batch(&self, events: &[RunEvent]) -> Result<(), TransportError> {
+        for event in events {
+            self.emit(event).await?;
+        }
+        Ok(())
+    }
+
+    /// Flushes any internally-buffered events, blocking until they are delivered
+    /// (or fail). Called by [`OpenLineageClient::shutdown`](crate::OpenLineageClient::shutdown)
+    /// after the drain queue empties. The default is a no-op — override it only
+    /// for transports that buffer beyond a single [`emit`](Transport::emit) call.
+    ///
+    /// # Errors
+    /// Returns a [`TransportError`] if buffered events cannot be delivered.
+    async fn flush(&self) -> Result<(), TransportError> {
+        Ok(())
+    }
 }
 
 /// Drops events. The safe default when lineage is not configured.

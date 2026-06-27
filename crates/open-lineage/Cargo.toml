@@ -13,25 +13,22 @@ keywords = ["datafusion", "openlineage", "lineage", "observability"]
 categories = ["database", "development-tools::debugging"]
 
 [dependencies]
+# The engine-agnostic event model, Transport seam, and emit client.
+openlineage-client = { path = "../openlineage-client", default-features = false }
 datafusion = { workspace = true }
 async-trait = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
-url = { workspace = true }
 # OpenLineage recommends time-ordered (v7) UUIDs for run ids.
 uuid = { workspace = true, features = ["v7", "serde"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
-thiserror = { workspace = true }
-
-olai-http = { workspace = true, optional = true }
-reqwest = { version = "0.12", optional = true }
 
 [features]
 default = ["http"]
-http = ["dep:olai-http", "dep:reqwest"]
+# Forwards to openlineage-client's HTTP transport (CloudClientTransport).
+http = ["openlineage-client/http"]
 # Opt-in: the live Marquez reference-backend acceptance test (tests/marquez_acceptance.rs).
 # It additionally needs Docker; the test is also `#[ignore]`d so even with the
 # feature on it only runs under `-- --ignored`. Requires `http` for the transport.
@@ -49,3 +46,6 @@ reqwest = { version = "0.12", features = ["json"] }
 # The e2e_pipeline example installs a subscriber so its `console` dry-run mode
 # (ConsoleTransport, which logs events via tracing) actually prints.
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# The e2e_pipeline example parses endpoint URLs for the HTTP transport.
+url = { workspace = true }
+uuid = { workspace = true, features = ["v7"] }

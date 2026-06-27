@@ -2,9 +2,11 @@
 //!
 //! Emission must never break or slow the host query. [`OpenLineageClient::emit`]
 //! is non-blocking: it hands the event to a bounded channel drained by a
-//! background task that calls the transport and swallows + logs any error. If
-//! the channel is full the event is dropped with a warning (back-pressure must
-//! not stall planning).
+//! background task that delivers events to the transport (coalescing queued
+//! events into batches when the upstream is slow) and swallows + logs any error.
+//! If the channel is full the event is dropped with a warning (back-pressure must
+//! not stall planning). [`OpenLineageClient::shutdown`] drains the queue and
+//! flushes the transport before exit.
 
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -19,6 +21,10 @@ use crate::transport::{NoopTransport, Transport};
 
 /// Default bound on the in-flight event queue.
 const DEFAULT_QUEUE_SIZE: usize = 1024;
+
+/// Cap on events coalesced into a single `emit_batch` by the drain task. Bounds
+/// the per-delivery payload size while still amortizing a slow upstream.
+const MAX_BATCH: usize = 256;
 
 /// Error returned when an [`OpenLineageClient`] cannot be constructed.
 #[derive(Debug, thiserror::Error)]
@@ -43,6 +49,9 @@ pub struct OpenLineageClient {
     /// The background drain task, shared across clones. [`Self::shutdown`] takes
     /// it to await a final flush of queued events before process exit.
     drain: Arc<Mutex<Option<JoinHandle<()>>>>,
+    /// A handle to the transport, kept so [`Self::shutdown`] can flush it after
+    /// the drain queue empties (the drain task owns its own clone).
+    transport: Arc<dyn Transport>,
 }
 
 impl OpenLineageClient {
@@ -87,15 +96,34 @@ impl OpenLineageClient {
         let (tx, mut rx) = mpsc::channel::<RunEvent>(queue_size);
         let dropped = Arc::new(AtomicU64::new(0));
         let drain_dropped = dropped.clone();
+        // The drain task owns one clone of the transport; `shutdown` keeps another
+        // so it can flush after the queue empties.
+        let drain_transport = transport.clone();
         let drain = handle.spawn(async move {
-            while let Some(event) = rx.recv().await {
-                if let Err(err) = transport.emit(&event).await {
-                    let n = drain_dropped.fetch_add(1, Ordering::Relaxed) + 1;
+            // Drain-coalescing: block for the first event, then opportunistically
+            // pull whatever else is already queued (up to MAX_BATCH) and deliver
+            // it in one `emit_batch`. Under light load this is one event per call;
+            // when the upstream is slow and the queue backs up, it coalesces into
+            // batch deliveries — the cheapest throughput win exactly when needed.
+            let mut batch: Vec<RunEvent> = Vec::new();
+            while let Some(first) = rx.recv().await {
+                batch.clear();
+                batch.push(first);
+                while batch.len() < MAX_BATCH {
+                    match rx.try_recv() {
+                        Ok(event) => batch.push(event),
+                        Err(_) => break,
+                    }
+                }
+                if let Err(err) = drain_transport.emit_batch(&batch).await {
+                    let n = drain_dropped.fetch_add(batch.len() as u64, Ordering::Relaxed)
+                        + batch.len() as u64;
                     tracing::warn!(
                         target: "openlineage",
                         error = %err,
+                        batch = batch.len(),
                         dropped_total = n,
-                        "failed to emit lineage event; dropping"
+                        "failed to emit lineage events; dropping batch"
                     );
                 }
             }
@@ -104,6 +132,7 @@ impl OpenLineageClient {
             tx,
             dropped,
             drain: Arc::new(Mutex::new(Some(drain))),
+            transport,
         })
     }
 
@@ -139,13 +168,14 @@ impl OpenLineageClient {
         let endpoint_url = url::Url::parse(&full)
             .map_err(|e| ClientError::Config(format!("invalid OPENLINEAGE_URL/ENDPOINT: {e}")))?;
 
-        let transport: Arc<dyn Transport> = match std::env::var("OPENLINEAGE_API_KEY") {
-            Ok(token) if !token.is_empty() => {
-                Arc::new(CloudClientTransport::with_token(endpoint_url, token))
-            }
-            _ => Arc::new(CloudClientTransport::unauthenticated(endpoint_url)),
-        };
-        Ok(Self::new(transport))
+        // Honor OPENLINEAGE_TIMEOUT_MS for the per-request transport timeout.
+        let timeout = crate::config::OpenLineageConfig::from_env().request_timeout;
+        let cloud = match std::env::var("OPENLINEAGE_API_KEY") {
+            Ok(token) if !token.is_empty() => CloudClientTransport::with_token(endpoint_url, token),
+            _ => CloudClientTransport::unauthenticated(endpoint_url),
+        }
+        .with_timeout(timeout);
+        Ok(Self::new(Arc::new(cloud)))
     }
 
     #[cfg(not(feature = "http"))]
@@ -175,21 +205,36 @@ impl OpenLineageClient {
         self.dropped.load(Ordering::Relaxed)
     }
 
-    /// Flush queued events and stop the background drain task.
+    /// Flush queued events, flush the transport, and stop the background drain
+    /// task.
     ///
-    /// Awaits the drain task to completion so events still queued at process
-    /// exit are delivered rather than lost. The drain task ends once the event
-    /// channel closes, which requires every sender to be dropped — so call this
-    /// after (or while) dropping all other clones of the client; this consumes
-    /// the clone it is called on. Idempotent across clones: only the clone
-    /// holding the drain handle awaits it, the rest return immediately.
+    /// Awaits the drain task to completion so events still queued at process exit
+    /// are delivered rather than lost, then calls [`Transport::flush`] so a
+    /// transport that buffers internally (e.g. a Kafka producer) delivers its
+    /// tail before exit. The drain task ends once the event channel closes, which
+    /// requires every sender to be dropped — so call this after (or while)
+    /// dropping all other clones of the client; this consumes the clone it is
+    /// called on. Idempotent across clones: only the clone holding the drain
+    /// handle awaits it, the rest return immediately.
     pub async fn shutdown(self) {
         // Drop our sender so this clone no longer keeps the channel open.
-        let Self { tx, drain, .. } = self;
+        let Self {
+            tx,
+            drain,
+            transport,
+            ..
+        } = self;
         drop(tx);
         let handle = drain.lock().unwrap().take();
         if let Some(handle) = handle {
             let _ = handle.await;
+        }
+        if let Err(err) = transport.flush().await {
+            tracing::warn!(
+                target: "openlineage",
+                error = %err,
+                "transport flush failed during shutdown",
+            );
         }
     }
 }

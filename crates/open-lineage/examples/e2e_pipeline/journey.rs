@@ -26,6 +26,7 @@ use datafusion::execution::SessionStateBuilder;
 use datafusion::execution::context::SessionState;
 use datafusion::prelude::{ParquetReadOptions, SessionContext};
 use datafusion::sql::TableReference;
+use datafusion_open_lineage::DataFusionConfig;
 use datafusion_open_lineage::config::OpenLineageConfig;
 use datafusion_open_lineage::context::{LineageContext, LineageContextProvider};
 use datafusion_open_lineage::facets::{BaseFacet, ParentJob, ParentRun, ParentRunFacet};
@@ -142,7 +143,7 @@ fn stage_context(
     let config = OpenLineageConfig {
         producer: pipeline.producer.clone(),
         job_namespace: DATASET_NAMESPACE.to_string(),
-        ..Default::default()
+        ..OpenLineageConfig::for_datafusion()
     };
     let base = SessionStateBuilder::new_with_default_features().build();
     let state = instrument_session_state(base, client.clone(), Arc::new(provider), config);
