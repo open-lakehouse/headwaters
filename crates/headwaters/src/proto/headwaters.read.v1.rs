@@ -749,7 +749,7 @@ impl ::core::fmt::Debug for JobDetail {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("JobDetail")
             .field("id", &self.id)
-            .field("type", &self.r#type)
+            .field("r#type", &self.r#type)
             .field("name", &self.name)
             .field("simple_name", &self.simple_name)
             .field("namespace", &self.namespace)
@@ -2140,7 +2140,7 @@ impl ::core::fmt::Debug for Dataset {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("Dataset")
             .field("id", &self.id)
-            .field("type", &self.r#type)
+            .field("r#type", &self.r#type)
             .field("name", &self.name)
             .field("physical_name", &self.physical_name)
             .field("namespace", &self.namespace)
@@ -2863,7 +2863,7 @@ impl ::core::fmt::Debug for DatasetVersion {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("DatasetVersion")
             .field("id", &self.id)
-            .field("type", &self.r#type)
+            .field("r#type", &self.r#type)
             .field("name", &self.name)
             .field("physical_name", &self.physical_name)
             .field("created_at", &self.created_at)
@@ -3712,7 +3712,7 @@ impl ::core::fmt::Debug for SearchResult {
             .field("name", &self.name)
             .field("namespace", &self.namespace)
             .field("node_id", &self.node_id)
-            .field("type", &self.r#type)
+            .field("r#type", &self.r#type)
             .field("updated_at", &self.updated_at)
             .finish()
     }
@@ -4669,7 +4669,7 @@ impl ::core::fmt::Debug for LineageNode {
     fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
         f.debug_struct("LineageNode")
             .field("id", &self.id)
-            .field("type", &self.r#type)
+            .field("r#type", &self.r#type)
             .field("data", &self.data)
             .field("in_edges", &self.in_edges)
             .field("out_edges", &self.out_edges)

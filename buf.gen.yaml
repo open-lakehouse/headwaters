@@ -4,7 +4,7 @@
 # Three passes:
 # - buffa (remote, BSR): the `lineage.v1` and `headwaters.read.v1` message/view/
 #   enum types, committed under crates/headwaters/src/proto/.
-# - protoc-gen-connect-rust (local): the ConnectRPC service facade for the read
+# - connect-rust (remote, BSR): the ConnectRPC service facade for the read
 #   API (`headwaters.read.v1.ReadService`) — service traits + routers that
 #   reference the buffa messages/views above via `buffa_module=crate::proto`.
 # - protoc-gen-buffa-packaging (local): stitches the per-service connect_gen
@@ -21,20 +21,22 @@
 # proto-codegen step build straight from source. (`proto`/`connect_gen`, not
 # `gen`: `gen` is a reserved keyword in Rust 2024.)
 #
-# The buffa pass runs remotely on the BSR (no local install); the two connect
-# plugins are locally-installed binaries (`cargo install protoc-gen-connect-rust
+# The buffa and connect-rust passes run remotely on the BSR (no local install);
+# only the packaging plugin is a locally-installed binary (`cargo install
 # protoc-gen-buffa-packaging`).
 version: v2
 plugins:
-  - remote: buf.build/anthropics/buffa
+  - remote: buf.build/anthropics/buffa:v0.7.0
     out: crates/headwaters/src/proto
     opt:
       - file_per_package=true
       - json=true
   # ConnectRPC server facade for the read API. Emits service traits + routers
   # only, referencing the buffa models above via the absolute `buffa_module`
-  # path (the `__buffa::view` types they already carry).
-  - local: protoc-gen-connect-rust
+  # path (the `__buffa::view` types they already carry). Runs remotely on the
+  # BSR (no local install): the crates.io `protoc-gen-connect-rust` is a
+  # placeholder with no binary, so the plugin is only consumable this way.
+  - remote: buf.build/anthropics/connect-rust:v0.7.0
     out: crates/headwaters/src/connect_gen
     opt:
       - buffa_module=crate::proto

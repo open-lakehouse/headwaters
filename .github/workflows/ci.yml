@@ -216,10 +216,10 @@ jobs:
           toolchain: "1.96"
           components: rustfmt
 
-      # The two local codegen plugins `buf generate` invokes (the buffa pass
-      # runs remotely on the BSR and needs no install).
-      - name: Install connect codegen plugins
-        run: cargo install protoc-gen-connect-rust protoc-gen-buffa-packaging
+      # The only local codegen plugin `buf generate` invokes (the buffa and
+      # connect-rust passes run remotely on the BSR and need no install).
+      - name: Install packaging codegen plugin
+        run: cargo install protoc-gen-buffa-packaging
 
       - name: Regenerate proto code
         run: buf generate
