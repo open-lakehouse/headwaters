@@ -1,0 +1,24 @@
+[package]
+name = "headwaters-client"
+version = "0.0.2"
+description = "Async Rust client for the Headwaters read API (lineage browse, graph, search, tags, stats)"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository = "https://github.com/open-lakehouse/headwaters"
+homepage = "https://github.com/open-lakehouse/headwaters/tree/main/crates/headwaters-client"
+documentation = "https://docs.rs/headwaters-client"
+readme = "README.md"
+keywords = ["openlineage", "lineage", "client", "connectrpc"]
+categories = ["database", "api-bindings"]
+
+[dependencies]
+headwaters-proto = { workspace = true, features = ["client"] }
+buffa-types = { workspace = true, features = ["json"] }
+connectrpc = { workspace = true, features = ["client"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+http = "1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

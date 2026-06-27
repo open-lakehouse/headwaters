@@ -49,6 +49,9 @@ postgres-it = []
 conformance-it = []
 
 [dev-dependencies]
+# Round-trips the read API through the real Rust client over a live ConnectRPC
+# listener (the `client-it` test); exercises the generated client end to end.
+headwaters-client = { workspace = true }
 tempfile = "3"
 # For exercising the read router over HTTP in tests (ServiceExt::oneshot), which
 # catches route-syntax regressions the direct store-call tests can't.

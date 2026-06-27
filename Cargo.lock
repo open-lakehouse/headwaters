@@ -2476,6 +2476,7 @@ dependencies = [
  "chrono",
  "config",
  "connectrpc",
+ "headwaters-client",
  "headwaters-proto",
  "http-body",
  "http-body-util",
@@ -2493,6 +2494,19 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "headwaters-client"
+version = "0.0.2"
+dependencies = [
+ "buffa-types",
+ "connectrpc",
+ "headwaters-proto",
+ "http",
+ "serde_json",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
