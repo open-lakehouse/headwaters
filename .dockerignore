@@ -5,6 +5,12 @@
 # Rust build artifacts.
 target/
 
+# Node deps + build output: the UI stage runs its own `npm ci` and `vite build`,
+# so host-installed (possibly wrong-platform) modules and a stale dist/ must not
+# leak into the build context and clobber it.
+**/node_modules/
+node/**/dist/
+
 # Local stack runtime state: bind-mounted Delta tables, Postgres data, etc.
 # Created by docker compose / local runs; never an input to a build.
 **/.data/

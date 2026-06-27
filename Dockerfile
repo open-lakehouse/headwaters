@@ -38,6 +38,23 @@ FROM chef AS planner
 COPY . .
 RUN ($NO_CHEF && touch recipe.json) || cargo chef prepare --recipe-path recipe.json
 
+# Build the bundled single-page web UI (node/ workspace: lineage-client +
+# lineage-ui + app) into static assets. The Rust binary serves these as a
+# fallback when built with `--features serve-ui` (see below). Kept as its own
+# stage so the (large) node toolchain never reaches the runtime image and the
+# npm install layer caches independently of the Rust build.
+FROM node:22-bookworm-slim AS ui
+WORKDIR /ui
+# Lockfile + manifests first for a cacheable `npm ci` layer.
+COPY node/package.json node/package-lock.json ./
+COPY node/lineage-client/package.json ./lineage-client/
+COPY node/lineage-ui/package.json ./lineage-ui/
+COPY node/app/package.json ./app/
+RUN npm ci
+# Then the sources, and build the app (tsc -b && vite build -> app/dist).
+COPY node/ ./
+RUN npm run build --workspace @headwaters/lineage-app
+
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 # Build dependencies only — this is the cached layer.
@@ -52,4 +69,9 @@ FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 ARG EXPIRES=Never
 LABEL org.opencontainers.image.title="lineage-service" quay.expires-after="${EXPIRES}"
 COPY --from=builder /app/target/release/lineage-service /usr/local/bin/app
+# The service serves the bundled SPA from `./web` relative to its working
+# directory (see `UI_DIR` in src/http.rs), so run from /app and drop the bundle
+# there. Absent the bundle the static routes just 404 — the API still serves.
+WORKDIR /app
+COPY --from=ui /ui/app/dist ./web
 ENTRYPOINT ["/usr/local/bin/app"]
