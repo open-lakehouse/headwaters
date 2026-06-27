@@ -2,7 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// The local headwaters (`just lineage`, default :8091) serves both the REST
+// A local headwaters instance (`just lineage`, default :8091) serves both the REST
 // read API and the ConnectRPC read API on one port. In dev we proxy the
 // ConnectRPC path prefix to it so the browser talks to a single origin (the Vite
 // dev server) — the registered transport (see main.tsx) uses a relative baseUrl.

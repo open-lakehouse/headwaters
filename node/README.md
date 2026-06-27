@@ -8,7 +8,7 @@ Rust service and proto (mirrors the layout in the sibling `hydrofoil` and
 | --- | --- |
 | [`@headwaters/lineage-client`](./lineage-client) | Generated ConnectRPC TypeScript client + types for the read API, plus the late-binding transport seam. The analog of hydrofoil's `uc-client`. Generated code is committed under `src/gen/`. |
 | [`@headwaters/lineage-ui`](./lineage-ui) | The reusable React feature: graph canvas, browsers, detail panels, search, stats. The integration surface a host (e.g. hydrofoil) consumes. See its [README](./lineage-ui/README.md) for the public/internal contract. |
-| `@headwaters/lineage-app` (`app/`) | A thin scaffold app + Storybook. Runs against a local `headwaters`. |
+| `@headwaters/lineage-app` (`app/`) | A thin scaffold app + Storybook. Runs against a local `headwaters` instance. |
 
 ## Quick start
 

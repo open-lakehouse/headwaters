@@ -9,7 +9,7 @@ import { routeTree } from "./routeTree.js";
 
 // The default lineage-client transport already speaks Connect over fetch against
 // the current origin, and the Vite proxy forwards the ReadService path prefix to
-// the headwaters (see vite.config.ts). So the scaffold needs no explicit
+// headwaters (see vite.config.ts). So the scaffold needs no explicit
 // registerTransport — the default IS the network path. Storybook overrides it
 // with a fixture transport; a host app would register its own here.
 

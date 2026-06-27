@@ -1,11 +1,11 @@
 # Seed data — rich demo lineage for the UI
 
-Start a headwaters, run one script, and get a fully-populated lineage store
+Start headwaters, run one script, and get a fully-populated lineage store
 to explore the UI against. The data is hand-designed to exercise **every**
 read-API feature the UI surfaces, not just the happy path.
 
 ```sh
-just dev              # start Postgres (Docker) + the headwaters on :8091
+just dev              # start Postgres (Docker) + headwaters on :8091
 just seed             # ingest the demo data into it (in another shell)
 just ui-dev           # open our UI against it       (http://localhost:3010)
 just marquez-ui       # …or the Marquez reference UI (http://localhost:3000)

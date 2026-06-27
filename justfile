@@ -10,14 +10,14 @@ PG_PORT := "5432"
 PG_USER := "postgres"
 PG_PASSWORD := "postgres"
 PG_DB := "lineage"
-# DSN the headwaters reads from DATABASE_URL.
+# DSN headwaters reads from DATABASE_URL.
 DATABASE_URL := "postgres://" + PG_USER + ":" + PG_PASSWORD + "@localhost:" + PG_PORT + "/" + PG_DB
 
 # the Marquez reference web UI, pointed at our (Marquez-compatible) read API.
 MARQUEZ_WEB_CONTAINER := "headwaters-marquez-web"
 MARQUEZ_WEB_IMAGE := "marquezproject/marquez-web:0.50.0"
 MARQUEZ_WEB_PORT := "3000"
-# Port our headwaters serves on (the read API the UI talks to).
+# Port headwaters serves on (the read API the UI talks to).
 HEADWATERS_PORT := "8091"
 
 # list all commands by default
@@ -34,7 +34,7 @@ build:
 test:
     cargo nextest run --workspace --all-features
 
-# run the headwaters on the host against an already-running Postgres. Needs
+# run headwaters on the host against an already-running Postgres. Needs
 # a DSN: set DATABASE_URL (e.g. postgres://user:pass@localhost:5432/lineage) or
 # `postgres.url` in a config file. Override the config path with `HEADWATERS_CONFIG=…`,
 # or individual fields with `HEADWATERS__*` env vars (e.g. HEADWATERS__PORT=9000).
@@ -44,14 +44,14 @@ lineage *args:
     RUST_LOG="${RUST_LOG:-headwaters=debug}" \
     cargo run -p headwaters -- {{ args }}
 
-# seed a running headwaters with the rich demo lineage in examples/seed
+# seed a running headwaters instance with the rich demo lineage in examples/seed
 # (regenerates the Headwaters demo graph, then POSTs it + the vendored Marquez
 # food-delivery dataset to the batch endpoint). Target a non-default host with
 # MARQUEZ_URL=… (defaults to http://localhost:8091). See examples/seed/README.md.
 seed *files:
     examples/seed/ingest.sh {{ files }}
 
-# run the live end-to-end DataFusion demo against a running headwaters: it
+# run the live end-to-end DataFusion demo against a running headwaters instance: it
 # instruments a real DataFusion session, runs a bronze→silver→gold pipeline, and
 # emits the resulting lineage to the service (exercises the full instrumentation
 # path, unlike the static `seed`). Target a non-default host with OPENLINEAGE_URL=…
@@ -120,7 +120,7 @@ dev *args: pg-up
     RUST_LOG="${RUST_LOG:-headwaters=debug}" \
     cargo run -p headwaters -- {{ args }}
 
-# Stop the headwaters with Ctrl-C first. Also removes the Marquez UI if it
+# Stop headwaters with Ctrl-C first. Also removes the Marquez UI if it
 # was started.
 #
 # clean shutdown of the local environment (removes the Postgres + Marquez containers)
@@ -129,13 +129,13 @@ dev-down: pg-down marquez-ui-down
 # --- Marquez reference web UI ---
 
 # Our read API honors the Marquez wire contract, so the upstream Marquez web UI
-# can point straight at our headwaters — handy for cross-checking the data
+# can point straight at headwaters — handy for cross-checking the data
 # against the reference frontend. Needs a running service (`just dev`) on
 # HEADWATERS_PORT. The container reaches the host via host.docker.internal (mapped
 # to the host gateway so it works on Linux too). Idempotent. Open
 # http://localhost:{{ MARQUEZ_WEB_PORT }} once it's up.
 #
-# spawn the Marquez reference web UI pointed at our headwaters
+# spawn the Marquez reference web UI pointed at headwaters
 marquez-ui:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -203,7 +203,7 @@ ui-install:
 ui-gen:
     cd node && npm run gen:rpc
 
-# run the scaffold UI dev server (Vite). Expects the headwaters on :8091
+# run the scaffold UI dev server (Vite). Expects headwaters on :8091
 # (`just lineage`); the Vite proxy forwards ConnectRPC calls to it.
 ui-dev:
     cd node && npm run dev
@@ -220,7 +220,7 @@ ui-check:
 ui-build:
     cd node && npm run build --workspace @headwaters/lineage-app
 
-# run the headwaters serving the bundled SPA on its own port (single
+# run headwaters serving the bundled SPA on its own port (single
 # origin: API + UI), the way the Docker image does. Builds the UI, stages it at
 # ./web (where the service looks — see UI_DIR in src/http.rs), then runs. Like
 # `just lineage`, needs a DSN (DATABASE_URL or config).

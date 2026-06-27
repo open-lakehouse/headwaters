@@ -77,7 +77,7 @@ language clients. See [`node/README.md`](node/README.md).
 
 ```bash
 just ui-install   # install workspace deps
-just ui-dev       # dev server (proxies ConnectRPC to a local headwaters)
+just ui-dev       # dev server (proxies ConnectRPC to a local headwaters instance)
 just ui-sb        # Storybook (mocked, no backend)
 ```
 
