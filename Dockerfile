@@ -50,7 +50,23 @@ COPY node/package.json node/package-lock.json ./
 COPY node/lineage-client/package.json ./lineage-client/
 COPY node/lineage-ui/package.json ./lineage-ui/
 COPY node/app/package.json ./app/
-RUN npm ci
+# The committed package-lock.json pins each tarball's `resolved` URL to whatever
+# registry it was generated against — for us that's an internal mirror
+# (npm-proxy.cloud.databricks.com) that CI and other external builders can't
+# reach, so `npm ci` (which fetches the exact `resolved` URLs, ignoring any
+# `--registry` flag) would hang on the unreachable host and fail with `npm error
+# Exit handler never called!`. Re-point the host to the target registry here;
+# the `integrity` hashes are unchanged (identical tarball content on any
+# mirror), so the lockfile's guarantees still hold. Defaults to the public
+# registry so CI works out of the box; override NPM_REGISTRY (and
+# NPM_REGISTRY_FROM, the host to replace) to build behind a different mirror.
+ARG NPM_REGISTRY=https://registry.npmjs.org
+ARG NPM_REGISTRY_FROM=https://npm-proxy.cloud.databricks.com
+# --no-audit/--no-fund drop the post-install audit + funding network calls a
+# reproducible image build has no use for (and which add a needless egress
+# dependency).
+RUN sed -i "s#${NPM_REGISTRY_FROM}/#${NPM_REGISTRY}/#g" package-lock.json \
+    && npm ci --no-audit --no-fund
 # Then the sources, and build the app (tsc -b && vite build -> app/dist).
 COPY node/ ./
 RUN npm run build --workspace @headwaters/lineage-app
