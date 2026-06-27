@@ -49,28 +49,35 @@
 
 use std::sync::Arc;
 
-use datafusion_open_lineage::transport::Transport;
 use datafusion_open_lineage::{CloudClientTransport, ConsoleTransport, OpenLineageClient};
 use url::Url;
 
 mod journey;
 
-/// Build the emit transport from the environment. Defaults to the local
-/// unauthenticated service; `OPENLINEAGE_URL=console` swaps in a
-/// [`ConsoleTransport`] that logs each event as JSON via `tracing` — a
-/// service-free dry run for eyeballing the emitted events.
-fn transport_from_env() -> Arc<dyn Transport> {
-    let raw = std::env::var("OPENLINEAGE_URL")
-        .unwrap_or_else(|_| "http://localhost:8091/api/v1/lineage".to_string());
-    if raw.eq_ignore_ascii_case("console") {
-        eprintln!("→ transport: console (events logged, not sent)");
-        return Arc::new(ConsoleTransport);
-    }
-    let url = Url::parse(&raw).expect("OPENLINEAGE_URL must be a valid URL (or `console`)");
-    eprintln!("→ transport: POST {url}");
-    match std::env::var("OPENLINEAGE_API_KEY") {
-        Ok(token) if !token.is_empty() => Arc::new(CloudClientTransport::with_token(url, token)),
-        _ => Arc::new(CloudClientTransport::unauthenticated(url)),
+/// Build the emit client from the environment.
+///
+/// When `OPENLINEAGE_URL` is set, the standard env path (incl.
+/// `OPENLINEAGE_ENDPOINT` / `OPENLINEAGE_API_KEY`) is delegated to
+/// [`OpenLineageClient::from_env`]. On top of that the demo adds two
+/// conveniences: defaulting to the local service when `OPENLINEAGE_URL` is unset,
+/// and an `OPENLINEAGE_URL=console` dry run that logs each event as JSON via
+/// `tracing` instead of POSTing it (so the demo runs with no service).
+fn client_from_env() -> OpenLineageClient {
+    match std::env::var("OPENLINEAGE_URL") {
+        Ok(raw) if raw.eq_ignore_ascii_case("console") => {
+            eprintln!("→ transport: console (events logged, not sent)");
+            OpenLineageClient::new(Arc::new(ConsoleTransport))
+        }
+        Ok(raw) if !raw.is_empty() => {
+            eprintln!("→ transport: POST {raw} (+ OPENLINEAGE_ENDPOINT)");
+            OpenLineageClient::from_env().expect("build OpenLineage client from environment")
+        }
+        // Unset: default to the local service, bypassing env so we don't mutate it.
+        _ => {
+            let url = Url::parse("http://localhost:8091/api/v1/lineage").unwrap();
+            eprintln!("→ transport: POST {url} (default)");
+            OpenLineageClient::new(Arc::new(CloudClientTransport::unauthenticated(url)))
+        }
     }
 }
 
@@ -85,7 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    let client = OpenLineageClient::new(transport_from_env());
+    let client = client_from_env();
 
     // A scratch lake root for this run. Logged so you can inspect the Parquet.
     let root = std::env::temp_dir().join("headwaters-e2e");
