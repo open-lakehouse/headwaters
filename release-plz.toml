@@ -82,6 +82,15 @@ git_only = true
 publish = false
 
 [[package]]
+name = "headwaters-cli"
+# Versioned/tagged/changelogged from git like `headwaters`, but not published to
+# crates.io yet — `publish = false` in Cargo.toml, so the same `git_only = true`
+# treatment applies (see the `headwaters` block above for why both are needed).
+# Flip to crates.io publishing later if `cargo install headwaters-cli` is wanted.
+git_only = true
+publish = false
+
+[[package]]
 name = "datafusion-openlineage"
 # The crate's directory is `crates/open-lineage/` (only the package name was
 # renamed), so pin the changelog path explicitly.
@@ -111,5 +120,5 @@ commit_parsers = [
 # Strip the redundant "(scope)" from each rendered line — each crate's changelog
 # is already crate-scoped.
 commit_preprocessors = [
-  { pattern = '\((openlineage-client|client|datafusion-openlineage|open-lineage|headwaters|headwaters-proto|proto|headwaters-client)\)', replace = "" },
+  { pattern = '\((openlineage-client|client|datafusion-openlineage|open-lineage|headwaters|headwaters-proto|proto|headwaters-client|read-client|headwaters-cli|read-cli|cli)\)', replace = "" },
 ]

@@ -1,0 +1,27 @@
+[package]
+name = "headwaters-cli"
+version = "0.0.2"
+description = "Command-line tool (hw) to inspect a Headwaters data-lineage estate, for humans and agents"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository = "https://github.com/open-lakehouse/headwaters"
+homepage = "https://github.com/open-lakehouse/headwaters/tree/main/crates/headwaters-cli"
+readme = "README.md"
+keywords = ["openlineage", "lineage", "cli", "agent"]
+categories = ["command-line-utilities", "database"]
+# Versioned/tagged/changelogged from git like the headwaters service, but not
+# published to crates.io (yet); see release-plz.toml.
+publish = false
+
+[[bin]]
+name = "hw"
+path = "src/main.rs"
+
+[dependencies]
+headwaters-client = { workspace = true }
+clap = { version = "4", features = ["derive", "env", "wrap_help"] }
+comfy-table = "7"
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
