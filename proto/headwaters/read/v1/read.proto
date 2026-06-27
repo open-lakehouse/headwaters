@@ -1,24 +1,20 @@
 syntax = "proto3";
 
-// The read API is headwaters' own surface — it is NOT part of the OpenLineage
-// spec. It lives in its own package (`headwaters.read.v1`), separate from the
-// spec-aligned event/facet model + ingest in `lineage.v1`, so its provenance is
-// unambiguous and we are free to evolve it.
+// Headwaters' read API: the messages returned when browsing namespaces, jobs,
+// datasets, runs, the lineage graph, and activity stats.
 //
-// These messages mirror, field-for-field, the Marquez-compatible JSON the web UI
-// consumes (see `crates/headwaters/src/read/model.rs`). Proto field names
-// are snake_case; the wire JSON is camelCase. A few Marquez quirks (the `type`
-// key, `inEdges`/`outEdges`, polymorphic `data`/`facets` as opaque structs) are
-// represented with `google.protobuf.Struct` and a `type` field so the generated
-// REST output matches byte-for-byte.
+// This is headwaters' own surface, not part of the OpenLineage spec (the
+// spec-aligned event model and ingest live in `lineage.v1`). It is
+// Marquez-inspired: field names are snake_case in proto and camelCase on the
+// wire, timestamps are RFC 3339 strings, and the open-ended `facets` / `data`
+// fields carry arbitrary OpenLineage facet JSON as `google.protobuf.Struct`.
 package headwaters.read.v1;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
 import "google/protobuf/struct.proto";
 
-// `{ namespace, name }` — the identity object the UI uses for both jobs and
-// datasets.
+// A `{namespace, name}` reference to a job or dataset.
 message EntityId {
   string namespace = 1;
   string name = 2;
@@ -59,6 +55,7 @@ enum RunState {
 
 // --- namespaces ---
 
+// A namespace: the grouping that scopes job and dataset names.
 message Namespace {
   option (google.api.resource) = {
     type: "headwaters.io/Namespace"
@@ -72,6 +69,7 @@ message Namespace {
   string updated_at = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
   string owner_name = 4;
   string description = 5;
+  // True if the namespace is hidden from default listings.
   bool is_hidden = 6;
 }
 
@@ -81,8 +79,8 @@ message ListNamespacesResponse {
 
 // --- jobs ---
 
-// The Marquez read-side job DTO. Named `JobDetail` (not `Job`) to keep it clearly
-// distinct from the OpenLineage event `Job` in the spec package.
+// A job: a recurring process that reads input datasets and writes output
+// datasets.
 message JobDetail {
   option (google.api.resource) = {
     type: "headwaters.io/Job"
@@ -93,41 +91,51 @@ message JobDetail {
 
   EntityId id = 1;
   JobType type = 2;
+  // Fully-qualified job name.
   string name = 3;
+  // Last path segment of `name` (e.g. `name` `etl.daily` → `daily`).
   string simple_name = 4;
   string namespace = 5;
   string created_at = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
   string updated_at = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Datasets this job reads / writes, as `{namespace, name}` references.
   repeated EntityId inputs = 8;
   repeated EntityId outputs = 9;
+  // Source location of the job's code (e.g. a repository URL), if reported.
   string location = 10;
   string description = 11;
+  // The most recent run; the same object as `latest_runs[0]` when present.
   RunDetail latest_run = 12;
   repeated RunDetail latest_runs = 13;
   repeated string tags = 14;
   string parent_job_name = 15;
   string parent_job_uuid = 16;
-  // UUID identifying the job's current input/output + metadata shape, like
-  // Marquez's `currentVersion`. Refreshed by the projector when edges change.
+  // Opaque UUID that changes whenever the job's inputs, outputs, or metadata
+  // change. Use it to detect that a job's shape has moved.
   string current_version = 17;
 }
 
-// Minimal Marquez `Run` shape — the fields the web UI dereferences. Named
-// `RunDetail` to stay distinct from the OpenLineage event `Run`.
+// A single execution of a job.
 message RunDetail {
+  // Run identifier (a UUID, from the OpenLineage `run.runId`).
   string id = 1;
   string created_at = 2;
   string updated_at = 3;
   RunState state = 4;
+  // Scheduled (not actual) start / end of the run's nominal time window.
   string nominal_start_time = 5;
   string nominal_end_time = 6;
+  // Actual wall-clock start / end, when observed.
   string started_at = 7;
   string ended_at = 8;
+  // Observed run duration in milliseconds; 0 when start or end is unknown.
   uint64 duration_ms = 9;
 }
 
 message ListJobsResponse {
   repeated JobDetail jobs = 1;
+  // Total jobs matching the request, ignoring `limit` / `offset`. Page through
+  // by advancing `offset` until it reaches `total_count`.
   int32 total_count = 2;
 }
 
@@ -138,6 +146,7 @@ message ListRunsResponse {
 
 // --- datasets ---
 
+// A dataset: a table, file, or stream produced and/or consumed by jobs.
 message Dataset {
   option (google.api.resource) = {
     type: "headwaters.io/Dataset"
@@ -148,19 +157,27 @@ message Dataset {
 
   EntityId id = 1;
   DatasetType type = 2;
+  // Logical dataset name.
   string name = 3;
+  // Storage-level name (e.g. the physical table or path), if distinct from `name`.
   string physical_name = 4;
   string namespace = 5;
+  // Name of the data source the dataset lives in (e.g. a warehouse or bucket).
   string source_name = 6;
   string created_at = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
   string updated_at = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
   string description = 9;
+  // Schema columns, each an object like `{name, type, description}`. Open-ended:
+  // the exact keys follow the OpenLineage schema facet.
   repeated google.protobuf.Struct fields = 10;
+  // OpenLineage dataset facets, keyed by facet name (e.g. `schema`,
+  // `dataSource`, `columnLineage`). Each carries `_producer` / `_schemaURL`.
   google.protobuf.Struct facets = 11;
   repeated string tags = 12;
+  // True once the dataset has been observed deleted.
   bool deleted = 13;
-  // UUID identifying the dataset's current schema, like Marquez's
-  // `currentVersion`. Refreshed by the projector when the schema changes.
+  // Opaque UUID that changes whenever the dataset's schema changes. Use it to
+  // detect that the schema has moved; see also `ListDatasetVersions`.
   string current_version = 14;
 }
 
@@ -169,12 +186,16 @@ message ListDatasetsResponse {
   int32 total_count = 2;
 }
 
+// One historical version of a dataset's schema. A new version is recorded each
+// time the schema changes.
 message DatasetVersion {
   DatasetVersionId id = 1;
   DatasetType type = 2;
   string name = 3;
   string physical_name = 4;
   string created_at = 5;
+  // This version's schema UUID. The dataset's latest version equals the
+  // dataset's `current_version`.
   string version = 6;
   string namespace = 7;
   string source_name = 8;
@@ -198,9 +219,11 @@ message ListDatasetVersionsResponse {
 
 // --- search ---
 
+// One job or dataset matching a search query.
 message SearchResult {
   string name = 1;
   string namespace = 2;
+  // The matched entity's nodeId, ready to pass to `GetLineage`.
   string node_id = 3;
   // `JOB` or `DATASET` (search does not return fields).
   EntityKind type = 4;
@@ -214,64 +237,79 @@ message SearchResponse {
 
 // --- events feed ---
 
+// The raw OpenLineage events feed, newest first.
 message ListEventsResponse {
-  // Each event is the raw OpenLineage event JSON as ingested.
+  // Each entry is one OpenLineage event, as the original ingested JSON.
   repeated google.protobuf.Struct events = 1;
   int32 total_count = 2;
 }
 
 // --- run facets ---
 
+// The merged facets observed across all of a run's events. Returned by
+// `GetRunFacets`.
 message RunFacetsResponse {
   string run_id = 1;
+  // Run facets keyed by facet name (e.g. `nominalTime`, `parent`,
+  // `errorMessage`); each carries `_producer` / `_schemaURL`.
   google.protobuf.Struct facets = 2;
 }
 
 // --- lineage / column-lineage graph ---
 
-// A directed edge between two nodes, addressed by their `nodeId` strings.
+// A directed edge `origin → destination`, where each endpoint is a nodeId. Data
+// flows from `origin` to `destination`.
 message LineageEdge {
   string origin = 1;
   string destination = 2;
 }
 
-// One node in the lineage graph. `data` carries the full Job or Dataset payload
-// the UI renders in the side panel.
+// One node in a lineage graph, addressed by its nodeId (`id`). `in_edges` /
+// `out_edges` list the edges incident to this node (upstream and downstream
+// respectively); follow them across nodes to walk the graph.
 message LineageNode {
+  // The nodeId: `job:<ns>:<name>`, `dataset:<ns>:<name>`, or
+  // `datasetField:<ns>:<name>:<field>`.
   string id = 1;
+  // `JOB` / `DATASET` for `GetLineage`; `DATASET_FIELD` for `GetColumnLineage`.
   EntityKind type = 2;
+  // The full `JobDetail` or `Dataset` for this node, as JSON.
   google.protobuf.Struct data = 3;
   repeated LineageEdge in_edges = 4;
   repeated LineageEdge out_edges = 5;
 }
 
+// A lineage graph: the set of nodes reached from the requested seed, each
+// carrying its own incident edges. Returned by `GetLineage` and
+// `GetColumnLineage`.
 message LineageGraph {
   repeated LineageNode graph = 1;
 }
 
 // --- tags ---
 
+// A tag that can be attached to datasets and fields (e.g. `pii`, `gold`).
 message Tag {
   string name = 1;
   string description = 2;
 }
 
-// `GET /api/v1/tags` envelope — the UI reads `payload.tags`.
 message ListTagsResponse {
   repeated Tag tags = 1;
 }
 
-// One dataset field reached by tag/PII propagation.
+// A dataset field carrying a tag, directly or by propagation through column
+// lineage.
 message TaggedField {
   string namespace = 1;
   string dataset = 2;
   string field = 3;
-  // The `datasetField:` nodeId, for linking into the column-lineage view.
+  // This field's `datasetField:<ns>:<dataset>:<field>` nodeId.
   string node_id = 4;
 }
 
-// `GET /api/v1/tags/{tag}/downstream` — the fields reachable downstream from
-// anything tagged `tag` (the tagged seeds themselves are included).
+// Every field a tag reaches downstream through column lineage, including the
+// originally tagged fields. Returned by `GetTagDownstream`.
 message TagPropagation {
   string tag = 1;
   repeated TaggedField fields = 2;
@@ -279,14 +317,16 @@ message TagPropagation {
 
 // --- stats ---
 
-// One time bucket of a stats series: `{ date, count }` (Marquez's shape).
+// A count for one time bucket: `count` events/assets in the period starting at
+// `date`.
 message StatBucket {
+  // Bucket start as an RFC 3339 date/time.
   string date = 1;
   int64 count = 2;
 }
 
-// The stats endpoints return a bare JSON array of `StatBucket`. The REST mapping
-// uses `response_body: "buckets"` so the wire shape is the array, not an object.
+// A time series of `StatBucket`s. Returned by the stats endpoints; on the REST
+// surface it serializes as a bare JSON array.
 message StatsResponse {
   repeated StatBucket buckets = 1;
 }

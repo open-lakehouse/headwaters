@@ -596,8 +596,7 @@ impl ::buffa::Enumeration for RunState {
         ]
     }
 }
-/// `{ namespace, name }` — the identity object the UI uses for both jobs and
-/// datasets.
+/// A `{namespace, name}` reference to a job or dataset.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -766,6 +765,8 @@ pub const __ENTITY_ID_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::
     is_wkt: false,
 };
 /// --- namespaces ---
+///
+/// A namespace: the grouping that scopes job and dataset names.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -808,6 +809,8 @@ pub struct Namespace {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub description: ::buffa::alloc::string::String,
+    /// True if the namespace is hidden from default listings.
+    ///
     /// Field 6: `is_hidden`
     #[serde(
         rename = "isHidden",
@@ -1201,8 +1204,8 @@ pub const __LIST_NAMESPACES_RESPONSE_JSON_ANY: ::buffa::type_registry::JsonAnyEn
 };
 /// --- jobs ---
 ///
-/// The Marquez read-side job DTO. Named `JobDetail` (not `Job`) to keep it clearly
-/// distinct from the OpenLineage event `Job` in the spec package.
+/// A job: a recurring process that reads input datasets and writes output
+/// datasets.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -1220,6 +1223,8 @@ pub struct JobDetail {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_default_enum_value"
     )]
     pub r#type: ::buffa::EnumValue<JobType>,
+    /// Fully-qualified job name.
+    ///
     /// Field 3: `name`
     #[serde(
         rename = "name",
@@ -1227,6 +1232,8 @@ pub struct JobDetail {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub name: ::buffa::alloc::string::String,
+    /// Last path segment of `name` (e.g. `name` `etl.daily` → `daily`).
+    ///
     /// Field 4: `simple_name`
     #[serde(
         rename = "simpleName",
@@ -1258,6 +1265,8 @@ pub struct JobDetail {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub updated_at: ::buffa::alloc::string::String,
+    /// Datasets this job reads / writes, as `{namespace, name}` references.
+    ///
     /// Field 8: `inputs`
     #[serde(
         rename = "inputs",
@@ -1272,6 +1281,8 @@ pub struct JobDetail {
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub outputs: ::buffa::alloc::vec::Vec<EntityId>,
+    /// Source location of the job's code (e.g. a repository URL), if reported.
+    ///
     /// Field 10: `location`
     #[serde(
         rename = "location",
@@ -1286,6 +1297,8 @@ pub struct JobDetail {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub description: ::buffa::alloc::string::String,
+    /// The most recent run; the same object as `latest_runs[0]` when present.
+    ///
     /// Field 12: `latest_run`
     #[serde(
         rename = "latestRun",
@@ -1324,8 +1337,8 @@ pub struct JobDetail {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub parent_job_uuid: ::buffa::alloc::string::String,
-    /// UUID identifying the job's current input/output + metadata shape, like
-    /// Marquez's `currentVersion`. Refreshed by the projector when edges change.
+    /// Opaque UUID that changes whenever the job's inputs, outputs, or metadata
+    /// change. Use it to detect that a job's shape has moved.
     ///
     /// Field 17: `current_version`
     #[serde(
@@ -1884,12 +1897,13 @@ pub const __JOB_DETAIL_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa:
     from_json: ::buffa::type_registry::any_from_json::<JobDetail>,
     is_wkt: false,
 };
-/// Minimal Marquez `Run` shape — the fields the web UI dereferences. Named
-/// `RunDetail` to stay distinct from the OpenLineage event `Run`.
+/// A single execution of a job.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct RunDetail {
+    /// Run identifier (a UUID, from the OpenLineage `run.runId`).
+    ///
     /// Field 1: `id`
     #[serde(
         rename = "id",
@@ -1920,6 +1934,8 @@ pub struct RunDetail {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_default_enum_value"
     )]
     pub state: ::buffa::EnumValue<RunState>,
+    /// Scheduled (not actual) start / end of the run's nominal time window.
+    ///
     /// Field 5: `nominal_start_time`
     #[serde(
         rename = "nominalStartTime",
@@ -1936,6 +1952,8 @@ pub struct RunDetail {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub nominal_end_time: ::buffa::alloc::string::String,
+    /// Actual wall-clock start / end, when observed.
+    ///
     /// Field 7: `started_at`
     #[serde(
         rename = "startedAt",
@@ -1952,6 +1970,8 @@ pub struct RunDetail {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub ended_at: ::buffa::alloc::string::String,
+    /// Observed run duration in milliseconds; 0 when start or end is unknown.
+    ///
     /// Field 9: `duration_ms`
     #[serde(
         rename = "durationMs",
@@ -2288,6 +2308,9 @@ pub struct ListJobsResponse {
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub jobs: ::buffa::alloc::vec::Vec<JobDetail>,
+    /// Total jobs matching the request, ignoring `limit` / `offset`. Page through
+    /// by advancing `offset` until it reaches `total_count`.
+    ///
     /// Field 2: `total_count`
     #[serde(
         rename = "totalCount",
@@ -2624,6 +2647,8 @@ pub const __LIST_RUNS_RESPONSE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = 
     is_wkt: false,
 };
 /// --- datasets ---
+///
+/// A dataset: a table, file, or stream produced and/or consumed by jobs.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -2641,6 +2666,8 @@ pub struct Dataset {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_default_enum_value"
     )]
     pub r#type: ::buffa::EnumValue<DatasetType>,
+    /// Logical dataset name.
+    ///
     /// Field 3: `name`
     #[serde(
         rename = "name",
@@ -2648,6 +2675,8 @@ pub struct Dataset {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub name: ::buffa::alloc::string::String,
+    /// Storage-level name (e.g. the physical table or path), if distinct from `name`.
+    ///
     /// Field 4: `physical_name`
     #[serde(
         rename = "physicalName",
@@ -2663,6 +2692,8 @@ pub struct Dataset {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub namespace: ::buffa::alloc::string::String,
+    /// Name of the data source the dataset lives in (e.g. a warehouse or bucket).
+    ///
     /// Field 6: `source_name`
     #[serde(
         rename = "sourceName",
@@ -2694,6 +2725,9 @@ pub struct Dataset {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub description: ::buffa::alloc::string::String,
+    /// Schema columns, each an object like `{name, type, description}`. Open-ended:
+    /// the exact keys follow the OpenLineage schema facet.
+    ///
     /// Field 10: `fields`
     #[serde(
         rename = "fields",
@@ -2701,6 +2735,9 @@ pub struct Dataset {
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub fields: ::buffa::alloc::vec::Vec<::buffa_types::google::protobuf::Struct>,
+    /// OpenLineage dataset facets, keyed by facet name (e.g. `schema`,
+    /// `dataSource`, `columnLineage`). Each carries `_producer` / `_schemaURL`.
+    ///
     /// Field 11: `facets`
     #[serde(
         rename = "facets",
@@ -2714,6 +2751,8 @@ pub struct Dataset {
         deserialize_with = "::buffa::json_helpers::null_as_default"
     )]
     pub tags: ::buffa::alloc::vec::Vec<::buffa::alloc::string::String>,
+    /// True once the dataset has been observed deleted.
+    ///
     /// Field 13: `deleted`
     #[serde(
         rename = "deleted",
@@ -2721,8 +2760,8 @@ pub struct Dataset {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_false"
     )]
     pub deleted: bool,
-    /// UUID identifying the dataset's current schema, like Marquez's
-    /// `currentVersion`. Refreshed by the projector when the schema changes.
+    /// Opaque UUID that changes whenever the dataset's schema changes. Use it to
+    /// detect that the schema has moved; see also `ListDatasetVersions`.
     ///
     /// Field 14: `current_version`
     #[serde(
@@ -3363,6 +3402,8 @@ pub const __LIST_DATASETS_RESPONSE_JSON_ANY: ::buffa::type_registry::JsonAnyEntr
     from_json: ::buffa::type_registry::any_from_json::<ListDatasetsResponse>,
     is_wkt: false,
 };
+/// One historical version of a dataset's schema. A new version is recorded each
+/// time the schema changes.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -3403,6 +3444,9 @@ pub struct DatasetVersion {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub created_at: ::buffa::alloc::string::String,
+    /// This version's schema UUID. The dataset's latest version equals the
+    /// dataset's `current_version`.
+    ///
     /// Field 6: `version`
     #[serde(
         rename = "version",
@@ -4269,6 +4313,8 @@ pub const __LIST_DATASET_VERSIONS_RESPONSE_JSON_ANY: ::buffa::type_registry::Jso
     is_wkt: false,
 };
 /// --- search ---
+///
+/// One job or dataset matching a search query.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -4287,6 +4333,8 @@ pub struct SearchResult {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub namespace: ::buffa::alloc::string::String,
+    /// The matched entity's nodeId, ready to pass to `GetLineage`.
+    ///
     /// Field 3: `node_id`
     #[serde(
         rename = "nodeId",
@@ -4709,11 +4757,13 @@ pub const __SEARCH_RESPONSE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::b
     is_wkt: false,
 };
 /// --- events feed ---
+///
+/// The raw OpenLineage events feed, newest first.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct ListEventsResponse {
-    /// Each event is the raw OpenLineage event JSON as ingested.
+    /// Each entry is one OpenLineage event, as the original ingested JSON.
     ///
     /// Field 1: `events`
     #[serde(
@@ -4885,6 +4935,9 @@ pub const __LIST_EVENTS_RESPONSE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry 
     is_wkt: false,
 };
 /// --- run facets ---
+///
+/// The merged facets observed across all of a run's events. Returned by
+/// `GetRunFacets`.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -4897,6 +4950,9 @@ pub struct RunFacetsResponse {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub run_id: ::buffa::alloc::string::String,
+    /// Run facets keyed by facet name (e.g. `nominalTime`, `parent`,
+    /// `errorMessage`); each carries `_producer` / `_schemaURL`.
+    ///
     /// Field 2: `facets`
     #[serde(
         rename = "facets",
@@ -5064,7 +5120,8 @@ pub const __RUN_FACETS_RESPONSE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
 };
 /// --- lineage / column-lineage graph ---
 ///
-/// A directed edge between two nodes, addressed by their `nodeId` strings.
+/// A directed edge `origin → destination`, where each endpoint is a nodeId. Data
+/// flows from `origin` to `destination`.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -5232,12 +5289,16 @@ pub const __LINEAGE_EDGE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buff
     from_json: ::buffa::type_registry::any_from_json::<LineageEdge>,
     is_wkt: false,
 };
-/// One node in the lineage graph. `data` carries the full Job or Dataset payload
-/// the UI renders in the side panel.
+/// One node in a lineage graph, addressed by its nodeId (`id`). `in_edges` /
+/// `out_edges` list the edges incident to this node (upstream and downstream
+/// respectively); follow them across nodes to walk the graph.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct LineageNode {
+    /// The nodeId: `job:<ns>:<name>`, `dataset:<ns>:<name>`, or
+    /// `datasetField:<ns>:<name>:<field>`.
+    ///
     /// Field 1: `id`
     #[serde(
         rename = "id",
@@ -5245,6 +5306,8 @@ pub struct LineageNode {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub id: ::buffa::alloc::string::String,
+    /// `JOB` / `DATASET` for `GetLineage`; `DATASET_FIELD` for `GetColumnLineage`.
+    ///
     /// Field 2: `type`
     #[serde(
         rename = "type",
@@ -5252,6 +5315,8 @@ pub struct LineageNode {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_default_enum_value"
     )]
     pub r#type: ::buffa::EnumValue<EntityKind>,
+    /// The full `JobDetail` or `Dataset` for this node, as JSON.
+    ///
     /// Field 3: `data`
     #[serde(
         rename = "data",
@@ -5523,6 +5588,9 @@ pub const __LINEAGE_NODE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buff
     from_json: ::buffa::type_registry::any_from_json::<LineageNode>,
     is_wkt: false,
 };
+/// A lineage graph: the set of nodes reached from the requested seed, each
+/// carrying its own incident edges. Returned by `GetLineage` and
+/// `GetColumnLineage`.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -5667,6 +5735,8 @@ pub const __LINEAGE_GRAPH_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buf
     is_wkt: false,
 };
 /// --- tags ---
+///
+/// A tag that can be attached to datasets and fields (e.g. `pii`, `gold`).
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -5834,7 +5904,6 @@ pub const __TAG_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa::type_r
     from_json: ::buffa::type_registry::any_from_json::<Tag>,
     is_wkt: false,
 };
-/// `GET /api/v1/tags` envelope — the UI reads `payload.tags`.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -5978,7 +6047,8 @@ pub const __LIST_TAGS_RESPONSE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = 
     from_json: ::buffa::type_registry::any_from_json::<ListTagsResponse>,
     is_wkt: false,
 };
-/// One dataset field reached by tag/PII propagation.
+/// A dataset field carrying a tag, directly or by propagation through column
+/// lineage.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -6004,7 +6074,7 @@ pub struct TaggedField {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub field: ::buffa::alloc::string::String,
-    /// The `datasetField:` nodeId, for linking into the column-lineage view.
+    /// This field's `datasetField:<ns>:<dataset>:<field>` nodeId.
     ///
     /// Field 4: `node_id`
     #[serde(
@@ -6209,8 +6279,8 @@ pub const __TAGGED_FIELD_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buff
     from_json: ::buffa::type_registry::any_from_json::<TaggedField>,
     is_wkt: false,
 };
-/// `GET /api/v1/tags/{tag}/downstream` — the fields reachable downstream from
-/// anything tagged `tag` (the tagged seeds themselves are included).
+/// Every field a tag reaches downstream through column lineage, including the
+/// originally tagged fields. Returned by `GetTagDownstream`.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -6388,11 +6458,14 @@ pub const __TAG_PROPAGATION_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::b
 };
 /// --- stats ---
 ///
-/// One time bucket of a stats series: `{ date, count }` (Marquez's shape).
+/// A count for one time bucket: `count` events/assets in the period starting at
+/// `date`.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct StatBucket {
+    /// Bucket start as an RFC 3339 date/time.
+    ///
     /// Field 1: `date`
     #[serde(
         rename = "date",
@@ -6553,8 +6626,8 @@ pub const __STAT_BUCKET_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::buffa
     from_json: ::buffa::type_registry::any_from_json::<StatBucket>,
     is_wkt: false,
 };
-/// The stats endpoints return a bare JSON array of `StatBucket`. The REST mapping
-/// uses `response_body: "buckets"` so the wire shape is the array, not an object.
+/// A time series of `StatBucket`s. Returned by the stats endpoints; on the REST
+/// surface it serializes as a bare JSON array.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -6700,10 +6773,11 @@ pub const __STATS_RESPONSE_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::bu
 };
 /// --- request messages ---
 ///
-/// `namespace` empty means "all namespaces" for the list endpoints; `limit` /
-/// `offset` are the pagination knobs. Query-string params (limit, offset, q,
-/// nodeId, depth, period) are request fields not bound to the URL path; the REST
-/// extractor binds them from the query string by their JSON (camelCase) name.
+/// On the list endpoints, an empty `namespace` means all namespaces, and `limit`
+/// / `offset` page the results (`limit` defaults to a server-chosen page size, so
+/// 0 is treated as unset). On the REST surface, non-path fields (`limit`,
+/// `offset`, `q`, `nodeId`, `depth`, `period`, `type`) are query-string params
+/// named by their camelCase JSON name.
 #[derive(Clone, PartialEq, Default)]
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
@@ -6814,7 +6888,7 @@ pub const __LIST_NAMESPACES_REQUEST_JSON_ANY: ::buffa::type_registry::JsonAnyEnt
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct ListJobsRequest {
-    /// Parent namespace scoping; empty = all namespaces. Declares Namespace → Job.
+    /// Scope to this namespace; empty lists jobs across all namespaces.
     ///
     /// Field 1: `namespace`
     #[serde(
@@ -7341,7 +7415,7 @@ pub const __GET_JOB_RUNS_REQUEST_JSON_ANY: ::buffa::type_registry::JsonAnyEntry 
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct ListDatasetsRequest {
-    /// Parent namespace scoping; empty = all namespaces. Declares Namespace → Dataset.
+    /// Scope to this namespace; empty lists datasets across all namespaces.
     ///
     /// Field 1: `namespace`
     #[serde(
@@ -8158,7 +8232,7 @@ pub const __SEARCH_REQUEST_JSON_ANY: ::buffa::type_registry::JsonAnyEntry = ::bu
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct GetLineageRequest {
-    /// Bound from `?nodeId=` (camelCase) on the query string.
+    /// Seed node: `job:<ns>:<name>` or `dataset:<ns>:<name>`.
     ///
     /// Field 1: `node_id`
     #[serde(
@@ -8168,6 +8242,8 @@ pub struct GetLineageRequest {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub node_id: ::buffa::alloc::string::String,
+    /// Maximum hops to traverse from the seed. Defaults to, and is capped at, 20.
+    ///
     /// Field 2: `depth`
     #[serde(
         rename = "depth",
@@ -8325,7 +8401,8 @@ pub const __GET_LINEAGE_REQUEST_JSON_ANY: ::buffa::type_registry::JsonAnyEntry =
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct GetColumnLineageRequest {
-    /// Bound from `?nodeId=` (camelCase) on the query string.
+    /// Seed node: a `dataset:<ns>:<name>` (all fields) or a
+    /// `datasetField:<ns>:<name>:<field>`.
     ///
     /// Field 1: `node_id`
     #[serde(
@@ -9003,7 +9080,7 @@ pub const __GET_TAG_DOWNSTREAM_REQUEST_JSON_ANY: ::buffa::type_registry::JsonAny
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct GetLineageEventStatsRequest {
-    /// date_trunc period: HOUR | DAY (default) | WEEK | MONTH.
+    /// Bucket size: `HOUR`, `DAY` (default), `WEEK`, or `MONTH`.
     ///
     /// Field 1: `period`
     #[serde(
@@ -9012,6 +9089,8 @@ pub struct GetLineageEventStatsRequest {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub period: ::buffa::alloc::string::String,
+    /// Maximum number of buckets to return.
+    ///
     /// Field 2: `limit`
     #[serde(
         rename = "limit",
@@ -9169,7 +9248,7 @@ pub const __GET_LINEAGE_EVENT_STATS_REQUEST_JSON_ANY: ::buffa::type_registry::Js
 #[derive(::serde::Serialize, ::serde::Deserialize)]
 #[serde(default)]
 pub struct GetAssetStatsRequest {
-    /// `jobs` | `job` | `datasets` | `dataset`.
+    /// Which asset to count: `jobs` or `datasets`.
     ///
     /// Field 1: `asset`
     #[serde(
@@ -9178,6 +9257,8 @@ pub struct GetAssetStatsRequest {
         skip_serializing_if = "::buffa::json_helpers::skip_if::is_empty_str"
     )]
     pub asset: ::buffa::alloc::string::String,
+    /// Bucket size: `HOUR`, `DAY` (default), `WEEK`, or `MONTH`.
+    ///
     /// Field 2: `period`
     #[serde(
         rename = "period",
@@ -9378,8 +9459,7 @@ pub mod __buffa {
     pub mod view {
         #[allow(unused_imports)]
         use super::*;
-        /// `{ namespace, name }` — the identity object the UI uses for both jobs and
-        /// datasets.
+        /// A `{namespace, name}` reference to a job or dataset.
         #[derive(Clone, Debug, Default)]
         pub struct EntityIdView<'a> {
             /// Field 1: `namespace`
@@ -9708,6 +9788,8 @@ pub mod __buffa {
             }
         }
         /// --- namespaces ---
+        ///
+        /// A namespace: the grouping that scopes job and dataset names.
         #[derive(Clone, Debug, Default)]
         pub struct NamespaceView<'a> {
             /// Field 1: `name`
@@ -9720,6 +9802,8 @@ pub mod __buffa {
             pub owner_name: &'a str,
             /// Field 5: `description`
             pub description: &'a str,
+            /// True if the namespace is hidden from default listings.
+            ///
             /// Field 6: `is_hidden`
             pub is_hidden: bool,
             pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
@@ -10143,6 +10227,8 @@ pub mod __buffa {
             pub fn description(&self) -> &'_ str {
                 self.0.reborrow().description
             }
+            /// True if the namespace is hidden from default listings.
+            ///
             /// Field 6: `is_hidden`
             #[must_use]
             pub fn is_hidden(&self) -> bool {
@@ -10510,8 +10596,8 @@ pub mod __buffa {
         }
         /// --- jobs ---
         ///
-        /// The Marquez read-side job DTO. Named `JobDetail` (not `Job`) to keep it clearly
-        /// distinct from the OpenLineage event `Job` in the spec package.
+        /// A job: a recurring process that reads input datasets and writes output
+        /// datasets.
         #[derive(Clone, Debug, Default)]
         pub struct JobDetailView<'a> {
             /// Field 1: `id`
@@ -10520,8 +10606,12 @@ pub mod __buffa {
             >,
             /// Field 2: `type`
             pub r#type: ::buffa::EnumValue<super::super::JobType>,
+            /// Fully-qualified job name.
+            ///
             /// Field 3: `name`
             pub name: &'a str,
+            /// Last path segment of `name` (e.g. `name` `etl.daily` → `daily`).
+            ///
             /// Field 4: `simple_name`
             pub simple_name: &'a str,
             /// Field 5: `namespace`
@@ -10530,6 +10620,8 @@ pub mod __buffa {
             pub created_at: &'a str,
             /// Field 7: `updated_at`
             pub updated_at: &'a str,
+            /// Datasets this job reads / writes, as `{namespace, name}` references.
+            ///
             /// Field 8: `inputs`
             pub inputs: ::buffa::RepeatedView<
                 'a,
@@ -10540,10 +10632,14 @@ pub mod __buffa {
                 'a,
                 super::super::__buffa::view::EntityIdView<'a>,
             >,
+            /// Source location of the job's code (e.g. a repository URL), if reported.
+            ///
             /// Field 10: `location`
             pub location: &'a str,
             /// Field 11: `description`
             pub description: &'a str,
+            /// The most recent run; the same object as `latest_runs[0]` when present.
+            ///
             /// Field 12: `latest_run`
             pub latest_run: ::buffa::MessageFieldView<
                 super::super::__buffa::view::RunDetailView<'a>,
@@ -10559,8 +10655,8 @@ pub mod __buffa {
             pub parent_job_name: &'a str,
             /// Field 16: `parent_job_uuid`
             pub parent_job_uuid: &'a str,
-            /// UUID identifying the job's current input/output + metadata shape, like
-            /// Marquez's `currentVersion`. Refreshed by the projector when edges change.
+            /// Opaque UUID that changes whenever the job's inputs, outputs, or metadata
+            /// change. Use it to detect that a job's shape has moved.
             ///
             /// Field 17: `current_version`
             pub current_version: &'a str,
@@ -11413,11 +11509,15 @@ pub mod __buffa {
             pub fn r#type(&self) -> ::buffa::EnumValue<super::super::JobType> {
                 self.0.reborrow().r#type
             }
+            /// Fully-qualified job name.
+            ///
             /// Field 3: `name`
             #[must_use]
             pub fn name(&self) -> &'_ str {
                 self.0.reborrow().name
             }
+            /// Last path segment of `name` (e.g. `name` `etl.daily` → `daily`).
+            ///
             /// Field 4: `simple_name`
             #[must_use]
             pub fn simple_name(&self) -> &'_ str {
@@ -11438,6 +11538,8 @@ pub mod __buffa {
             pub fn updated_at(&self) -> &'_ str {
                 self.0.reborrow().updated_at
             }
+            /// Datasets this job reads / writes, as `{namespace, name}` references.
+            ///
             /// Field 8: `inputs`
             #[must_use]
             pub fn inputs(
@@ -11458,6 +11560,8 @@ pub mod __buffa {
             > {
                 &self.0.reborrow().outputs
             }
+            /// Source location of the job's code (e.g. a repository URL), if reported.
+            ///
             /// Field 10: `location`
             #[must_use]
             pub fn location(&self) -> &'_ str {
@@ -11468,6 +11572,8 @@ pub mod __buffa {
             pub fn description(&self) -> &'_ str {
                 self.0.reborrow().description
             }
+            /// The most recent run; the same object as `latest_runs[0]` when present.
+            ///
             /// Field 12: `latest_run`
             #[must_use]
             pub fn latest_run(
@@ -11502,8 +11608,8 @@ pub mod __buffa {
             pub fn parent_job_uuid(&self) -> &'_ str {
                 self.0.reborrow().parent_job_uuid
             }
-            /// UUID identifying the job's current input/output + metadata shape, like
-            /// Marquez's `currentVersion`. Refreshed by the projector when edges change.
+            /// Opaque UUID that changes whenever the job's inputs, outputs, or metadata
+            /// change. Use it to detect that a job's shape has moved.
             ///
             /// Field 17: `current_version`
             #[must_use]
@@ -11541,10 +11647,11 @@ pub mod __buffa {
                 ::serde::Serialize::serialize(&self.0, __s)
             }
         }
-        /// Minimal Marquez `Run` shape — the fields the web UI dereferences. Named
-        /// `RunDetail` to stay distinct from the OpenLineage event `Run`.
+        /// A single execution of a job.
         #[derive(Clone, Debug, Default)]
         pub struct RunDetailView<'a> {
+            /// Run identifier (a UUID, from the OpenLineage `run.runId`).
+            ///
             /// Field 1: `id`
             pub id: &'a str,
             /// Field 2: `created_at`
@@ -11553,14 +11660,20 @@ pub mod __buffa {
             pub updated_at: &'a str,
             /// Field 4: `state`
             pub state: ::buffa::EnumValue<super::super::RunState>,
+            /// Scheduled (not actual) start / end of the run's nominal time window.
+            ///
             /// Field 5: `nominal_start_time`
             pub nominal_start_time: &'a str,
             /// Field 6: `nominal_end_time`
             pub nominal_end_time: &'a str,
+            /// Actual wall-clock start / end, when observed.
+            ///
             /// Field 7: `started_at`
             pub started_at: &'a str,
             /// Field 8: `ended_at`
             pub ended_at: &'a str,
+            /// Observed run duration in milliseconds; 0 when start or end is unknown.
+            ///
             /// Field 9: `duration_ms`
             pub duration_ms: u64,
             pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
@@ -12070,6 +12183,8 @@ pub mod __buffa {
             pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
                 self.0.into_bytes()
             }
+            /// Run identifier (a UUID, from the OpenLineage `run.runId`).
+            ///
             /// Field 1: `id`
             #[must_use]
             pub fn id(&self) -> &'_ str {
@@ -12090,6 +12205,8 @@ pub mod __buffa {
             pub fn state(&self) -> ::buffa::EnumValue<super::super::RunState> {
                 self.0.reborrow().state
             }
+            /// Scheduled (not actual) start / end of the run's nominal time window.
+            ///
             /// Field 5: `nominal_start_time`
             #[must_use]
             pub fn nominal_start_time(&self) -> &'_ str {
@@ -12100,6 +12217,8 @@ pub mod __buffa {
             pub fn nominal_end_time(&self) -> &'_ str {
                 self.0.reborrow().nominal_end_time
             }
+            /// Actual wall-clock start / end, when observed.
+            ///
             /// Field 7: `started_at`
             #[must_use]
             pub fn started_at(&self) -> &'_ str {
@@ -12110,6 +12229,8 @@ pub mod __buffa {
             pub fn ended_at(&self) -> &'_ str {
                 self.0.reborrow().ended_at
             }
+            /// Observed run duration in milliseconds; 0 when start or end is unknown.
+            ///
             /// Field 9: `duration_ms`
             #[must_use]
             pub fn duration_ms(&self) -> u64 {
@@ -12153,6 +12274,9 @@ pub mod __buffa {
                 'a,
                 super::super::__buffa::view::JobDetailView<'a>,
             >,
+            /// Total jobs matching the request, ignoring `limit` / `offset`. Page through
+            /// by advancing `offset` until it reaches `total_count`.
+            ///
             /// Field 2: `total_count`
             pub total_count: i32,
             pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
@@ -12476,6 +12600,9 @@ pub mod __buffa {
             > {
                 &self.0.reborrow().jobs
             }
+            /// Total jobs matching the request, ignoring `limit` / `offset`. Page through
+            /// by advancing `offset` until it reaches `total_count`.
+            ///
             /// Field 2: `total_count`
             #[must_use]
             pub fn total_count(&self) -> i32 {
@@ -12879,6 +13006,8 @@ pub mod __buffa {
             }
         }
         /// --- datasets ---
+        ///
+        /// A dataset: a table, file, or stream produced and/or consumed by jobs.
         #[derive(Clone, Debug, Default)]
         pub struct DatasetView<'a> {
             /// Field 1: `id`
@@ -12887,12 +13016,18 @@ pub mod __buffa {
             >,
             /// Field 2: `type`
             pub r#type: ::buffa::EnumValue<super::super::DatasetType>,
+            /// Logical dataset name.
+            ///
             /// Field 3: `name`
             pub name: &'a str,
+            /// Storage-level name (e.g. the physical table or path), if distinct from `name`.
+            ///
             /// Field 4: `physical_name`
             pub physical_name: &'a str,
             /// Field 5: `namespace`
             pub namespace: &'a str,
+            /// Name of the data source the dataset lives in (e.g. a warehouse or bucket).
+            ///
             /// Field 6: `source_name`
             pub source_name: &'a str,
             /// Field 7: `created_at`
@@ -12901,21 +13036,29 @@ pub mod __buffa {
             pub updated_at: &'a str,
             /// Field 9: `description`
             pub description: &'a str,
+            /// Schema columns, each an object like `{name, type, description}`. Open-ended:
+            /// the exact keys follow the OpenLineage schema facet.
+            ///
             /// Field 10: `fields`
             pub fields: ::buffa::RepeatedView<
                 'a,
                 ::buffa_types::google::protobuf::__buffa::view::StructView<'a>,
             >,
+            /// OpenLineage dataset facets, keyed by facet name (e.g. `schema`,
+            /// `dataSource`, `columnLineage`). Each carries `_producer` / `_schemaURL`.
+            ///
             /// Field 11: `facets`
             pub facets: ::buffa::MessageFieldView<
                 ::buffa_types::google::protobuf::__buffa::view::StructView<'a>,
             >,
             /// Field 12: `tags`
             pub tags: ::buffa::RepeatedView<'a, &'a str>,
+            /// True once the dataset has been observed deleted.
+            ///
             /// Field 13: `deleted`
             pub deleted: bool,
-            /// UUID identifying the dataset's current schema, like Marquez's
-            /// `currentVersion`. Refreshed by the projector when the schema changes.
+            /// Opaque UUID that changes whenever the dataset's schema changes. Use it to
+            /// detect that the schema has moved; see also `ListDatasetVersions`.
             ///
             /// Field 14: `current_version`
             pub current_version: &'a str,
@@ -13637,11 +13780,15 @@ pub mod __buffa {
             pub fn r#type(&self) -> ::buffa::EnumValue<super::super::DatasetType> {
                 self.0.reborrow().r#type
             }
+            /// Logical dataset name.
+            ///
             /// Field 3: `name`
             #[must_use]
             pub fn name(&self) -> &'_ str {
                 self.0.reborrow().name
             }
+            /// Storage-level name (e.g. the physical table or path), if distinct from `name`.
+            ///
             /// Field 4: `physical_name`
             #[must_use]
             pub fn physical_name(&self) -> &'_ str {
@@ -13652,6 +13799,8 @@ pub mod __buffa {
             pub fn namespace(&self) -> &'_ str {
                 self.0.reborrow().namespace
             }
+            /// Name of the data source the dataset lives in (e.g. a warehouse or bucket).
+            ///
             /// Field 6: `source_name`
             #[must_use]
             pub fn source_name(&self) -> &'_ str {
@@ -13672,6 +13821,9 @@ pub mod __buffa {
             pub fn description(&self) -> &'_ str {
                 self.0.reborrow().description
             }
+            /// Schema columns, each an object like `{name, type, description}`. Open-ended:
+            /// the exact keys follow the OpenLineage schema facet.
+            ///
             /// Field 10: `fields`
             #[must_use]
             pub fn fields(
@@ -13682,6 +13834,9 @@ pub mod __buffa {
             > {
                 &self.0.reborrow().fields
             }
+            /// OpenLineage dataset facets, keyed by facet name (e.g. `schema`,
+            /// `dataSource`, `columnLineage`). Each carries `_producer` / `_schemaURL`.
+            ///
             /// Field 11: `facets`
             #[must_use]
             pub fn facets(
@@ -13696,13 +13851,15 @@ pub mod __buffa {
             pub fn tags(&self) -> &::buffa::RepeatedView<'_, &'_ str> {
                 &self.0.reborrow().tags
             }
+            /// True once the dataset has been observed deleted.
+            ///
             /// Field 13: `deleted`
             #[must_use]
             pub fn deleted(&self) -> bool {
                 self.0.reborrow().deleted
             }
-            /// UUID identifying the dataset's current schema, like Marquez's
-            /// `currentVersion`. Refreshed by the projector when the schema changes.
+            /// Opaque UUID that changes whenever the dataset's schema changes. Use it to
+            /// detect that the schema has moved; see also `ListDatasetVersions`.
             ///
             /// Field 14: `current_version`
             #[must_use]
@@ -14109,6 +14266,8 @@ pub mod __buffa {
                 ::serde::Serialize::serialize(&self.0, __s)
             }
         }
+        /// One historical version of a dataset's schema. A new version is recorded each
+        /// time the schema changes.
         #[derive(Clone, Debug, Default)]
         pub struct DatasetVersionView<'a> {
             /// Field 1: `id`
@@ -14123,6 +14282,9 @@ pub mod __buffa {
             pub physical_name: &'a str,
             /// Field 5: `created_at`
             pub created_at: &'a str,
+            /// This version's schema UUID. The dataset's latest version equals the
+            /// dataset's `current_version`.
+            ///
             /// Field 6: `version`
             pub version: &'a str,
             /// Field 7: `namespace`
@@ -14855,6 +15017,9 @@ pub mod __buffa {
             pub fn created_at(&self) -> &'_ str {
                 self.0.reborrow().created_at
             }
+            /// This version's schema UUID. The dataset's latest version equals the
+            /// dataset's `current_version`.
+            ///
             /// Field 6: `version`
             #[must_use]
             pub fn version(&self) -> &'_ str {
@@ -15679,12 +15844,16 @@ pub mod __buffa {
             }
         }
         /// --- search ---
+        ///
+        /// One job or dataset matching a search query.
         #[derive(Clone, Debug, Default)]
         pub struct SearchResultView<'a> {
             /// Field 1: `name`
             pub name: &'a str,
             /// Field 2: `namespace`
             pub namespace: &'a str,
+            /// The matched entity's nodeId, ready to pass to `GetLineage`.
+            ///
             /// Field 3: `node_id`
             pub node_id: &'a str,
             /// `JOB` or `DATASET` (search does not return fields).
@@ -16075,6 +16244,8 @@ pub mod __buffa {
             pub fn namespace(&self) -> &'_ str {
                 self.0.reborrow().namespace
             }
+            /// The matched entity's nodeId, ready to pass to `GetLineage`.
+            ///
             /// Field 3: `node_id`
             #[must_use]
             pub fn node_id(&self) -> &'_ str {
@@ -16488,9 +16659,11 @@ pub mod __buffa {
             }
         }
         /// --- events feed ---
+        ///
+        /// The raw OpenLineage events feed, newest first.
         #[derive(Clone, Debug, Default)]
         pub struct ListEventsResponseView<'a> {
-            /// Each event is the raw OpenLineage event JSON as ingested.
+            /// Each entry is one OpenLineage event, as the original ingested JSON.
             ///
             /// Field 1: `events`
             pub events: ::buffa::RepeatedView<
@@ -16810,7 +16983,7 @@ pub mod __buffa {
             pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
                 self.0.into_bytes()
             }
-            /// Each event is the raw OpenLineage event JSON as ingested.
+            /// Each entry is one OpenLineage event, as the original ingested JSON.
             ///
             /// Field 1: `events`
             #[must_use]
@@ -16859,10 +17032,16 @@ pub mod __buffa {
             }
         }
         /// --- run facets ---
+        ///
+        /// The merged facets observed across all of a run's events. Returned by
+        /// `GetRunFacets`.
         #[derive(Clone, Debug, Default)]
         pub struct RunFacetsResponseView<'a> {
             /// Field 1: `run_id`
             pub run_id: &'a str,
+            /// Run facets keyed by facet name (e.g. `nominalTime`, `parent`,
+            /// `errorMessage`); each carries `_producer` / `_schemaURL`.
+            ///
             /// Field 2: `facets`
             pub facets: ::buffa::MessageFieldView<
                 ::buffa_types::google::protobuf::__buffa::view::StructView<'a>,
@@ -17185,6 +17364,9 @@ pub mod __buffa {
             pub fn run_id(&self) -> &'_ str {
                 self.0.reborrow().run_id
             }
+            /// Run facets keyed by facet name (e.g. `nominalTime`, `parent`,
+            /// `errorMessage`); each carries `_producer` / `_schemaURL`.
+            ///
             /// Field 2: `facets`
             #[must_use]
             pub fn facets(
@@ -17227,7 +17409,8 @@ pub mod __buffa {
         }
         /// --- lineage / column-lineage graph ---
         ///
-        /// A directed edge between two nodes, addressed by their `nodeId` strings.
+        /// A directed edge `origin → destination`, where each endpoint is a nodeId. Data
+        /// flows from `origin` to `destination`.
         #[derive(Clone, Debug, Default)]
         pub struct LineageEdgeView<'a> {
             /// Field 1: `origin`
@@ -17558,14 +17741,22 @@ pub mod __buffa {
                 ::serde::Serialize::serialize(&self.0, __s)
             }
         }
-        /// One node in the lineage graph. `data` carries the full Job or Dataset payload
-        /// the UI renders in the side panel.
+        /// One node in a lineage graph, addressed by its nodeId (`id`). `in_edges` /
+        /// `out_edges` list the edges incident to this node (upstream and downstream
+        /// respectively); follow them across nodes to walk the graph.
         #[derive(Clone, Debug, Default)]
         pub struct LineageNodeView<'a> {
+            /// The nodeId: `job:<ns>:<name>`, `dataset:<ns>:<name>`, or
+            /// `datasetField:<ns>:<name>:<field>`.
+            ///
             /// Field 1: `id`
             pub id: &'a str,
+            /// `JOB` / `DATASET` for `GetLineage`; `DATASET_FIELD` for `GetColumnLineage`.
+            ///
             /// Field 2: `type`
             pub r#type: ::buffa::EnumValue<super::super::EntityKind>,
+            /// The full `JobDetail` or `Dataset` for this node, as JSON.
+            ///
             /// Field 3: `data`
             pub data: ::buffa::MessageFieldView<
                 ::buffa_types::google::protobuf::__buffa::view::StructView<'a>,
@@ -18014,16 +18205,23 @@ pub mod __buffa {
             pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
                 self.0.into_bytes()
             }
+            /// The nodeId: `job:<ns>:<name>`, `dataset:<ns>:<name>`, or
+            /// `datasetField:<ns>:<name>:<field>`.
+            ///
             /// Field 1: `id`
             #[must_use]
             pub fn id(&self) -> &'_ str {
                 self.0.reborrow().id
             }
+            /// `JOB` / `DATASET` for `GetLineage`; `DATASET_FIELD` for `GetColumnLineage`.
+            ///
             /// Field 2: `type`
             #[must_use]
             pub fn r#type(&self) -> ::buffa::EnumValue<super::super::EntityKind> {
                 self.0.reborrow().r#type
             }
+            /// The full `JobDetail` or `Dataset` for this node, as JSON.
+            ///
             /// Field 3: `data`
             #[must_use]
             pub fn data(
@@ -18084,6 +18282,9 @@ pub mod __buffa {
                 ::serde::Serialize::serialize(&self.0, __s)
             }
         }
+        /// A lineage graph: the set of nodes reached from the requested seed, each
+        /// carrying its own incident edges. Returned by `GetLineage` and
+        /// `GetColumnLineage`.
         #[derive(Clone, Debug, Default)]
         pub struct LineageGraphView<'a> {
             /// Field 1: `graph`
@@ -18404,6 +18605,8 @@ pub mod __buffa {
             }
         }
         /// --- tags ---
+        ///
+        /// A tag that can be attached to datasets and fields (e.g. `pii`, `gold`).
         #[derive(Clone, Debug, Default)]
         pub struct TagView<'a> {
             /// Field 1: `name`
@@ -18730,7 +18933,6 @@ pub mod __buffa {
                 ::serde::Serialize::serialize(&self.0, __s)
             }
         }
-        /// `GET /api/v1/tags` envelope — the UI reads `payload.tags`.
         #[derive(Clone, Debug, Default)]
         pub struct ListTagsResponseView<'a> {
             /// Field 1: `tags`
@@ -19051,7 +19253,8 @@ pub mod __buffa {
                 ::serde::Serialize::serialize(&self.0, __s)
             }
         }
-        /// One dataset field reached by tag/PII propagation.
+        /// A dataset field carrying a tag, directly or by propagation through column
+        /// lineage.
         #[derive(Clone, Debug, Default)]
         pub struct TaggedFieldView<'a> {
             /// Field 1: `namespace`
@@ -19060,7 +19263,7 @@ pub mod __buffa {
             pub dataset: &'a str,
             /// Field 3: `field`
             pub field: &'a str,
-            /// The `datasetField:` nodeId, for linking into the column-lineage view.
+            /// This field's `datasetField:<ns>:<dataset>:<field>` nodeId.
             ///
             /// Field 4: `node_id`
             pub node_id: &'a str,
@@ -19418,7 +19621,7 @@ pub mod __buffa {
             pub fn field(&self) -> &'_ str {
                 self.0.reborrow().field
             }
-            /// The `datasetField:` nodeId, for linking into the column-lineage view.
+            /// This field's `datasetField:<ns>:<dataset>:<field>` nodeId.
             ///
             /// Field 4: `node_id`
             #[must_use]
@@ -19456,8 +19659,8 @@ pub mod __buffa {
                 ::serde::Serialize::serialize(&self.0, __s)
             }
         }
-        /// `GET /api/v1/tags/{tag}/downstream` — the fields reachable downstream from
-        /// anything tagged `tag` (the tagged seeds themselves are included).
+        /// Every field a tag reaches downstream through column lineage, including the
+        /// originally tagged fields. Returned by `GetTagDownstream`.
         #[derive(Clone, Debug, Default)]
         pub struct TagPropagationView<'a> {
             /// Field 1: `tag`
@@ -19815,9 +20018,12 @@ pub mod __buffa {
         }
         /// --- stats ---
         ///
-        /// One time bucket of a stats series: `{ date, count }` (Marquez's shape).
+        /// A count for one time bucket: `count` events/assets in the period starting at
+        /// `date`.
         #[derive(Clone, Debug, Default)]
         pub struct StatBucketView<'a> {
+            /// Bucket start as an RFC 3339 date/time.
+            ///
             /// Field 1: `date`
             pub date: &'a str,
             /// Field 2: `count`
@@ -20107,6 +20313,8 @@ pub mod __buffa {
             pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
                 self.0.into_bytes()
             }
+            /// Bucket start as an RFC 3339 date/time.
+            ///
             /// Field 1: `date`
             #[must_use]
             pub fn date(&self) -> &'_ str {
@@ -20148,8 +20356,8 @@ pub mod __buffa {
                 ::serde::Serialize::serialize(&self.0, __s)
             }
         }
-        /// The stats endpoints return a bare JSON array of `StatBucket`. The REST mapping
-        /// uses `response_body: "buckets"` so the wire shape is the array, not an object.
+        /// A time series of `StatBucket`s. Returned by the stats endpoints; on the REST
+        /// surface it serializes as a bare JSON array.
         #[derive(Clone, Debug, Default)]
         pub struct StatsResponseView<'a> {
             /// Field 1: `buckets`
@@ -20473,10 +20681,11 @@ pub mod __buffa {
         }
         /// --- request messages ---
         ///
-        /// `namespace` empty means "all namespaces" for the list endpoints; `limit` /
-        /// `offset` are the pagination knobs. Query-string params (limit, offset, q,
-        /// nodeId, depth, period) are request fields not bound to the URL path; the REST
-        /// extractor binds them from the query string by their JSON (camelCase) name.
+        /// On the list endpoints, an empty `namespace` means all namespaces, and `limit`
+        /// / `offset` page the results (`limit` defaults to a server-chosen page size, so
+        /// 0 is treated as unset). On the REST surface, non-path fields (`limit`,
+        /// `offset`, `q`, `nodeId`, `depth`, `period`, `type`) are query-string params
+        /// named by their camelCase JSON name.
         #[derive(Clone, Debug, Default)]
         pub struct ListNamespacesRequestView<'a> {
             pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
@@ -20744,7 +20953,7 @@ pub mod __buffa {
         }
         #[derive(Clone, Debug, Default)]
         pub struct ListJobsRequestView<'a> {
-            /// Parent namespace scoping; empty = all namespaces. Declares Namespace → Job.
+            /// Scope to this namespace; empty lists jobs across all namespaces.
             ///
             /// Field 1: `namespace`
             pub namespace: &'a str,
@@ -21077,7 +21286,7 @@ pub mod __buffa {
             pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
                 self.0.into_bytes()
             }
-            /// Parent namespace scoping; empty = all namespaces. Declares Namespace → Job.
+            /// Scope to this namespace; empty lists jobs across all namespaces.
             ///
             /// Field 1: `namespace`
             #[must_use]
@@ -21787,7 +21996,7 @@ pub mod __buffa {
         }
         #[derive(Clone, Debug, Default)]
         pub struct ListDatasetsRequestView<'a> {
-            /// Parent namespace scoping; empty = all namespaces. Declares Namespace → Dataset.
+            /// Scope to this namespace; empty lists datasets across all namespaces.
             ///
             /// Field 1: `namespace`
             pub namespace: &'a str,
@@ -22120,7 +22329,7 @@ pub mod __buffa {
             pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
                 self.0.into_bytes()
             }
-            /// Parent namespace scoping; empty = all namespaces. Declares Namespace → Dataset.
+            /// Scope to this namespace; empty lists datasets across all namespaces.
             ///
             /// Field 1: `namespace`
             #[must_use]
@@ -23350,10 +23559,12 @@ pub mod __buffa {
         }
         #[derive(Clone, Debug, Default)]
         pub struct GetLineageRequestView<'a> {
-            /// Bound from `?nodeId=` (camelCase) on the query string.
+            /// Seed node: `job:<ns>:<name>` or `dataset:<ns>:<name>`.
             ///
             /// Field 1: `node_id`
             pub node_id: &'a str,
+            /// Maximum hops to traverse from the seed. Defaults to, and is capped at, 20.
+            ///
             /// Field 2: `depth`
             pub depth: i32,
             pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
@@ -23647,13 +23858,15 @@ pub mod __buffa {
             pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
                 self.0.into_bytes()
             }
-            /// Bound from `?nodeId=` (camelCase) on the query string.
+            /// Seed node: `job:<ns>:<name>` or `dataset:<ns>:<name>`.
             ///
             /// Field 1: `node_id`
             #[must_use]
             pub fn node_id(&self) -> &'_ str {
                 self.0.reborrow().node_id
             }
+            /// Maximum hops to traverse from the seed. Defaults to, and is capped at, 20.
+            ///
             /// Field 2: `depth`
             #[must_use]
             pub fn depth(&self) -> i32 {
@@ -23692,7 +23905,8 @@ pub mod __buffa {
         }
         #[derive(Clone, Debug, Default)]
         pub struct GetColumnLineageRequestView<'a> {
-            /// Bound from `?nodeId=` (camelCase) on the query string.
+            /// Seed node: a `dataset:<ns>:<name>` (all fields) or a
+            /// `datasetField:<ns>:<name>:<field>`.
             ///
             /// Field 1: `node_id`
             pub node_id: &'a str,
@@ -23955,7 +24169,8 @@ pub mod __buffa {
             pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
                 self.0.into_bytes()
             }
-            /// Bound from `?nodeId=` (camelCase) on the query string.
+            /// Seed node: a `dataset:<ns>:<name>` (all fields) or a
+            /// `datasetField:<ns>:<name>:<field>`.
             ///
             /// Field 1: `node_id`
             #[must_use]
@@ -25207,10 +25422,12 @@ pub mod __buffa {
         }
         #[derive(Clone, Debug, Default)]
         pub struct GetLineageEventStatsRequestView<'a> {
-            /// date_trunc period: HOUR | DAY (default) | WEEK | MONTH.
+            /// Bucket size: `HOUR`, `DAY` (default), `WEEK`, or `MONTH`.
             ///
             /// Field 1: `period`
             pub period: &'a str,
+            /// Maximum number of buckets to return.
+            ///
             /// Field 2: `limit`
             pub limit: i32,
             pub __buffa_unknown_fields: ::buffa::UnknownFieldsView<'a>,
@@ -25508,13 +25725,15 @@ pub mod __buffa {
             pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
                 self.0.into_bytes()
             }
-            /// date_trunc period: HOUR | DAY (default) | WEEK | MONTH.
+            /// Bucket size: `HOUR`, `DAY` (default), `WEEK`, or `MONTH`.
             ///
             /// Field 1: `period`
             #[must_use]
             pub fn period(&self) -> &'_ str {
                 self.0.reborrow().period
             }
+            /// Maximum number of buckets to return.
+            ///
             /// Field 2: `limit`
             #[must_use]
             pub fn limit(&self) -> i32 {
@@ -25559,10 +25778,12 @@ pub mod __buffa {
         }
         #[derive(Clone, Debug, Default)]
         pub struct GetAssetStatsRequestView<'a> {
-            /// `jobs` | `job` | `datasets` | `dataset`.
+            /// Which asset to count: `jobs` or `datasets`.
             ///
             /// Field 1: `asset`
             pub asset: &'a str,
+            /// Bucket size: `HOUR`, `DAY` (default), `WEEK`, or `MONTH`.
+            ///
             /// Field 2: `period`
             pub period: &'a str,
             /// Field 3: `limit`
@@ -25886,13 +26107,15 @@ pub mod __buffa {
             pub fn into_bytes(self) -> ::buffa::bytes::Bytes {
                 self.0.into_bytes()
             }
-            /// `jobs` | `job` | `datasets` | `dataset`.
+            /// Which asset to count: `jobs` or `datasets`.
             ///
             /// Field 1: `asset`
             #[must_use]
             pub fn asset(&self) -> &'_ str {
                 self.0.reborrow().asset
             }
+            /// Bucket size: `HOUR`, `DAY` (default), `WEEK`, or `MONTH`.
+            ///
             /// Field 2: `period`
             #[must_use]
             pub fn period(&self) -> &'_ str {

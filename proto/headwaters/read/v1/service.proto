@@ -1,16 +1,12 @@
 syntax = "proto3";
 
-// The headwaters read API service. This is headwaters' own (non-spec) surface —
-// the Marquez-compatible GET routes the web UI calls to populate the namespace /
-// job / dataset browse views, the lineage + column-lineage graph, the events
-// feed, run facets, dataset versions, tags, PII propagation, and the activity
-// charts. Ingest (the OpenLineage spec POST surface) lives separately in
-// `lineage.v1.IngestService`.
+// The headwaters read API: browse namespaces, jobs, datasets, and runs; walk the
+// lineage and column-lineage graph; read the events feed, run facets, tags and
+// their downstream propagation, and activity stats.
 //
-// The `google.api.http` annotations capture the REST mapping in-proto; the
-// Trestle/olai-codegen pass turns each RPC into an Axum route handler + a typed
-// Rust/TS/WASM client. Every RPC here is unary and REST-derivable (see the
-// streaming-candidates ADR for what we intentionally keep off the REST path).
+// Every RPC is unary. The `google.api.http` annotation on each gives its
+// equivalent REST route. (OpenLineage ingest is a separate surface,
+// `lineage.v1.IngestService`.)
 package headwaters.read.v1;
 
 import "google/api/annotations.proto";
@@ -27,8 +23,7 @@ service ReadService {
 
   // --- jobs ---
 
-  // Jobs across all namespaces, or scoped to one. Two routes bind to the same
-  // RPC: the global `/jobs` (namespace empty) and the namespace-scoped form.
+  // List jobs, optionally scoped to one namespace.
   rpc ListJobs(ListJobsRequest) returns (ListJobsResponse) {
     option (google.api.http) = {
       get: "/api/v1/jobs"
@@ -63,14 +58,18 @@ service ReadService {
 
   // --- search / graph / events / facets ---
 
+  // Substring search over job and dataset names.
   rpc Search(SearchRequest) returns (SearchResponse) {
     option (google.api.http) = {get: "/api/v1/search"};
   }
 
+  // Entity-level lineage: the jobs and datasets within `depth` hops of a seed
+  // node, with the edges between them.
   rpc GetLineage(GetLineageRequest) returns (LineageGraph) {
     option (google.api.http) = {get: "/api/v1/lineage"};
   }
 
+  // Column-level lineage: how a dataset's fields derive from upstream fields.
   rpc GetColumnLineage(GetColumnLineageRequest) returns (LineageGraph) {
     option (google.api.http) = {get: "/api/v1/column-lineage"};
   }
@@ -89,11 +88,12 @@ service ReadService {
     option (google.api.http) = {get: "/api/v1/tags"};
   }
 
+  // Every field a tag reaches downstream through column lineage.
   rpc GetTagDownstream(GetTagDownstreamRequest) returns (TagPropagation) {
     option (google.api.http) = {get: "/api/v1/tags/{tag}/downstream"};
   }
 
-  // --- stats (home-page activity charts) ---
+  // --- stats ---
 
   rpc GetLineageEventStats(GetLineageEventStatsRequest) returns (StatsResponse) {
     option (google.api.http) = {get: "/api/v1/stats/lineage-events"};
@@ -106,15 +106,16 @@ service ReadService {
 
 // --- request messages ---
 //
-// `namespace` empty means "all namespaces" for the list endpoints; `limit` /
-// `offset` are the pagination knobs. Query-string params (limit, offset, q,
-// nodeId, depth, period) are request fields not bound to the URL path; the REST
-// extractor binds them from the query string by their JSON (camelCase) name.
+// On the list endpoints, an empty `namespace` means all namespaces, and `limit`
+// / `offset` page the results (`limit` defaults to a server-chosen page size, so
+// 0 is treated as unset). On the REST surface, non-path fields (`limit`,
+// `offset`, `q`, `nodeId`, `depth`, `period`, `type`) are query-string params
+// named by their camelCase JSON name.
 
 message ListNamespacesRequest {}
 
 message ListJobsRequest {
-  // Parent namespace scoping; empty = all namespaces. Declares Namespace → Job.
+  // Scope to this namespace; empty lists jobs across all namespaces.
   string namespace = 1 [(google.api.resource_reference) = {child_type: "headwaters.io/Job"}];
   int32 limit = 2;
   int32 offset = 3;
@@ -131,7 +132,7 @@ message GetJobRunsRequest {
 }
 
 message ListDatasetsRequest {
-  // Parent namespace scoping; empty = all namespaces. Declares Namespace → Dataset.
+  // Scope to this namespace; empty lists datasets across all namespaces.
   string namespace = 1 [(google.api.resource_reference) = {child_type: "headwaters.io/Dataset"}];
   int32 limit = 2;
   int32 offset = 3;
@@ -161,13 +162,15 @@ message SearchRequest {
 }
 
 message GetLineageRequest {
-  // Bound from `?nodeId=` (camelCase) on the query string.
+  // Seed node: `job:<ns>:<name>` or `dataset:<ns>:<name>`.
   string node_id = 1 [(google.api.field_behavior) = REQUIRED];
+  // Maximum hops to traverse from the seed. Defaults to, and is capped at, 20.
   int32 depth = 2;
 }
 
 message GetColumnLineageRequest {
-  // Bound from `?nodeId=` (camelCase) on the query string.
+  // Seed node: a `dataset:<ns>:<name>` (all fields) or a
+  // `datasetField:<ns>:<name>:<field>`.
   string node_id = 1;
 }
 
@@ -187,14 +190,16 @@ message GetTagDownstreamRequest {
 }
 
 message GetLineageEventStatsRequest {
-  // date_trunc period: HOUR | DAY (default) | WEEK | MONTH.
+  // Bucket size: `HOUR`, `DAY` (default), `WEEK`, or `MONTH`.
   string period = 1;
+  // Maximum number of buckets to return.
   int32 limit = 2;
 }
 
 message GetAssetStatsRequest {
-  // `jobs` | `job` | `datasets` | `dataset`.
+  // Which asset to count: `jobs` or `datasets`.
   string asset = 1 [(google.api.field_behavior) = REQUIRED];
+  // Bucket size: `HOUR`, `DAY` (default), `WEEK`, or `MONTH`.
   string period = 2;
   int32 limit = 3;
 }

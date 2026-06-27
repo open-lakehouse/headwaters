@@ -12,6 +12,11 @@ lint:
     # per RPC, and GetLineage/GetColumnLineage share the LineageGraph response.
     - RPC_RESPONSE_STANDARD_NAME
     - RPC_REQUEST_RESPONSE_UNIQUE
+    # Read-API enum values are bare (BATCH, COMPLETED, DATASET) rather than
+    # prefixed (JOB_TYPE_BATCH, …): proto3-JSON serializes an enum by its value
+    # name, and these names are the load-bearing wire strings the API returns.
+    # Prefixing them would change the JSON contract.
+    - ENUM_VALUE_PREFIX
 breaking:
   use:
     - FILE

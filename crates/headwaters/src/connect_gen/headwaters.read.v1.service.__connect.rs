@@ -639,8 +639,7 @@ pub trait ReadService: Send + Sync + 'static {
             > + Send + use<'a, Self>,
         >,
     > + Send;
-    /// Jobs across all namespaces, or scoped to one. Two routes bind to the same
-    /// RPC: the global `/jobs` (namespace empty) and the namespace-scoped form.
+    /// List jobs, optionally scoped to one namespace.
     ///
     /// `'a` lets the response body borrow from `&self` (e.g. server-resident state).
     ///
@@ -778,7 +777,7 @@ pub trait ReadService: Send + Sync + 'static {
             > + Send + use<'a, Self>,
         >,
     > + Send;
-    /// Handle the Search RPC.
+    /// Substring search over job and dataset names.
     ///
     /// `'a` lets the response body borrow from `&self` (e.g. server-resident state).
     ///
@@ -801,7 +800,8 @@ pub trait ReadService: Send + Sync + 'static {
             > + Send + use<'a, Self>,
         >,
     > + Send;
-    /// Handle the GetLineage RPC.
+    /// Entity-level lineage: the jobs and datasets within `depth` hops of a seed
+    /// node, with the edges between them.
     ///
     /// `'a` lets the response body borrow from `&self` (e.g. server-resident state).
     ///
@@ -824,7 +824,7 @@ pub trait ReadService: Send + Sync + 'static {
             > + Send + use<'a, Self>,
         >,
     > + Send;
-    /// Handle the GetColumnLineage RPC.
+    /// Column-level lineage: how a dataset's fields derive from upstream fields.
     ///
     /// `'a` lets the response body borrow from `&self` (e.g. server-resident state).
     ///
@@ -916,7 +916,7 @@ pub trait ReadService: Send + Sync + 'static {
             > + Send + use<'a, Self>,
         >,
     > + Send;
-    /// Handle the GetTagDownstream RPC.
+    /// Every field a tag reaches downstream through column lineage.
     ///
     /// `'a` lets the response body borrow from `&self` (e.g. server-resident state).
     ///
