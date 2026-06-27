@@ -1,8 +1,11 @@
 //! Integration tests for the OpenLineage DataFusion integration.
 
-use std::sync::{Arc, Mutex};
+mod common;
+
+use std::sync::Arc;
 
 use async_trait::async_trait;
+use common::{FailingTransport, RecordingTransport};
 use datafusion::physical_plan::ExecutionPlanProperties;
 use datafusion::prelude::SessionContext;
 use datafusion_openlineage::builder::{complete_event, fail_event, start_event};
@@ -12,42 +15,15 @@ use datafusion_openlineage::event::{RunEvent, RunEventType};
 use datafusion_openlineage::extract::extract;
 use datafusion_openlineage::transport::{NoopTransport, Transport, TransportError};
 use datafusion_openlineage::{
-    DataFusionConfig, LineageContextProvider, OpenLineageClient, instrument_session_state,
+    LineageContextProvider, OpenLineageClient, instrument_session_state,
     instrument_session_state_simple,
 };
 use serde_json::Value;
 use uuid::Uuid;
 
-/// A transport that records every event it receives, for assertions.
-#[derive(Debug, Default, Clone)]
-struct RecordingTransport {
-    events: Arc<Mutex<Vec<RunEvent>>>,
-}
-
-#[async_trait]
-impl Transport for RecordingTransport {
-    async fn emit(&self, event: &RunEvent) -> Result<(), TransportError> {
-        self.events.lock().unwrap().push(event.clone());
-        Ok(())
-    }
-}
-
-/// A transport that always errors — to prove failures are swallowed.
-#[derive(Debug)]
-struct FailingTransport;
-
-#[async_trait]
-impl Transport for FailingTransport {
-    async fn emit(&self, _event: &RunEvent) -> Result<(), TransportError> {
-        Err(TransportError::Other("boom".to_string()))
-    }
-}
-
+/// The DataFusion-flavored config these tests run against (`test-ns`).
 fn config() -> OpenLineageConfig {
-    OpenLineageConfig {
-        job_namespace: "test-ns".to_string(),
-        ..OpenLineageConfig::for_datafusion()
-    }
+    common::config("test-ns", true)
 }
 
 // ---------------------------------------------------------------------------
