@@ -21,7 +21,7 @@ use sqlx::Row;
 use super::ids::*;
 use super::{LineageStore, ReadError};
 use crate::proto::headwaters::read::v1 as pb;
-use buffa::MessageField;
+use buffa::{EnumValue, Enumeration, MessageField};
 use buffa_types::google::protobuf::Struct as PbStruct;
 
 /// Default and maximum graph traversal depth (hops). Marquez's UI defaults to a
@@ -37,6 +37,16 @@ fn rfc3339(ts: DateTime<Utc>) -> String {
 /// empty strings from JSON, matching Marquez's absent-field behavior).
 fn opt_rfc3339(ts: Option<DateTime<Utc>>) -> String {
     ts.map(rfc3339).unwrap_or_default()
+}
+
+/// Map a stored run-state string (`NEW` | `RUNNING` | `COMPLETED` | `FAILED` |
+/// `ABORTED`, written by the projector) to the [`pb::RunState`] enum. An
+/// unrecognized value round-trips through `EnumValue::Unknown` rather than
+/// failing the query.
+fn run_state(state: String) -> EnumValue<pb::RunState> {
+    pb::RunState::from_proto_name(&state)
+        .map(EnumValue::from)
+        .unwrap_or_else(|| EnumValue::from(0))
 }
 
 /// Convert a stored JSON value into a `google.protobuf.Struct`. The read DTOs'
@@ -215,7 +225,7 @@ impl LineageStore {
                 name: name.clone(),
                 ..Default::default()
             }),
-            r#type: "BATCH".into(),
+            r#type: pb::JobType::BATCH.into(),
             name: name.clone(),
             simple_name: name,
             namespace,
@@ -316,7 +326,7 @@ impl LineageStore {
                 node_id: job_node_id(&ns, &name),
                 name,
                 namespace: ns,
-                r#type: "JOB".into(),
+                r#type: pb::EntityKind::JOB.into(),
                 updated_at: rfc3339(r.get("updated_at")),
                 ..Default::default()
             });
@@ -328,7 +338,7 @@ impl LineageStore {
                 node_id: dataset_node_id(&ns, &name),
                 name,
                 namespace: ns,
-                r#type: "DATASET".into(),
+                r#type: pb::EntityKind::DATASET.into(),
                 updated_at: rfc3339(r.get("updated_at")),
                 ..Default::default()
             });
@@ -449,12 +459,18 @@ impl LineageStore {
         };
         let (node_type, data) = match kind {
             NodeKind::Job => match self.job(&namespace, &name).await {
-                Ok(job) => ("JOB", serde_json::to_value(job).unwrap_or(json!({}))),
+                Ok(job) => (
+                    pb::EntityKind::JOB,
+                    serde_json::to_value(job).unwrap_or(json!({})),
+                ),
                 Err(ReadError::NotFound(_)) => return Ok(None),
                 Err(e) => return Err(e),
             },
             NodeKind::Dataset => match self.dataset(&namespace, &name).await {
-                Ok(ds) => ("DATASET", serde_json::to_value(ds).unwrap_or(json!({}))),
+                Ok(ds) => (
+                    pb::EntityKind::DATASET,
+                    serde_json::to_value(ds).unwrap_or(json!({})),
+                ),
                 Err(ReadError::NotFound(_)) => return Ok(None),
                 Err(e) => return Err(e),
             },
@@ -563,7 +579,7 @@ impl LineageStore {
                         version: version.clone(),
                         ..Default::default()
                     }),
-                    r#type: dataset.r#type.clone(),
+                    r#type: dataset.r#type,
                     name: name.to_string(),
                     physical_name: dataset.physical_name.clone(),
                     created_at: rfc3339(created_at),
@@ -712,7 +728,7 @@ impl LineageStore {
             .map(|(id, data)| pb::LineageNode {
                 in_edges: in_edges.remove(&id).unwrap_or_default(),
                 out_edges: out_edges.remove(&id).unwrap_or_default(),
-                r#type: "DATASET_FIELD".to_string(),
+                r#type: pb::EntityKind::DATASET_FIELD.into(),
                 data: struct_field(data),
                 id,
                 ..Default::default()
@@ -903,7 +919,7 @@ fn neutral_run(job_id: &str, updated_at: &str) -> pb::RunDetail {
         id: format!("norun:{job_id}"),
         created_at: updated_at.to_string(),
         updated_at: updated_at.to_string(),
-        state: "COMPLETED".to_string(),
+        state: pb::RunState::COMPLETED.into(),
         duration_ms: 0,
         ..Default::default()
     }
@@ -923,7 +939,7 @@ fn build_run(r: &sqlx::postgres::PgRow) -> pb::RunDetail {
         id: r.get("run_id"),
         created_at: rfc3339(r.get("created_at")),
         updated_at: rfc3339(r.get("updated_at")),
-        state: r.get("state"),
+        state: run_state(r.get("state")),
         nominal_start_time: opt_rfc3339(nominal_start),
         nominal_end_time: opt_rfc3339(nominal_end),
         started_at: opt_rfc3339(started_at),
@@ -959,7 +975,7 @@ fn build_dataset(r: &sqlx::postgres::PgRow) -> pb::Dataset {
             name: name.clone(),
             ..Default::default()
         }),
-        r#type: "DB_TABLE".into(),
+        r#type: pb::DatasetType::DB_TABLE.into(),
         name: name.clone(),
         physical_name: name,
         source_name: source,

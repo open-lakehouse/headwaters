@@ -24,6 +24,39 @@ message EntityId {
   string name = 2;
 }
 
+// Kind of a graph node or search hit. `DATASET_FIELD` is column-level and only
+// appears in column-lineage graphs.
+enum EntityKind {
+  ENTITY_KIND_UNSPECIFIED = 0;
+  JOB = 1;
+  DATASET = 2;
+  DATASET_FIELD = 3;
+}
+
+// How a job processes data. Currently always `BATCH` — the event log does not
+// yet distinguish streaming jobs.
+enum JobType {
+  JOB_TYPE_UNSPECIFIED = 0;
+  BATCH = 1;
+}
+
+// Storage kind of a dataset. Currently always `DB_TABLE`.
+enum DatasetType {
+  DATASET_TYPE_UNSPECIFIED = 0;
+  DB_TABLE = 1;
+}
+
+// Lifecycle state of a run, derived from its OpenLineage events. `COMPLETED` /
+// `FAILED` / `ABORTED` are terminal.
+enum RunState {
+  RUN_STATE_UNSPECIFIED = 0;
+  NEW = 1;
+  RUNNING = 2;
+  COMPLETED = 3;
+  FAILED = 4;
+  ABORTED = 5;
+}
+
 // --- namespaces ---
 
 message Namespace {
@@ -59,8 +92,7 @@ message JobDetail {
   };
 
   EntityId id = 1;
-  // Marquez job type; always "BATCH" (the event log doesn't distinguish).
-  string type = 2;
+  JobType type = 2;
   string name = 3;
   string simple_name = 4;
   string namespace = 5;
@@ -86,8 +118,7 @@ message RunDetail {
   string id = 1;
   string created_at = 2;
   string updated_at = 3;
-  // NEW | RUNNING | COMPLETED | FAILED | ABORTED.
-  string state = 4;
+  RunState state = 4;
   string nominal_start_time = 5;
   string nominal_end_time = 6;
   string started_at = 7;
@@ -116,8 +147,7 @@ message Dataset {
   };
 
   EntityId id = 1;
-  // Marquez dataset type; always "DB_TABLE".
-  string type = 2;
+  DatasetType type = 2;
   string name = 3;
   string physical_name = 4;
   string namespace = 5;
@@ -141,7 +171,7 @@ message ListDatasetsResponse {
 
 message DatasetVersion {
   DatasetVersionId id = 1;
-  string type = 2;
+  DatasetType type = 2;
   string name = 3;
   string physical_name = 4;
   string created_at = 5;
@@ -172,8 +202,8 @@ message SearchResult {
   string name = 1;
   string namespace = 2;
   string node_id = 3;
-  // JOB | DATASET.
-  string type = 4;
+  // `JOB` or `DATASET` (search does not return fields).
+  EntityKind type = 4;
   string updated_at = 5;
 }
 
@@ -209,8 +239,7 @@ message LineageEdge {
 // the UI renders in the side panel.
 message LineageNode {
   string id = 1;
-  // JOB | DATASET | DATASET_FIELD.
-  string type = 2;
+  EntityKind type = 2;
   google.protobuf.Struct data = 3;
   repeated LineageEdge in_edges = 4;
   repeated LineageEdge out_edges = 5;

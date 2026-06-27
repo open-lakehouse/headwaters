@@ -12,6 +12,7 @@
 //!   cargo test -p headwaters --features postgres-it --test read_test
 #![cfg(feature = "postgres-it")]
 
+use headwaters::headwaters::read::v1 as pb;
 use headwaters::ingest::convert_event;
 use headwaters::projection::project_all;
 use headwaters::read::LineageStore;
@@ -156,7 +157,7 @@ async fn jobs_returns_job_with_inputs_and_outputs() {
     assert_eq!(job.outputs[0].name, "daily_orders");
     assert_eq!(job.latest_runs.len(), 1);
     assert_eq!(job.latest_runs[0].id, "run-1");
-    assert_eq!(job.latest_runs[0].state, "COMPLETED");
+    assert_eq!(job.latest_runs[0].state, pb::RunState::COMPLETED);
 }
 
 #[tokio::test]
@@ -185,7 +186,7 @@ async fn lineage_graph_connects_job_to_its_datasets() {
     );
 
     let job = graph.graph.iter().find(|n| n.id == node).unwrap();
-    assert_eq!(job.r#type, "JOB");
+    assert_eq!(job.r#type, pb::EntityKind::JOB);
     assert_eq!(job.in_edges.len(), 1);
     assert_eq!(job.in_edges[0].origin, "dataset:raw:orders");
     assert_eq!(job.out_edges.len(), 1);
@@ -198,7 +199,11 @@ async fn search_matches_job_and_dataset_names() {
     let store = seeded_store(&db).await;
     let hits = store.search("orders", 100).await.unwrap();
     assert!(hits.total_count >= 2, "got {} hits", hits.total_count);
-    assert!(hits.results.iter().all(|r| r.r#type == "DATASET"));
+    assert!(
+        hits.results
+            .iter()
+            .all(|r| r.r#type == pb::EntityKind::DATASET)
+    );
 }
 
 #[tokio::test]
@@ -302,7 +307,7 @@ async fn lineage_resolves_uri_namespace_dataset() {
     assert!(ids.contains(&node), "uri dataset present: {ids:?}");
     assert!(ids.contains(&"job:etl:export"), "connected job: {ids:?}");
     let ds = graph.graph.iter().find(|n| n.id == node).unwrap();
-    assert_eq!(ds.r#type, "DATASET");
+    assert_eq!(ds.r#type, pb::EntityKind::DATASET);
     let updated = ds.data.get("updatedAt").and_then(|v| v.as_str()).unwrap();
     assert!(!updated.starts_with("1970"), "real timestamp: {updated}");
 }
@@ -328,7 +333,7 @@ async fn run_state_reflects_terminal_event() {
     let runs = store.job_runs("etl", "export").await.unwrap();
     assert_eq!(runs.total_count, 1);
     assert_eq!(runs.runs[0].id, "r1");
-    assert_eq!(runs.runs[0].state, "COMPLETED");
+    assert_eq!(runs.runs[0].state, pb::RunState::COMPLETED);
     assert_eq!(runs.runs[0].duration_ms, 5_000);
 }
 
@@ -443,7 +448,11 @@ async fn column_lineage_serves_latest_facet_as_field_graph() {
         !ids.contains(&"datasetField:raw:customers:id"),
         "the older facet's mapping must not leak in: {ids:?}"
     );
-    assert!(graph.iter().all(|n| n.r#type == "DATASET_FIELD"));
+    assert!(
+        graph
+            .iter()
+            .all(|n| n.r#type == pb::EntityKind::DATASET_FIELD)
+    );
 
     let id_node = graph
         .iter()
@@ -514,7 +523,7 @@ async fn rebuild_reproduces_the_same_model() {
     let after = store.jobs(None, 100, 0).await.unwrap();
     assert_eq!(before.total_count, after.total_count);
     assert_eq!(after.jobs[0].name, "build_daily");
-    assert_eq!(after.jobs[0].latest_runs[0].state, "COMPLETED");
+    assert_eq!(after.jobs[0].latest_runs[0].state, pb::RunState::COMPLETED);
 }
 
 #[tokio::test]
