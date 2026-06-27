@@ -1,47 +1,20 @@
-//! End-to-end demo: a live, instrumented DataFusion pipeline emitting OpenLineage.
+//! The transport-agnostic core of the end-to-end DataFusion lineage journey.
 //!
-//! Unlike the static JSON seed (`examples/seed/`), this runs the *real*
-//! instrumentation path — it builds instrumented [`SessionContext`]s, executes
-//! genuine multi-stage SQL transformations over Parquet files on disk, and lets
-//! the crate extract lineage from the query plans and POST it to a running
-//! `headwaters`. Run the service, run this, open the UI: the bronze →
-//! silver → gold graph appears, covering schema facets, column-level lineage
-//! (with TRANSFORMATION / FILTER / JOIN / AGGREGATION / GROUP_BY subtypes),
-//! input statistics, run history, and parent/child run correlation.
+//! Shared between the runnable demo (`main.rs`, which picks a transport from the
+//! environment) and the always-on integration test
+//! (`tests/e2e_pipeline.rs`, which records events in memory and asserts on them).
+//! Keeping the journey here — rather than forking ~500 lines — means the test
+//! covers exactly the pipeline the demo runs.
 //!
-//! Datasets are named with real three-part `catalog.schema.table` identities
-//! (`lake.bronze.raw_orders`, `lake.silver.orders`, `lake.gold.revenue_by_country`,
-//! …): the layers are schemas under a `lake` catalog built from
-//! [`MemoryCatalogProvider`]/[`MemorySchemaProvider`], not flat underscore names.
+//! The journey instruments real [`SessionContext`]s and executes a multi-stage
+//! `INSERT INTO <out> SELECT … FROM <ins>` pipeline (bronze → silver → gold)
+//! over Parquet files on disk, letting the crate extract lineage from the query
+//! plans. See [`run_pipeline`] for the entry point; the module-level doc on
+//! `main.rs` explains the data flow and why `INSERT INTO` is used over CTAS.
 //!
-//! ## Running
-//!
-//! ```sh
-//! just dev      # Postgres + headwaters on :8091 (in one shell)
-//! cargo run -p datafusion-open-lineage --example e2e_pipeline   # in another
-//! just ui-dev   # then open the UI and explore the graph
-//! ```
-//!
-//! Point it at a non-default service with `OPENLINEAGE_URL`
-//! (default `http://localhost:8091/api/v1/lineage`); set `OPENLINEAGE_API_KEY`
-//! to authenticate, or `OPENLINEAGE_URL=console` for a service-free dry run that
-//! logs events via `tracing`. Parquet is written under a temp dir, logged at
-//! startup.
-//!
-//! Re-running appends new runs to each stage's job history without duplicating
-//! datasets — handy for exercising the run-history views.
-//!
-//! ## How lineage is captured
-//!
-//! Each lineage-bearing query is an `INSERT INTO <out> SELECT … FROM <ins>`: the
-//! SELECT's scans of registered Parquet become input datasets (with schema +
-//! input statistics) and the insert target becomes the output dataset (with
-//! schema + column lineage). `INSERT INTO` is used rather than `CREATE TABLE AS
-//! SELECT` because DataFusion executes a CTAS write itself, so its target never
-//! reaches the instrumented planner and no output edge is captured; an insert of
-//! an existing table lowers to a `Dml` node the planner sees. The output is then
-//! persisted to Parquet (via an uninstrumented context, so the read emits
-//! nothing) for the next stage to pick up.
+//! This module is `#[path]`-included by the test and `mod`-included by the
+//! example; each consumer uses a different subset, so `dead_code` is allowed.
+#![allow(dead_code)]
 
 use std::path::Path;
 use std::sync::Arc;
@@ -56,11 +29,7 @@ use datafusion::sql::TableReference;
 use datafusion_open_lineage::config::OpenLineageConfig;
 use datafusion_open_lineage::context::{LineageContext, LineageContextProvider};
 use datafusion_open_lineage::facets::{BaseFacet, ParentJob, ParentRun, ParentRunFacet};
-use datafusion_open_lineage::transport::Transport;
-use datafusion_open_lineage::{
-    CloudClientTransport, ConsoleTransport, OpenLineageClient, instrument_session_state,
-};
-use url::Url;
+use datafusion_open_lineage::{OpenLineageClient, instrument_session_state};
 use uuid::Uuid;
 
 /// One whole pipeline run that the per-stage queries hang off of as children.
@@ -70,11 +39,15 @@ use uuid::Uuid;
 /// is what lets the UI present the stages as one correlated pipeline rather than
 /// a handful of disconnected jobs.
 #[derive(Debug, Clone)]
-struct Pipeline {
-    parent_run_id: Uuid,
-    parent_namespace: String,
-    parent_job: String,
-    producer: String,
+pub struct Pipeline {
+    /// The parent run id stamped onto every stage's `parent` run facet.
+    pub parent_run_id: Uuid,
+    /// The parent job's namespace (the orchestrator's namespace).
+    pub parent_namespace: String,
+    /// The parent job's name (the orchestrator's job).
+    pub parent_job: String,
+    /// The `producer` URI stamped on emitted events.
+    pub producer: String,
 }
 
 impl Pipeline {
@@ -125,12 +98,12 @@ impl LineageContextProvider for StageContext {
 /// stage that writes a dataset and the stage that reads it, or the graph
 /// wouldn't connect across layers — hence one shared value for every stage.
 /// Jobs, by contrast, are organized per-layer via the context's `job_namespace`.
-const DATASET_NAMESPACE: &str = "datafusion";
+pub const DATASET_NAMESPACE: &str = "datafusion";
 
 /// The data catalog every stage operates in. Datasets are named
 /// `{CATALOG}.{layer}.{table}` (e.g. `lake.bronze.raw_orders`) — a real
 /// three-part `catalog.schema.table` identity, not a flat name.
-const CATALOG: &str = "lake";
+pub const CATALOG: &str = "lake";
 
 /// The medallion layers, each a schema under [`CATALOG`].
 const LAYERS: [&str; 3] = ["bronze", "silver", "gold"];
@@ -178,70 +151,10 @@ fn stage_context(
     ctx
 }
 
-/// Build the emit transport from the environment. Defaults to the local
-/// unauthenticated service; `OPENLINEAGE_URL=console` swaps in a
-/// [`ConsoleTransport`] that logs each event as JSON via `tracing` — a
-/// service-free dry run for eyeballing the emitted events.
-fn transport_from_env() -> Arc<dyn Transport> {
-    let raw = std::env::var("OPENLINEAGE_URL")
-        .unwrap_or_else(|_| "http://localhost:8091/api/v1/lineage".to_string());
-    if raw.eq_ignore_ascii_case("console") {
-        eprintln!("→ transport: console (events logged, not sent)");
-        return Arc::new(ConsoleTransport);
-    }
-    let url = Url::parse(&raw).expect("OPENLINEAGE_URL must be a valid URL (or `console`)");
-    eprintln!("→ transport: POST {url}");
-    match std::env::var("OPENLINEAGE_API_KEY") {
-        Ok(token) if !token.is_empty() => Arc::new(CloudClientTransport::with_token(url, token)),
-        _ => Arc::new(CloudClientTransport::unauthenticated(url)),
-    }
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // So the `console` transport's `tracing` events are visible; defaults to
-    // showing them, overridable via `RUST_LOG`.
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "openlineage=info".into()),
-        )
-        .init();
-
-    let client = OpenLineageClient::new(transport_from_env());
-
-    // A scratch lake root for this run. Logged so you can inspect the Parquet.
-    let root = std::env::temp_dir().join("headwaters-e2e");
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root)?;
-    eprintln!("→ lake root: {}", root.display());
-
-    let pipeline = Pipeline {
-        parent_run_id: Uuid::now_v7(),
-        parent_namespace: "pipelines".to_string(),
-        parent_job: "retail_analytics".to_string(),
-        producer: OpenLineageConfig::default().producer,
-    };
-    eprintln!(
-        "→ pipeline run: {} ({}/{})",
-        pipeline.parent_run_id, pipeline.parent_namespace, pipeline.parent_job
-    );
-
-    seed_bronze(&client, &pipeline, &root).await?;
-    build_silver(&client, &pipeline, &root).await?;
-    build_gold(&client, &pipeline, &root).await?;
-
-    // Drain the queue before exit so nothing is lost. `shutdown` awaits the
-    // background drain task — no post-hoc sleep needed.
-    client.shutdown().await;
-    eprintln!("✓ done — explore the graph in the UI (job namespaces: bronze / silver / gold)");
-    Ok(())
-}
-
 /// The qualified `catalog.schema.table` identity of a table in a layer. This is
 /// exactly what becomes the OpenLineage dataset name, so writes and downstream
 /// reads must agree on it.
-fn qualified(layer: &str, table: &str) -> String {
+pub fn qualified(layer: &str, table: &str) -> String {
     format!("{CATALOG}.{layer}.{table}")
 }
 
@@ -343,6 +256,37 @@ async fn persist(
         .collect()
         .await?;
     Ok(())
+}
+
+/// Run the whole bronze → silver → gold journey against `client`, writing
+/// intermediate Parquet under `root`. Returns the [`Pipeline`] that every
+/// emitted run is correlated to (its `parent_run_id` is what the test asserts
+/// against).
+///
+/// Does **not** shut the client down — the caller owns that, after dropping any
+/// other client clones (see [`OpenLineageClient::shutdown`]). The per-stage
+/// instrumented contexts are local to [`run_transform`] and dropped on return,
+/// so by the time this returns no context holds a client clone.
+pub async fn run_pipeline(
+    client: &OpenLineageClient,
+    root: &Path,
+) -> Result<Pipeline, Box<dyn std::error::Error>> {
+    let pipeline = Pipeline {
+        parent_run_id: Uuid::now_v7(),
+        parent_namespace: "pipelines".to_string(),
+        parent_job: "retail_analytics".to_string(),
+        producer: OpenLineageConfig::default().producer,
+    };
+    eprintln!(
+        "→ pipeline run: {} ({}/{})",
+        pipeline.parent_run_id, pipeline.parent_namespace, pipeline.parent_job
+    );
+
+    seed_bronze(client, &pipeline, root).await?;
+    build_silver(client, &pipeline, root).await?;
+    build_gold(client, &pipeline, root).await?;
+
+    Ok(pipeline)
 }
 
 // ---------------------------------------------------------------------------
