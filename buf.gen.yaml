@@ -1,12 +1,13 @@
 # Rust proto codegen for the lineage event model + read DTOs + the read-API
 # ConnectRPC facade.
 #
-# Three passes:
+# Three passes, all writing into the `headwaters-proto` crate:
 # - buffa (remote, BSR): the `lineage.v1` and `headwaters.read.v1` message/view/
-#   enum types, committed under crates/headwaters/src/proto/.
+#   enum types, committed under crates/headwaters-proto/src/proto/.
 # - connect-rust (remote, BSR): the ConnectRPC service facade for the read
 #   API (`headwaters.read.v1.ReadService`) — service traits + routers that
-#   reference the buffa messages/views above via `buffa_module=crate::proto`.
+#   reference the buffa messages/views above via `buffa_module=crate::proto`
+#   (which resolves against `headwaters-proto`'s own `mod proto`).
 # - protoc-gen-buffa-packaging (local): stitches the per-service connect_gen
 #   `mod.rs` tree.
 #
@@ -17,7 +18,7 @@
 # surfaces, on one port.
 #
 # Regenerate with `just proto-gen`. Output is committed under
-# crates/headwaters/src/{proto,connect_gen}/ so CI runners without a
+# crates/headwaters-proto/src/{proto,connect_gen}/ so CI runners without a
 # proto-codegen step build straight from source. (`proto`/`connect_gen`, not
 # `gen`: `gen` is a reserved keyword in Rust 2024.)
 #
@@ -27,7 +28,7 @@
 version: v2
 plugins:
   - remote: buf.build/anthropics/buffa:v0.7.0
-    out: crates/headwaters/src/proto
+    out: crates/headwaters-proto/src/proto
     opt:
       - file_per_package=true
       - json=true
@@ -37,11 +38,11 @@ plugins:
   # BSR (no local install): the crates.io `protoc-gen-connect-rust` is a
   # placeholder with no binary, so the plugin is only consumable this way.
   - remote: buf.build/anthropics/connect-rust:v0.7.0
-    out: crates/headwaters/src/connect_gen
+    out: crates/headwaters-proto/src/connect_gen
     opt:
       - buffa_module=crate::proto
   - local: protoc-gen-buffa-packaging
-    out: crates/headwaters/src/connect_gen
+    out: crates/headwaters-proto/src/connect_gen
     strategy: all
     opt:
       - filter=services

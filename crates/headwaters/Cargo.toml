@@ -13,12 +13,14 @@ readme = "README.md"
 publish = false
 
 [dependencies]
-buffa = { version = "0.7", features = ["json"] }
-buffa-types = { version = "0.7", features = ["json"] }
-# ConnectRPC server runtime for the read-API facade (generated under
-# src/connect_gen/). The read REST server and the Connect surface serve the same
-# buffa messages on one port.
-connectrpc = { version = "0.7", features = ["server", "axum"] }
+# Generated proto types + the ConnectRPC facade (the `ReadService` server trait
+# this crate implements + mounts). `server` pulls the hyper/axum runtime.
+headwaters-proto = { workspace = true, features = ["server"] }
+buffa = { workspace = true, features = ["json"] }
+buffa-types = { workspace = true, features = ["json"] }
+# ConnectRPC server runtime: the read REST server and the Connect surface serve
+# the same buffa messages on one port.
+connectrpc = { workspace = true, features = ["server", "axum"] }
 sqlx = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }

@@ -212,21 +212,20 @@ coverage:
     cargo llvm-cov --no-report nextest --workspace --all-features
     cargo +nightly llvm-cov --no-report --doc --workspace --all-features
     cargo +nightly llvm-cov report --doctests --html \
-        --ignore-filename-regex 'headwaters/src/(proto/[^/]+\.v1\.rs|connect_gen/|main\.rs|projection/applier\.rs)'
+        --ignore-filename-regex 'headwaters-proto/src/(proto/[^/]+\.v1\.rs|connect_gen/)|headwaters/src/(main\.rs|projection/applier\.rs)'
 
 # open the HTML coverage report produced by `just coverage`
 coverage-open:
     open target/llvm-cov/html/index.html
 
-# regenerate headwaters's protobuf message types + the read-API ConnectRPC
-# facade from the lineage protos (events, facets, read DTOs, service defs). The
-# buffa plugin runs remotely on the BSR (no local install); the two connect
-# plugins are local binaries (`cargo install protoc-gen-connect-rust
-# protoc-gen-buffa-packaging`). The generated output is committed under
-# crates/headwaters/src/{proto,connect_gen}/.
+# regenerate the protobuf message types + the read-API ConnectRPC facade from
+# the lineage protos (events, facets, read DTOs, service defs). The buffa plugin
+# runs remotely on the BSR (no local install); the two connect plugins are local
+# binaries (`cargo install protoc-gen-connect-rust protoc-gen-buffa-packaging`).
+# The generated output is committed under crates/headwaters-proto/src/{proto,connect_gen}/.
 proto-gen:
     buf generate
-    cargo fmt -p headwaters
+    cargo fmt -p headwaters-proto
 
 # --- lineage UI (node/ monorepo: lineage-client + lineage-ui + scaffold app) ---
 

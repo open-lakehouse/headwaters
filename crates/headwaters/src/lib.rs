@@ -1,16 +1,18 @@
-// Generated protobuf message + view types (committed under src/proto/, produced
-// by `just proto-gen`). Re-exported flat so `crate::lineage::v1::…` paths work.
-mod proto;
-pub use proto::{headwaters, lineage};
+// Generated protobuf types + the ConnectRPC facade now live in the
+// `headwaters-proto` crate (so a publishable client can share the same codegen).
+// Re-export them under the paths the rest of this crate already uses:
+// `crate::{headwaters, lineage}` for the messages, `crate::proto` for the
+// `buffa_module=crate::proto`-style alias, and `crate::connect_gen` for the
+// `ReadService` server trait. Only the `server` feature of the facade is pulled
+// in here; the `lineage.v1` ingest facade is generated but not mounted (ingest
+// stays a hand-written OpenLineage REST surface — see `crate::http`).
+pub use headwaters_proto::{connect_gen, headwaters, lineage};
 
-// Generated ConnectRPC service facade for the read API (committed under
-// src/connect_gen/, produced by `just proto-gen`). References the buffa messages
-// + views in `crate::proto` via the `buffa_module=crate::proto` codegen opt. The
-// module carries its own `#![allow(...)]` lints. The `lineage.v1` ingest facade
-// is generated alongside but intentionally not mounted — ingest stays a
-// hand-written OpenLineage REST surface (see `crate::http`).
-#[path = "connect_gen/mod.rs"]
-mod connect_gen;
+/// Internal alias mirroring the pre-extraction `crate::proto` module path the
+/// read layer references (`crate::proto::headwaters::read::v1`).
+pub(crate) mod proto {
+    pub use headwaters_proto::headwaters;
+}
 
 pub mod config;
 pub mod http;
