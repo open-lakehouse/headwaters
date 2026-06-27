@@ -34,7 +34,7 @@ Build a **custom Envoy network (L4) filter in Rust using
    [`sqlparser`](https://crates.io/crates/sqlparser) crate (PostgreSQL dialect)
    to extract input/output tables and best-effort columns. Column lineage follows
    the ADR 0004 **degradation policy**: drop the `columnLineage` facet for the
-   whole statement on any ambiguity (`SELECT *`, unparseable input, unhandled
+   whole statement on any ambiguity (`SELECT *`, unparsable input, unhandled
    construct) rather than emit a guess.
 3. Builds OpenLineage `RunEvent`s (one run per statement, `run_id = UUID v7`,
    mirroring ADR 0001), naming Postgres datasets as namespace
@@ -95,7 +95,7 @@ so the filter sees plaintext. End-to-end-encrypted traffic past Envoy is opaque.
 - **TLS termination at Envoy becomes a hard deployment constraint**; e2e-encrypted
   traffic is uninstrumentable, identical to the stock filter's limitation.
 - **Correlation depends on client cooperation** (SQL comments); absent it, runs
-  are unparented nodes. This is the weakest link and is validated first.
+  are parentless nodes. This is the weakest link and is validated first.
 - **Wasm parsing cost at high QPS is unproven**; sampling, work caps, and the
   Phase-2 sidecar offload are the escape hatches.
 - The whole filter is Rust → Wasm: same language as the rest of the repo, no

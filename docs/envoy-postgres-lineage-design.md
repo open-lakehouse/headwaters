@@ -42,7 +42,7 @@ Headwaters (ingest → projection → read API → UI) with no backend changes.
 - **Instrumenting end-to-end-encrypted traffic.** The proxy must be able to see
   plaintext Postgres bytes (see *TLS / deployment*).
 - **Modifying or gating queries.** Lineage is observability, never admission
-  control — malformed or unparseable SQL is skipped, never failed.
+  control — malformed or unparsable SQL is skipped, never failed.
 
 ## Why the stock `postgres_proxy` filter is insufficient
 
@@ -161,7 +161,7 @@ constructors when the work is implemented.
 ~1–2s or at a size threshold) serialize a JSON array and `dispatch_http_call` to
 the `headwaters` cluster's `POST /api/v1/lineage/batch`. The batch endpoint
 already returns `202 Accepted` with per-event partial-success semantics, so a few
-unparseable events never sink a batch.
+unparsable events never sink a batch.
 
 ### Component 2 — a DataFusion-free event-types crate (recommended refactor)
 
