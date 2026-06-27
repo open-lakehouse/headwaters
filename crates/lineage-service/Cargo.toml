@@ -26,7 +26,8 @@ config = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
 axum = "0.7"
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+# `fs` provides ServeDir/ServeFile for serving the bundled SPA (see http.rs).
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 serde = { workspace = true }
 serde_json = "1"
 http-body = "1"

@@ -24,7 +24,25 @@ just ui-dev                  # Vite dev server on :3010, proxying ConnectRPC to 
 
 just ui-sb                   # Storybook (mocked, no backend)
 just ui-check                # tsc -b + biome (what CI gates on)
+
+# or serve the built UI + API from one origin, the way production does:
+DATABASE_URL=postgres://… just lineage-ui   # builds the app, stages it at ./web,
+                                            # runs lineage-service on :8091
 ```
+
+## Serving the bundled app from the service
+
+In dev the Vite server (`:3010`) hosts the app and proxies ConnectRPC to the
+service (`:8091`). In production the built app is served **by the service
+itself**, single-origin: `lineage-service` serves static assets from a `web/`
+directory next to it (`UI_DIR` in `crates/lineage-service/src/http.rs`) as a
+fallback under the API. The APIs keep their own path prefixes (`/api/v1/*` REST,
+`/headwaters.read.v1.ReadService/*` ConnectRPC), so they're never shadowed; any
+other path falls back to `index.html` for client-side routing, and if no bundle
+is present those paths just 404. Because the app's default transport already
+targets the current origin, no proxy is needed there — the Docker image
+(`Dockerfile`) builds the bundle and drops it in place automatically. Run it
+locally with `just lineage-ui`.
 
 ## How data flows
 

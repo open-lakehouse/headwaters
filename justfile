@@ -206,3 +206,17 @@ ui-sb:
 # typecheck + lint the whole node workspace (what CI gates on)
 ui-check:
     cd node && npm run typecheck && npm run lint:ci
+
+# build the SPA into static assets (node/app/dist).
+ui-build:
+    cd node && npm run build --workspace @headwaters/lineage-app
+
+# run the lineage-service serving the bundled SPA on its own port (single
+# origin: API + UI), the way the Docker image does. Builds the UI, stages it at
+# ./web (where the service looks — see UI_DIR in src/http.rs), then runs. Like
+# `just lineage`, needs a DSN (DATABASE_URL or config).
+# Open http://localhost:{{ LINEAGE_PORT }}.
+lineage-ui *args: ui-build
+    rm -rf web && cp -r node/app/dist web
+    RUST_LOG="${RUST_LOG:-lineage_service=debug}" \
+    cargo run -p lineage-service -- {{ args }}
