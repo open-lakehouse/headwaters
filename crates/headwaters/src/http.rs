@@ -49,9 +49,9 @@ const CONNECT_PREFIX: &str = "/headwaters.read.v1.ReadService";
 /// served by the Vite dev server instead — these paths simply 404.
 const UI_DIR: &str = "web";
 
-/// Build the service router: `/health`, the OpenLineage ingest endpoints, the
-/// Marquez-compatible read API under `/api/v1`, and the ConnectRPC read service
-/// under [`CONNECT_PREFIX`].
+/// Build the service router: `/health`, `/version`, the OpenLineage ingest
+/// endpoints, the Marquez-compatible read API under `/api/v1`, and the
+/// ConnectRPC read service under [`CONNECT_PREFIX`].
 ///
 /// Anything not matched by an API route falls back to the bundled single-page
 /// app in [`UI_DIR`]: real files come off disk, and any other path (deep links
@@ -81,6 +81,10 @@ fn router_in(state: AppState, ui_dir: impl AsRef<std::path::Path>) -> Router {
 
     let ingest_routes = Router::new()
         .route("/health", get(|| async { "OK" }))
+        // The crate version, which release-plz bumps and which the Docker image
+        // is tagged with — so this is the single way to confirm, against a
+        // running service, exactly which release (binary + bundled UI) is live.
+        .route("/version", get(version))
         .route("/api/v1/lineage", post(ingest_event))
         .route("/api/v1/lineage/batch", post(ingest_batch))
         .with_state(state);
@@ -106,6 +110,20 @@ fn router_in(state: AppState, ui_dir: impl AsRef<std::path::Path>) -> Router {
         // verbosity is controlled by the `RUST_LOG`/`tower_http` env filter.
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
+}
+
+#[derive(Serialize)]
+struct VersionBody {
+    version: &'static str,
+}
+
+/// `GET /version` — the running `headwaters` crate version, as
+/// `{"version": "x.y.z"}`. release-plz bumps this version and tags the Docker
+/// image with it, so a deployed instance reports exactly the release it is.
+async fn version() -> Json<VersionBody> {
+    Json(VersionBody {
+        version: env!("CARGO_PKG_VERSION"),
+    })
 }
 
 #[derive(Serialize)]
@@ -270,6 +288,21 @@ mod serve_ui_tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(body_string(resp).await, "OK");
+    }
+
+    #[tokio::test]
+    async fn version_reports_the_crate_version() {
+        let dir = write_bundle();
+        let app = router_in(test_state(), dir.path());
+        let resp = app
+            .oneshot(Request::get("/version").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            body_string(resp).await,
+            format!(r#"{{"version":"{}"}}"#, env!("CARGO_PKG_VERSION"))
+        );
     }
 
     #[tokio::test]
