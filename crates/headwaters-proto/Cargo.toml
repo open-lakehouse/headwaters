@@ -16,10 +16,15 @@ categories = ["database", "api-bindings"]
 buffa = { workspace = true, features = ["json"] }
 buffa-types = { workspace = true, features = ["json"] }
 connectrpc = { workspace = true }
-# Referenced directly by the generated message + connect code.
+# Referenced by the generated message + connect code via fully-qualified paths
+# (`::bytes::Bytes`, `::http_body::Body`) with no `use` statement, so
+# cargo-machete can't see the usage — both are genuinely required to compile.
 bytes = "1"
 http-body = "1"
 serde = { workspace = true }
+
+[package.metadata.cargo-machete]
+ignored = ["bytes", "http-body"]
 
 [features]
 default = []

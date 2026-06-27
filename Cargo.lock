@@ -2478,7 +2478,6 @@ dependencies = [
  "connectrpc",
  "headwaters-client",
  "headwaters-proto",
- "http-body",
  "http-body-util",
  "reqwest 0.12.28",
  "serde",
