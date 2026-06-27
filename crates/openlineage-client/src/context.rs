@@ -75,3 +75,81 @@ fn parent_from_env(config: &OpenLineageConfig) -> Option<ParentRunFacet> {
         root: None,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PARENT_VARS: [&str; 4] = [
+        "OPENLINEAGE_PARENT_ID",
+        "OPENLINEAGE_PARENT_JOB_NAMESPACE",
+        "OPENLINEAGE_PARENT_JOB_NAME",
+        "OPENLINEAGE_PARENT_RUN_ID",
+    ];
+
+    fn clear_parent_vars() {
+        for v in PARENT_VARS {
+            unsafe { std::env::remove_var(v) };
+        }
+    }
+
+    // Process env is global, so the parent-from-env cases run in one serialized
+    // test rather than racing as separate `#[test]`s. Each step clears the vars
+    // first, then sets only what it exercises.
+    #[test]
+    fn parent_from_env_covers_all_forms() {
+        let config = OpenLineageConfig::default();
+
+        // No vars set → no parent facet.
+        clear_parent_vars();
+        assert!(parent_from_env(&config).is_none(), "unset env yields None");
+
+        // Slash form `{namespace}/{name}/{runId}`.
+        clear_parent_vars();
+        unsafe { std::env::set_var("OPENLINEAGE_PARENT_ID", "airflow/dag.task/run-7") };
+        let p = parent_from_env(&config).expect("slash form parses");
+        assert_eq!(p.job.namespace, "airflow");
+        assert_eq!(p.job.name, "dag.task");
+        assert_eq!(p.run.run_id, "run-7");
+
+        // Malformed slash form (too few segments) → None.
+        clear_parent_vars();
+        unsafe { std::env::set_var("OPENLINEAGE_PARENT_ID", "only-one-part") };
+        assert!(
+            parent_from_env(&config).is_none(),
+            "a non-triple PARENT_ID is rejected"
+        );
+
+        // Discrete fallback variables.
+        clear_parent_vars();
+        unsafe {
+            std::env::set_var("OPENLINEAGE_PARENT_JOB_NAMESPACE", "dagster");
+            std::env::set_var("OPENLINEAGE_PARENT_JOB_NAME", "asset.build");
+            std::env::set_var("OPENLINEAGE_PARENT_RUN_ID", "run-9");
+        }
+        let p = parent_from_env(&config).expect("discrete vars parse");
+        assert_eq!(p.job.namespace, "dagster");
+        assert_eq!(p.job.name, "asset.build");
+        assert_eq!(p.run.run_id, "run-9");
+
+        // A partial discrete set (missing run id) → None.
+        clear_parent_vars();
+        unsafe {
+            std::env::set_var("OPENLINEAGE_PARENT_JOB_NAMESPACE", "dagster");
+            std::env::set_var("OPENLINEAGE_PARENT_JOB_NAME", "asset.build");
+        }
+        assert!(
+            parent_from_env(&config).is_none(),
+            "missing run id falls through to None"
+        );
+
+        // from_env wires parent_run through and leaves the rest defaulted.
+        clear_parent_vars();
+        unsafe { std::env::set_var("OPENLINEAGE_PARENT_ID", "ns/job/run") };
+        let ctx = LineageContext::from_env(&config);
+        assert!(ctx.parent_run.is_some());
+        assert!(ctx.run_id.is_none() && ctx.sql.is_none());
+
+        clear_parent_vars();
+    }
+}

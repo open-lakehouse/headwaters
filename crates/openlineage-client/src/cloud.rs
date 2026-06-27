@@ -138,4 +138,50 @@ mod tests {
         let batch = default_batch_endpoint(&endpoint);
         assert_eq!(batch.as_str(), "http://localhost:8091/api/v1/lineage/batch");
     }
+
+    fn endpoint() -> Url {
+        Url::parse("http://localhost:8091/api/v1/lineage").unwrap()
+    }
+
+    #[test]
+    fn new_defaults_batch_endpoint_and_timeout() {
+        let t = CloudClientTransport::unauthenticated(endpoint());
+        assert_eq!(t.endpoint.as_str(), "http://localhost:8091/api/v1/lineage");
+        assert_eq!(
+            t.batch_endpoint.as_str(),
+            "http://localhost:8091/api/v1/lineage/batch",
+            "batch endpoint defaults to endpoint + /batch"
+        );
+        assert_eq!(t.timeout, DEFAULT_REQUEST_TIMEOUT);
+    }
+
+    #[test]
+    fn with_token_carries_the_same_endpoint_defaults() {
+        let t = CloudClientTransport::with_token(endpoint(), "secret");
+        assert_eq!(
+            t.batch_endpoint.as_str(),
+            "http://localhost:8091/api/v1/lineage/batch"
+        );
+        assert_eq!(t.timeout, DEFAULT_REQUEST_TIMEOUT);
+    }
+
+    #[test]
+    fn with_timeout_and_with_batch_endpoint_override_defaults() {
+        let custom_batch = Url::parse("http://localhost:8091/bulk").unwrap();
+        let t = CloudClientTransport::unauthenticated(endpoint())
+            .with_timeout(Duration::from_secs(5))
+            .with_batch_endpoint(custom_batch.clone());
+        assert_eq!(t.timeout, Duration::from_secs(5));
+        assert_eq!(t.batch_endpoint, custom_batch);
+        // The single-event endpoint is untouched by the batch override.
+        assert_eq!(t.endpoint, endpoint());
+    }
+
+    #[tokio::test]
+    async fn emit_batch_of_nothing_is_a_no_op() {
+        // The empty slice must short-circuit to Ok without touching the network —
+        // so this passes even though the endpoint isn't listening.
+        let t = CloudClientTransport::unauthenticated(endpoint());
+        assert!(t.emit_batch(&[]).await.is_ok());
+    }
 }

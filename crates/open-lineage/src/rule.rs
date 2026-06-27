@@ -281,3 +281,88 @@ impl QueryPlanner for OpenLineageQueryPlanner {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::hash_map::DefaultHasher;
+
+    use datafusion::logical_expr::LogicalPlanBuilder;
+
+    use super::*;
+    use crate::QueryLineage;
+    use crate::context::LineageContext;
+    use crate::transport::NoopTransport;
+
+    // `name`/`inputs`/`schema`/`expressions`/`with_exprs_and_inputs` exist on both
+    // `UserDefinedLogicalNodeCore` and the object-safe `UserDefinedLogicalNode`
+    // (blanket impl), so calls go through this alias to disambiguate.
+    use datafusion::logical_expr::UserDefinedLogicalNodeCore as NodeCore;
+
+    /// A `LineageMarker` over a trivial empty-relation plan, tagged with `run_id`.
+    /// The marker fields are private, so these tests live inline.
+    fn marker(run_id: Uuid) -> LineageMarker {
+        let input = LogicalPlanBuilder::empty(false).build().unwrap();
+        let config = OpenLineageConfig::default();
+        let complete = complete_event(
+            run_id,
+            &QueryLineage::default(),
+            &LineageContext::default(),
+            &config,
+        );
+        LineageMarker {
+            input,
+            complete,
+            client: OpenLineageClient::new(Arc::new(NoopTransport)),
+            producer: config.producer,
+        }
+    }
+
+    fn hash_of(m: &LineageMarker) -> u64 {
+        let mut h = DefaultHasher::new();
+        m.hash(&mut h);
+        h.finish()
+    }
+
+    // `OpenLineageClient::new` spawns a background drain, so these need a runtime.
+    #[tokio::test]
+    async fn node_core_is_schema_transparent_and_expr_free() {
+        let m = marker(Uuid::now_v7());
+        assert_eq!(NodeCore::name(&m), "LineageMarker");
+        assert_eq!(NodeCore::inputs(&m).len(), 1);
+        // Schema-transparent: it reports its single input's schema verbatim.
+        assert_eq!(NodeCore::schema(&m), NodeCore::inputs(&m)[0].schema());
+        assert!(NodeCore::expressions(&m).is_empty());
+        assert!(NodeCore::check_invariants(&m, InvariantLevel::Always).is_ok());
+        assert_eq!(format!("{m:?}"), "LineageMarker { .. }");
+    }
+
+    #[tokio::test]
+    async fn with_exprs_and_inputs_rebuilds_preserving_payload() {
+        let run_id = Uuid::now_v7();
+        let m = marker(run_id);
+        let new_input = LogicalPlanBuilder::empty(true).build().unwrap();
+        let rebuilt = NodeCore::with_exprs_and_inputs(&m, vec![], vec![new_input.clone()]).unwrap();
+        // The wrapped input swaps; the run-id payload is carried through.
+        assert_eq!(NodeCore::inputs(&rebuilt)[0], &new_input);
+        assert_eq!(rebuilt.complete.run.run_id, run_id);
+    }
+
+    #[tokio::test]
+    async fn identity_keys_on_run_id_and_input() {
+        let run_id = Uuid::now_v7();
+        // Same run id + same (empty) plan → equal, same hash, equal ordering.
+        let a = marker(run_id);
+        let b = marker(run_id);
+        assert_eq!(a, b);
+        assert_eq!(hash_of(&a), hash_of(&b));
+        assert_eq!(a.partial_cmp(&b), Some(Ordering::Equal));
+
+        // Different run id → not equal, ordering follows the run id.
+        let c = marker(Uuid::now_v7());
+        assert_ne!(a, c);
+        assert_eq!(
+            a.partial_cmp(&c),
+            a.complete.run.run_id.partial_cmp(&c.complete.run.run_id)
+        );
+    }
+}
