@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "duckdb>=1.4,<1.6",  # duck_lineage targets DuckDB 1.4.x
+# ]
+# ///
 """Live DuckDB → headwaters lineage journey, via the published duck_lineage extension.
 
 This is the DuckDB sibling of the in-crate DataFusion demo

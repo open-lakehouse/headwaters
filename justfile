@@ -61,12 +61,13 @@ demo:
     cargo run -p datafusion-open-lineage --example e2e_pipeline
 
 # run the black-box DuckDB lineage journey against a running headwaters: installs
-# the published duck_lineage community extension into DuckDB (via a throwaway venv
-# under examples/journeys/duckdb/.venv), runs the same bronze→silver→gold pipeline
-# through it, then asserts headwaters reconstructed the graph via the read API.
-# Validates the live wire path for an external engine we don't control (unlike the
-# in-process `demo`). Start the server first (`just dev`); then `just ui-dev` to see
-# the `duckdb` graph next to the DataFusion `datafusion` one. Needs python3.
+# the published duck_lineage community extension into DuckDB, runs the same
+# bronze→silver→gold pipeline through it, then asserts headwaters reconstructed the
+# graph via the read API. Validates the live wire path for an external engine we
+# don't control (unlike the in-process `demo`). Start the server first (`just dev`);
+# then `just ui-dev` to see the `duckdb` graph next to the DataFusion `datafusion`
+# one. Run via `uv` — deps are declared inline in each script (PEP 723), so no venv
+# to manage. Needs `uv` (https://docs.astral.sh/uv/).
 duck-journey:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -75,10 +76,8 @@ duck-journey:
         echo "error: no headwaters on :{{ HEADWATERS_PORT }} — start it with \`just dev\`" >&2
         exit 1
     fi
-    python3 -m venv .venv
-    ./.venv/bin/pip install -q -r requirements.txt
-    ./.venv/bin/python journey.py
-    ./.venv/bin/python assert_lineage.py
+    uv run journey.py
+    uv run assert_lineage.py
 
 # --- local dev Postgres (Docker) ---
 

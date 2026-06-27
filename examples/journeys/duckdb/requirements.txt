@@ -1,4 +1,0 @@
-# DuckDB lineage journey dependencies.
-# duck_lineage targets DuckDB 1.4.x; pin a compatible client.
-duckdb>=1.4,<1.6
-requests>=2.31

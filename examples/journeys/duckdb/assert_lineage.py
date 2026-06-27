@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#     "requests>=2.31",
+# ]
+# ///
 """Assert headwaters reconstructed the DuckDB journey's lineage.
 
 Reads headwaters' Marquez-compatible REST API and checks the bronze → silver →

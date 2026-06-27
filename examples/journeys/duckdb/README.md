@@ -26,8 +26,12 @@ endpoint. It is intentionally *not* part of Rust coverage.
 
 ```sh
 just dev            # headwaters + Postgres on :8091 (in one shell)
-just duck-journey   # create a venv, install deps, run journey.py then assert_lineage.py
+just duck-journey   # uv run journey.py, then uv run assert_lineage.py
 ```
+
+Each script declares its dependencies inline (PEP 723), so `uv run` resolves them
+into an ephemeral environment — no venv to manage. Requires
+[`uv`](https://docs.astral.sh/uv/). To run a script directly: `uv run journey.py`.
 
 Then explore the graph alongside the DataFusion one:
 
