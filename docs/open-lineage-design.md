@@ -1,14 +1,14 @@
 # OpenLineage on DataFusion — technical design
 
 > A concise record of the design decisions and patterns behind the
-> `datafusion-open-lineage` crate. Source material for a blog post on how we
+> `datafusion-openlineage` crate. Source material for a blog post on how we
 > extend DataFusion to build a full-featured, governed object-store query
 > service.
 
 > **Scope.** This design was written for a host Flight SQL query service
 > (`hydrofoil`) that embeds the integration; that service is an upstream
 > open-lakehouse component and is **not** part of this repo. Headwaters ships the
-> reusable pieces: the `datafusion-open-lineage` crate (this document) and the
+> reusable pieces: the `datafusion-openlineage` crate (this document) and the
 > standalone `headwaters`. Where the text refers to `hydrofoil` or
 > `crates/hydrofoil/...`, read it as "the embedding host service" — the design
 > holds for any `SessionContext` the crate is instrumented into.

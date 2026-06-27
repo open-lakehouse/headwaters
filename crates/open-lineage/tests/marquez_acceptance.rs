@@ -14,7 +14,7 @@
 //! Run it explicitly, with Docker available:
 //!
 //! ```text
-//! cargo test -p datafusion-open-lineage --features marquez-it -- --ignored
+//! cargo test -p datafusion-openlineage --features marquez-it -- --ignored
 //! ```
 #![cfg(feature = "marquez-it")]
 
@@ -23,10 +23,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use datafusion::prelude::SessionContext;
-use datafusion_open_lineage::config::OpenLineageConfig;
-use datafusion_open_lineage::event::{RunEvent, RunEventType};
-use datafusion_open_lineage::transport::{Transport, TransportError};
-use datafusion_open_lineage::{
+use datafusion_openlineage::config::OpenLineageConfig;
+use datafusion_openlineage::event::{RunEvent, RunEventType};
+use datafusion_openlineage::transport::{Transport, TransportError};
+use datafusion_openlineage::{
     CloudClientTransport, OpenLineageClient, instrument_session_state_simple,
 };
 use serde_json::Value;

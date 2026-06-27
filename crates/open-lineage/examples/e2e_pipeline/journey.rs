@@ -26,11 +26,11 @@ use datafusion::execution::SessionStateBuilder;
 use datafusion::execution::context::SessionState;
 use datafusion::prelude::{ParquetReadOptions, SessionContext};
 use datafusion::sql::TableReference;
-use datafusion_open_lineage::DataFusionConfig;
-use datafusion_open_lineage::config::OpenLineageConfig;
-use datafusion_open_lineage::context::{LineageContext, LineageContextProvider};
-use datafusion_open_lineage::facets::{BaseFacet, ParentJob, ParentRun, ParentRunFacet};
-use datafusion_open_lineage::{OpenLineageClient, instrument_session_state};
+use datafusion_openlineage::DataFusionConfig;
+use datafusion_openlineage::config::OpenLineageConfig;
+use datafusion_openlineage::context::{LineageContext, LineageContextProvider};
+use datafusion_openlineage::facets::{BaseFacet, ParentJob, ParentRun, ParentRunFacet};
+use datafusion_openlineage::{OpenLineageClient, instrument_session_state};
 use uuid::Uuid;
 
 /// One whole pipeline run that the per-stage queries hang off of as children.

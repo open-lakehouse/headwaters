@@ -27,7 +27,7 @@ pub struct OpenLineageConfig {
 }
 
 /// Default `producer` URI for this crate. Engine integrations override it with a
-/// producer that names the engine (e.g. `datafusion-open-lineage`).
+/// producer that names the engine (e.g. `datafusion-openlineage`).
 pub const DEFAULT_PRODUCER: &str =
     "https://github.com/open-lakehouse/headwaters/openlineage-client";
 
@@ -45,7 +45,7 @@ impl OpenLineageConfig {
     /// to [`DEFAULT_NAMESPACE`]) and `OPENLINEAGE_TIMEOUT_MS` for the request
     /// timeout (falling back to [`DEFAULT_REQUEST_TIMEOUT`]); the producer/adapter
     /// identity is fixed for this crate and the engine identity is left empty (an
-    /// engine integration such as `datafusion-open-lineage` stamps it). This is
+    /// engine integration such as `datafusion-openlineage` stamps it). This is
     /// the documented entry point for env-driven configuration — pair it with
     /// [`OpenLineageClient::from_env`](crate::OpenLineageClient::from_env), which
     /// reads `OPENLINEAGE_URL` / `OPENLINEAGE_ENDPOINT` / `OPENLINEAGE_API_KEY`
@@ -88,7 +88,7 @@ impl OpenLineageConfig {
     ///
     /// The engine identity (`engine_name` / `engine_version`) is left empty here —
     /// this crate is engine-agnostic. An engine integration fills it in (see e.g.
-    /// `datafusion_open_lineage::OpenLineageConfig::for_datafusion`).
+    /// `datafusion_openlineage::OpenLineageConfig::for_datafusion`).
     fn fixed() -> Self {
         Self {
             producer: DEFAULT_PRODUCER.to_string(),

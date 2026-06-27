@@ -22,7 +22,7 @@
 //!
 //! ```sh
 //! just dev      # Postgres + headwaters on :8091 (in one shell)
-//! cargo run -p datafusion-open-lineage --example e2e_pipeline   # in another
+//! cargo run -p datafusion-openlineage --example e2e_pipeline   # in another
 //! just ui-dev   # then open the UI and explore the graph
 //! ```
 //!
@@ -49,7 +49,7 @@
 
 use std::sync::Arc;
 
-use datafusion_open_lineage::{CloudClientTransport, ConsoleTransport, OpenLineageClient};
+use datafusion_openlineage::{CloudClientTransport, ConsoleTransport, OpenLineageClient};
 use url::Url;
 
 mod journey;

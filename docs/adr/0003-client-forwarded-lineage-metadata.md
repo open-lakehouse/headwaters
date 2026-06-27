@@ -57,7 +57,7 @@ custom run facet:
   request — the facet marks known provenance, not noise.
 - **Transport**: facets flow through the existing `LineageContext`
   `job_facets`/`run_facets` extras maps (serde-flattened into the event), so
-  the `datafusion-open-lineage` builder needed no changes; the typed facet
+  the `datafusion-openlineage` builder needed no changes; the typed facet
   structs (`DocumentationJobFacet`, `OwnershipJobFacet`, `TagsJobFacet`) live
   in `crates/open-lineage/src/facets.rs` for spec-correct shapes.
 - **Read side**: the Marquez-compatible API surfaces `description` and `tags`

@@ -7,9 +7,9 @@
 //! suite. Its value over the unit tests in `lineage.rs` / `column_lineage.rs`
 //! (which call `extract` / `start_event` directly and never execute a plan) is
 //! that it exercises the *runtime* path end-to-end: the
-//! [`OpenLineageQueryPlanner`](datafusion_open_lineage::OpenLineageQueryPlanner)
+//! [`OpenLineageQueryPlanner`](datafusion_openlineage::OpenLineageQueryPlanner)
 //! START emission, the
-//! [`OpenLineageExec`](datafusion_open_lineage::OpenLineageExec) terminal node's
+//! [`OpenLineageExec`](datafusion_openlineage::OpenLineageExec) terminal node's
 //! COMPLETE emission with runtime statistics, and the async
 //! [`OpenLineageClient`] drain. Assertions are on the *set* of captured events,
 //! never on arrival order.
@@ -24,8 +24,8 @@ mod journey;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use datafusion_open_lineage::event::{RunEvent, RunEventType};
-use datafusion_open_lineage::transport::{Transport, TransportError};
+use datafusion_openlineage::event::{RunEvent, RunEventType};
+use datafusion_openlineage::transport::{Transport, TransportError};
 use serde_json::Value;
 
 /// A network-free [`Transport`] that records every emitted event for the test
@@ -93,7 +93,7 @@ fn output_names(events: &[Value]) -> Vec<String> {
 async fn e2e_pipeline_emits_full_lineage() {
     let transport = RecordingTransport::default();
     let seen = transport.seen.clone();
-    let client = datafusion_open_lineage::OpenLineageClient::new(Arc::new(transport));
+    let client = datafusion_openlineage::OpenLineageClient::new(Arc::new(transport));
 
     // A unique per-process lake root so a concurrent `just demo` or a second
     // test run can't clobber it (the demo uses a fixed `headwaters-e2e` dir).

@@ -32,7 +32,7 @@ read API for visualization, inspired by [Marquez](https://marquezproject.ai).
 
 | Crate | Package | What it does |
 |---|---|---|
-| [`crates/open-lineage`](crates/open-lineage) | `datafusion-open-lineage` | OpenLineage integration for DataFusion sessions — emits run events (START/COMPLETE/FAIL) with input/output datasets and column-level lineage, extracted at planning time. |
+| [`crates/open-lineage`](crates/open-lineage) | `datafusion-openlineage` | OpenLineage integration for DataFusion sessions — emits run events (START/COMPLETE/FAIL) with input/output datasets and column-level lineage, extracted at planning time. |
 | [`crates/headwaters`](crates/headwaters) | `headwaters` | An HTTP service that ingests OpenLineage events into an append-only Postgres event log, projects them asynchronously into normalized read tables, and serves a read API for visualization (inspired by [Marquez](https://marquezproject.ai)). |
 
 ## Build & test

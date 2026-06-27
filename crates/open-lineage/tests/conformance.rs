@@ -16,10 +16,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use async_trait::async_trait;
 use datafusion::prelude::SessionContext;
-use datafusion_open_lineage::config::OpenLineageConfig;
-use datafusion_open_lineage::event::RunEvent;
-use datafusion_open_lineage::transport::{Transport, TransportError};
-use datafusion_open_lineage::{
+use datafusion_openlineage::config::OpenLineageConfig;
+use datafusion_openlineage::event::RunEvent;
+use datafusion_openlineage::transport::{Transport, TransportError};
+use datafusion_openlineage::{
     DataFusionConfig, OpenLineageClient, instrument_session_state_simple,
 };
 use jsonschema::{Registry, Resource, Validator};

@@ -51,6 +51,6 @@ drift.
 ## Refreshing
 
 Re-run the download against a newer tag, then re-run `cargo test -p
-datafusion-open-lineage --test conformance`. If a new validation failure appears,
+datafusion-openlineage --test conformance`. If a new validation failure appears,
 the crate's emitted shape has diverged from the spec — fix the emitter, don't relax
 the test.

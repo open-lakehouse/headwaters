@@ -2,7 +2,7 @@
 
 > Status: **Accepted** (2026-06). The OpenLineage emission model, the `Transport`
 > seam, and the non-blocking `OpenLineageClient` live in `crates/openlineage-client`
-> (no engine dependency). `datafusion-open-lineage` depends on it, re-exports its
+> (no engine dependency). `datafusion-openlineage` depends on it, re-exports its
 > surface, and adds the DataFusion glue. Builds on the planner design in ADR
 > [0005](0005-openlineage-planner-vs-rule.md).
 
@@ -10,9 +10,9 @@
 
 The OpenLineage **emission** side — the `RunEvent`/facet model, the pluggable
 `Transport` sink, and the non-blocking client that drains events on a background
-task — originally lived entirely inside `datafusion-open-lineage`. Anything that
+task — originally lived entirely inside `datafusion-openlineage`. Anything that
 wanted to emit OpenLineage events (a future Kafka transport, a non-DataFusion Rust
-emitter) would have had to depend on `datafusion-open-lineage`, dragging in the
+emitter) would have had to depend on `datafusion-openlineage`, dragging in the
 whole DataFusion dependency tree just to reach `RunEvent` and `Transport`.
 
 We also wanted the emission seam to stay genuinely unopinionated about *how* events
@@ -29,8 +29,8 @@ Extract one engine-agnostic crate, **`openlineage-client`**, owning the event mo
 (`event`, `facets`, `naming`), the `Transport` trait + built-in transports
 (`Noop`, `Console`, and the `http`-gated `CloudClientTransport`), the
 `OpenLineageClient` queue/drain machinery, `OpenLineageConfig`, and the
-`LineageContext` data + its env conventions. `datafusion-open-lineage` depends on
-it, re-exports its surface (so flat `datafusion_open_lineage::{RunEvent, …}` paths
+`LineageContext` data + its env conventions. `datafusion-openlineage` depends on
+it, re-exports its surface (so flat `datafusion_openlineage::{RunEvent, …}` paths
 keep working), and keeps only the DataFusion-specific glue: the query/extension
 planner, the exec node, lineage extraction, and the `LineageContextProvider` trait
 (whose method takes a `SessionState`).

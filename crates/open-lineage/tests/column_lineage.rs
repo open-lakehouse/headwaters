@@ -6,10 +6,10 @@
 //! same-name clobbering, facet on the wrong dataset side).
 
 use datafusion::prelude::SessionContext;
-use datafusion_open_lineage::builder::start_event;
-use datafusion_open_lineage::config::OpenLineageConfig;
-use datafusion_open_lineage::context::LineageContext;
-use datafusion_open_lineage::extract::extract;
+use datafusion_openlineage::builder::start_event;
+use datafusion_openlineage::config::OpenLineageConfig;
+use datafusion_openlineage::context::LineageContext;
+use datafusion_openlineage::extract::extract;
 use serde_json::Value;
 use uuid::Uuid;
 

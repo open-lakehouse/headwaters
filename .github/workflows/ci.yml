@@ -418,7 +418,7 @@ jobs:
       # ubuntu-latest ships a working Docker daemon; testcontainers finds it at
       # the default socket. The test pulls marquezproject/marquez + postgres.
       - name: Marquez acceptance test
-        run: cargo test -p datafusion-open-lineage --features marquez-it --test marquez_acceptance -- --ignored --nocapture
+        run: cargo test -p datafusion-openlineage --features marquez-it --test marquez_acceptance -- --ignored --nocapture
 
   # Single roll-up status. Because `test`/`coverage` are conditionally skipped on
   # docs-only PRs, the individual checks aren't a stable name to require in branch

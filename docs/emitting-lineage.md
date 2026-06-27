@@ -5,12 +5,12 @@ path that matches what you have:
 
 | You have… | Use | Crate |
 | --- | --- | --- |
-| An Apache DataFusion `SessionState` | [`OpenLineage::builder()`](#datafusion) | `datafusion-open-lineage` |
+| An Apache DataFusion `SessionState` | [`OpenLineage::builder()`](#datafusion) | `datafusion-openlineage` |
 | Events from somewhere else, or a custom delivery target | [a `Transport`](#custom) | `openlineage-client` |
 | A running ingest service to receive events | the service itself | `headwaters` |
 
 The emission side (the event model, the `Transport` seam, the non-blocking client)
-lives in the engine-agnostic **`openlineage-client`** crate. **`datafusion-open-lineage`**
+lives in the engine-agnostic **`openlineage-client`** crate. **`datafusion-openlineage`**
 adds the DataFusion glue and re-exports that surface. The **`headwaters`** service is
 the receiving end — it ingests events over HTTP and is not a dependency of either
 emit crate (there is no OpenLineage spec for the read side, so it stays in the
@@ -25,7 +25,7 @@ session in one call:
 ```rust,no_run
 use datafusion::execution::SessionStateBuilder;
 use datafusion::prelude::SessionContext;
-use datafusion_open_lineage::OpenLineage;
+use datafusion_openlineage::OpenLineage;
 
 # async fn run() -> Result<(), Box<dyn std::error::Error>> {
 let state = SessionStateBuilder::new_with_default_features().build();
@@ -55,7 +55,7 @@ SQL text), provide a `LineageContextProvider`:
 ```rust,no_run
 # use std::sync::Arc;
 # use datafusion::execution::context::SessionState;
-# use datafusion_open_lineage::{OpenLineage, LineageContextProvider};
+# use datafusion_openlineage::{OpenLineage, LineageContextProvider};
 # fn run(state: SessionState, provider: Arc<dyn LineageContextProvider>) -> SessionState {
 OpenLineage::builder().context(provider).from_env().unwrap().instrument(state)
 # }
@@ -75,7 +75,7 @@ just ui-dev   # open the UI and explore the graph
 ```
 
 Or a service-free dry run that logs each event as JSON:
-`OPENLINEAGE_URL=console cargo run -p datafusion-open-lineage --example e2e_pipeline`.
+`OPENLINEAGE_URL=console cargo run -p datafusion-openlineage --example e2e_pipeline`.
 
 <a name="custom"></a>
 ## Writing your own transport
@@ -123,7 +123,7 @@ client.shutdown().await;     // drain queued events + flush before exit
 ```rust,no_run
 # use std::sync::Arc;
 # use datafusion::execution::context::SessionState;
-# use datafusion_open_lineage::{OpenLineage, Transport};
+# use datafusion_openlineage::{OpenLineage, Transport};
 # fn instrument(state: SessionState, transport: Arc<dyn Transport>) -> SessionState {
 OpenLineage::builder().transport(transport).instrument(state)
 # }
