@@ -21,6 +21,10 @@ inser = "inser"
 # "criticals" — used as a noun ("first the criticals") in the service review docs.
 criticals = "criticals"
 
+# "ALS" — gRPC Access Log Service (Envoy), not a typo of "ALSO". Used in the
+# envoy-postgres-lineage proxy-wasm design docs.
+als = "als"
+
 # Hyphenated "mis-" prefix ("mis-creating", "mis-route"): the prefix is tokenized
 # on its own and flagged as a misspelling of miss/mist.
 mis = "mis"
