@@ -5,13 +5,13 @@ use anyhow::Context;
 use sqlx::postgres::PgPoolOptions;
 use tracing_subscriber::EnvFilter;
 
-use lineage_service::config::{Config, WriterConfig};
-use lineage_service::http::{self, AppState};
-use lineage_service::projection::Projector;
-use lineage_service::read::LineageStore;
-use lineage_service::writer::buffered::{BufferedWriter, BufferedWriterConfig};
-use lineage_service::writer::postgres::PostgresSink;
-use lineage_service::writer::sink::EventSink;
+use headwaters::config::{Config, WriterConfig};
+use headwaters::http::{self, AppState};
+use headwaters::projection::Projector;
+use headwaters::read::LineageStore;
+use headwaters::writer::buffered::{BufferedWriter, BufferedWriterConfig};
+use headwaters::writer::postgres::PostgresSink;
+use headwaters::writer::sink::EventSink;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -19,8 +19,8 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    // Config file path: first positional arg, else the LINEAGE_CONFIG env var
-    // (handled inside Config::load). With neither, run on defaults + LINEAGE__*
+    // Config file path: first positional arg, else the HEADWATERS_CONFIG env var
+    // (handled inside Config::load). With neither, run on defaults + HEADWATERS__*
     // env overrides (DATABASE_URL still supplies the DSN).
     let config_path = std::env::args().nth(1);
     let cfg = Config::load(config_path.as_ref()).context("invalid configuration")?;
@@ -58,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let addr = format!("0.0.0.0:{}", cfg.port);
-    tracing::info!("lineage-service listening on {}", addr);
+    tracing::info!("headwaters listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await

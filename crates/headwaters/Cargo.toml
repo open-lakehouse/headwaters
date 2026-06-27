@@ -1,5 +1,5 @@
 [package]
-name = "lineage-service"
+name = "headwaters"
 version = "0.0.1"
 description = "OpenLineage ingest + Marquez-compatible read service (HTTP + ConnectRPC + Postgres)"
 edition = "2024"

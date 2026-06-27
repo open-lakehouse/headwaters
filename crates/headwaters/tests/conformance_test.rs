@@ -15,18 +15,18 @@
 //! column-lineage field mappings, and selected run facets — and compare that.
 //!
 //! Gated behind `conformance-it` and needs Docker. Run with:
-//!   cargo test -p lineage-service --features conformance-it --test conformance_test
+//!   cargo test -p headwaters --features conformance-it --test conformance_test
 #![cfg(feature = "conformance-it")]
 
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use lineage_service::ingest::convert_event;
-use lineage_service::projection::project_all;
-use lineage_service::read::LineageStore;
-use lineage_service::writer::postgres::PostgresSink;
-use lineage_service::writer::row::event_to_row;
-use lineage_service::writer::sink::EventSink;
+use headwaters::ingest::convert_event;
+use headwaters::projection::project_all;
+use headwaters::read::LineageStore;
+use headwaters::writer::postgres::PostgresSink;
+use headwaters::writer::row::event_to_row;
+use headwaters::writer::sink::EventSink;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;

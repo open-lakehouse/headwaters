@@ -9,15 +9,15 @@
 //!
 //! Needs Docker — gated behind the `postgres-it` feature so the default test
 //! run doesn't require a container runtime. Run with:
-//!   cargo test -p lineage-service --features postgres-it --test read_test
+//!   cargo test -p headwaters --features postgres-it --test read_test
 #![cfg(feature = "postgres-it")]
 
-use lineage_service::ingest::convert_event;
-use lineage_service::projection::project_all;
-use lineage_service::read::LineageStore;
-use lineage_service::writer::postgres::PostgresSink;
-use lineage_service::writer::row::event_to_row;
-use lineage_service::writer::sink::EventSink;
+use headwaters::ingest::convert_event;
+use headwaters::projection::project_all;
+use headwaters::read::LineageStore;
+use headwaters::writer::postgres::PostgresSink;
+use headwaters::writer::row::event_to_row;
+use headwaters::writer::sink::EventSink;
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 use testcontainers::core::{IntoContainerPort, WaitFor};
@@ -214,13 +214,13 @@ async fn missing_job_is_not_found() {
     let db = start_postgres().await;
     let store = seeded_store(&db).await;
     let err = store.job("etl", "nope").await.unwrap_err();
-    assert!(matches!(err, lineage_service::read::ReadError::NotFound(_)));
+    assert!(matches!(err, headwaters::read::ReadError::NotFound(_)));
 }
 
 // --- HTTP-level tests ---------------------------------------------------------
 
 use http_body_util::BodyExt;
-use lineage_service::read::http::router as read_router;
+use headwaters::read::http::router as read_router;
 use tower::ServiceExt; // for `oneshot`
 
 async fn get(store: LineageStore, uri: &str) -> (axum::http::StatusCode, String) {
@@ -339,7 +339,7 @@ async fn lineage_unknown_seed_is_not_found() {
     let db = start_postgres().await;
     let store = seeded_store(&db).await;
     let err = store.lineage("dataset:nope:missing", 2).await.unwrap_err();
-    assert!(matches!(err, lineage_service::read::ReadError::NotFound(_)));
+    assert!(matches!(err, headwaters::read::ReadError::NotFound(_)));
 }
 
 // --- C8: the endpoints marquez-web calls --------------------------------------
@@ -510,7 +510,7 @@ async fn rebuild_reproduces_the_same_model() {
     let db = start_postgres().await;
     let store = seeded_store(&db).await;
     let before = store.jobs(None, 100, 0).await.unwrap();
-    lineage_service::projection::rebuild(&db.pool)
+    headwaters::projection::rebuild(&db.pool)
         .await
         .unwrap();
     let after = store.jobs(None, 100, 0).await.unwrap();
@@ -679,7 +679,7 @@ async fn facet_metadata_survives_rebuild() {
                 "documentation":{"description":"doc"}}}]}"#,
     )
     .await;
-    lineage_service::projection::rebuild(&db.pool)
+    headwaters::projection::rebuild(&db.pool)
         .await
         .unwrap();
     let store = LineageStore::new(db.pool.clone());
@@ -744,7 +744,7 @@ async fn dataset_versions_unknown_dataset_is_not_found() {
         .dataset_versions("w", "nope", 100, 0)
         .await
         .unwrap_err();
-    assert!(matches!(err, lineage_service::read::ReadError::NotFound(_)));
+    assert!(matches!(err, headwaters::read::ReadError::NotFound(_)));
 }
 
 #[tokio::test]
@@ -760,7 +760,7 @@ async fn dataset_versions_survive_rebuild() {
     .await;
     let store = LineageStore::new(db.pool.clone());
     let before = store.dataset_versions("w", "d", 100, 0).await.unwrap();
-    lineage_service::projection::rebuild(&db.pool)
+    headwaters::projection::rebuild(&db.pool)
         .await
         .unwrap();
     let after = store.dataset_versions("w", "d", 100, 0).await.unwrap();
@@ -772,7 +772,7 @@ async fn dataset_versions_survive_rebuild() {
 async fn column_edges_survive_rebuild_with_latest_wins() {
     let db = start_postgres().await;
     let _ = column_lineage_seeded_store(&db).await;
-    lineage_service::projection::rebuild(&db.pool)
+    headwaters::projection::rebuild(&db.pool)
         .await
         .unwrap();
     let rows = sqlx::query(
@@ -883,7 +883,7 @@ async fn tag_assignments_survive_rebuild() {
                 {"name":"email","type":"STRING","tags":[{"key":"pii"}]}]}}}}"#,
     )
     .await;
-    lineage_service::projection::rebuild(&db.pool)
+    headwaters::projection::rebuild(&db.pool)
         .await
         .unwrap();
     let store = LineageStore::new(db.pool.clone());

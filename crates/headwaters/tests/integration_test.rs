@@ -9,15 +9,15 @@
 
 use buffa::Message;
 
-use lineage_service::lineage::v1::{
+use headwaters::lineage::v1::{
     ColumnLineageDatasetFacet, FieldTransformation, InputField, Job, OpenLineageEvent,
     OpenLineageEventView, OutputDataset, OutputFieldLineage, Run, RunEvent,
     open_lineage_event::Event,
 };
-use lineage_service::writer::row::event_to_row;
+use headwaters::writer::row::event_to_row;
 
 /// Decode wire bytes into a borrowed view and extract its row.
-fn row_of(envelope: &OpenLineageEvent) -> lineage_service::writer::row::EventRow {
+fn row_of(envelope: &OpenLineageEvent) -> headwaters::writer::row::EventRow {
     let bytes = envelope.encode_to_vec();
     let view: OpenLineageEventView<'_> =
         <OpenLineageEventView<'_> as buffa::MessageView>::decode_view(&bytes).unwrap();
