@@ -1,11 +1,11 @@
 # Marquez compatibility & divergences
 
-Where `lineage-service` **matches**, **intentionally differs from**, and **goes
+Where `headwaters` **matches**, **intentionally differs from**, and **goes
 beyond** the OpenLineage reference implementation, [Marquez].
 
 This is a living document: it is updated as each facet-processing phase adds
 interpretation. Claims marked **[conformance]** are backed by an assertion in
-`crates/lineage-service/tests/conformance_test.rs`, which posts identical events
+`crates/headwaters/tests/conformance_test.rs`, which posts identical events
 to a real Marquez and to our service and diffs their read APIs on a normalized
 semantic subset. See ADR [0006](adr/0006-hybrid-cqrs-postgres-storage.md)
 (storage) and [0007](adr/0007-mutation-ir-projection-pipeline.md) (facet

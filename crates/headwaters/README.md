@@ -1,4 +1,4 @@
-# lineage-service
+# headwaters
 
 An OpenLineage HTTP ingest service. It accepts [OpenLineage](https://openlineage.io)
 events over HTTP, appends them to an **append-only Postgres event log**, and asynchronously
@@ -102,11 +102,11 @@ The service needs a Postgres database; it runs its own migrations (`migrations/`
 
 ```sh
 export DATABASE_URL=postgres://user:pass@localhost:5432/lineage
-cargo run -p lineage-service                 # or: cargo run -p lineage-service -- path/to/config.toml
+cargo run -p headwaters                 # or: cargo run -p headwaters -- path/to/config.toml
 # then, from another shell:
 curl -XPOST localhost:8091/api/v1/lineage \
   -H 'content-type: application/json' \
-  --data-binary @crates/lineage-service/examples/lineage/single/run-event.json
+  --data-binary @crates/headwaters/examples/lineage/single/run-event.json
 curl localhost:8091/health    # -> OK
 ```
 
@@ -116,11 +116,11 @@ Configuration is a TOML (or YAML/JSON) file, layered with defaults and environme
 `Config::load` composes three sources, lowest precedence first:
 
 1. **struct defaults** — every field has one, so an empty or partial file is valid;
-2. **the config file** — passed as the binary's first argument, or via the `LINEAGE_CONFIG`
+2. **the config file** — passed as the binary's first argument, or via the `HEADWATERS_CONFIG`
    env var. A file requested explicitly that is missing or malformed is a hard error (a
    misconfigured deployment refuses to start rather than silently running on defaults);
-3. **`LINEAGE__*` environment overrides** — `__` separates nested keys, e.g.
-   `LINEAGE__PORT=9000` or `LINEAGE__WRITER__BUFFER_SIZE=200`.
+3. **`HEADWATERS__*` environment overrides** — `__` separates nested keys, e.g.
+   `HEADWATERS__PORT=9000` or `HEADWATERS__WRITER__BUFFER_SIZE=200`.
 
 The Postgres DSN is then overlaid from `DATABASE_URL` if set, so the credential never needs to
 live in the checked-in file. A resolvable DSN is required — the service fails fast at startup if
@@ -140,7 +140,7 @@ flush_interval_ms = 500     # flush at least this often, even below buffer_size
 channel_capacity = 1000     # bounded ingest channel depth (backpressure point)
 ```
 
-`RUST_LOG` controls tracing verbosity (e.g. `RUST_LOG=lineage_service=info`).
+`RUST_LOG` controls tracing verbosity (e.g. `RUST_LOG=headwaters=info`).
 
 ## Layout
 

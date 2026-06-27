@@ -2,7 +2,7 @@
 
 > A feasibility assessment and design for instrumenting an **Envoy proxy** in
 > front of PostgreSQL so that SQL traffic emits OpenLineage events into the
-> existing `lineage-service` ingest API. This is a **design document** — no code
+> existing `headwaters` ingest API. This is a **design document** — no code
 > ships with it; it exists to pick an architecture and decide whether to build.
 > The decision summary lives in
 > [ADR 0011](adr/0011-envoy-postgres-lineage-via-proxy-wasm.md).
@@ -12,7 +12,7 @@
 Headwaters today produces **rich, column-level OpenLineage** from Apache
 DataFusion query plans (the `datafusion-open-lineage` crate; see
 [`open-lineage-design.md`](open-lineage-design.md)) and ingests / serves it
-through a CQRS HTTP service (`lineage-service`; see
+through a CQRS HTTP service (`headwaters`; see
 [ADR 0006](adr/0006-hybrid-cqrs-postgres-storage.md)). That signal is
 *plan-derived*: positional column lineage, full Arrow schemas, SQL text,
 parent-run correlation.
@@ -30,7 +30,7 @@ Headwaters (ingest → projection → read API → UI) with no backend changes.
 - Recover **input and output tables**, and **best-effort column lineage**, by
   parsing the SQL text — not just the coarse table+operation signal the stock
   filter offers.
-- Reuse `lineage-service` ingest unchanged; reuse the OpenLineage event/facet
+- Reuse `headwaters` ingest unchanged; reuse the OpenLineage event/facet
   model from `crates/open-lineage`.
 
 ### Non-goals
@@ -76,10 +76,10 @@ exposes exactly the seams we need at L4 via its `StreamContext`:
 - `on_new_connection`, `on_downstream_data`, `on_upstream_data`,
   `on_downstream_close` — raw byte access to each TCP frame in both directions.
   This lets us decode the Postgres frontend protocol and pull out SQL text.
-- `dispatch_http_call(...)` — emit OpenLineage JSON to a `lineage-service`
+- `dispatch_http_call(...)` — emit OpenLineage JSON to a `headwaters`
   upstream cluster asynchronously, off the data path.
 - `on_tick` + shared queues — batch events and flush periodically into
-  `lineage-service`'s `/api/v1/lineage/batch` endpoint.
+  `headwaters`'s `/api/v1/lineage/batch` endpoint.
 
 The whole filter is Rust compiled to a Wasm module that Envoy loads — no C++, no
 forked Envoy build, and the same language as the rest of Headwaters.
@@ -94,11 +94,11 @@ Postgres client ──TCP──▶ Envoy (downstream TLS terminated here)
                           │     • extract SQL text + session/correlation context
                           │     • parse SQL via sqlparser (PG dialect) → tables (+ columns)
                           │     • build OpenLineage RunEvent JSON
-                          │     • batch + dispatch_http_call → lineage-service cluster
+                          │     • batch + dispatch_http_call → headwaters cluster
                           ▼
                        upstream Postgres
                           
-lineage-service  ◀── POST /api/v1/lineage/batch   (existing, UNCHANGED)
+headwaters  ◀── POST /api/v1/lineage/batch   (existing, UNCHANGED)
    events log → async projection → read tables → REST + ConnectRPC read API → UI
 ```
 
@@ -159,7 +159,7 @@ constructors when the work is implemented.
 
 **Emission.** Push finished events into a per-VM buffer; on `on_tick` (e.g. every
 ~1–2s or at a size threshold) serialize a JSON array and `dispatch_http_call` to
-the `lineage-service` cluster's `POST /api/v1/lineage/batch`. The batch endpoint
+the `headwaters` cluster's `POST /api/v1/lineage/batch`. The batch endpoint
 already returns `202 Accepted` with per-event partial-success semantics, so a few
 unparseable events never sink a batch.
 
@@ -185,12 +185,12 @@ The recommendation:
 This is the one piece of pre-work in the broader repo; it turns the integration
 from copy-paste into genuine reuse and is independently valuable.
 
-### Component 3 — `lineage-service` (unchanged)
+### Component 3 — `headwaters` (unchanged)
 
 No changes. The ingest converter
-(`crates/lineage-service/src/ingest/converter.rs`) classifies events by field
+(`crates/headwaters/src/ingest/converter.rs`) classifies events by field
 presence and requires only `eventTime`, `run.runId`, `job.namespace`,
-`job.name`; the routes (`crates/lineage-service/src/http.rs`) are
+`job.name`; the routes (`crates/headwaters/src/http.rs`) are
 `POST /api/v1/lineage` and `POST /api/v1/lineage/batch`, returning `202 Accepted`
 with batch partial-success. Projection, the Mutation-IR pipeline (ADR 0007), and
 the read API all process these events identically to DataFusion-sourced ones.
@@ -254,7 +254,7 @@ in any deployment:
 - **Phase 1 — Refactor.** Extract `crates/open-lineage-events` (DataFusion-free);
   `crates/open-lineage` re-exports it. Pure, fully-tested refactor.
 - **Phase 2 — Table-level lineage.** Filter parses SQL with `sqlparser`, emits
-  table-level `RunEvent`s to `lineage-service`. Verified end to end through the
+  table-level `RunEvent`s to `headwaters`. Verified end to end through the
   read API and UI.
 - **Phase 3 — Column-level (best-effort).** Add column-reference extraction with
   the strict degradation policy; extended-protocol / prepared-statement support.

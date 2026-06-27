@@ -3,7 +3,7 @@
 > Status: **Accepted** (2026-06). Implemented in
 > `crates/open-lineage/src/column.rs` (resolver), `src/extract.rs` /
 > `src/facets.rs` / `src/builder.rs` (facet emission), and
-> `crates/lineage-service/src/read/queries.rs` (the `/api/v1/column-lineage`
+> `crates/headwaters/src/read/queries.rs` (the `/api/v1/column-lineage`
 > read view). Refines the "Column lineage" section of
 > [`docs/open-lineage-design.md`](../open-lineage-design.md).
 

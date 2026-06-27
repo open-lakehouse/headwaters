@@ -14,7 +14,7 @@
 Headwaters emits rich column-level OpenLineage from DataFusion query plans. We
 want a **second source** for plain PostgreSQL traffic that does not run on
 DataFusion: instrument an Envoy proxy in front of Postgres so SQL flowing through
-it emits OpenLineage into the existing `lineage-service` ingest API.
+it emits OpenLineage into the existing `headwaters` ingest API.
 
 The granularity bar is **tables and (best-effort) columns**, plus the query text
 — not just the coarse `table.db → operation` signal available off the shelf. The
@@ -41,7 +41,7 @@ Build a **custom Envoy network (L4) filter in Rust using
    `postgres://{host}:{port}` / name `{database}.{schema}.{table}` consistent
    with `crates/open-lineage/src/naming.rs`.
 4. **Batches and `dispatch_http_call`s** events to the existing
-   `lineage-service` `POST /api/v1/lineage/batch` endpoint — `lineage-service` is
+   `headwaters` `POST /api/v1/lineage/batch` endpoint — `headwaters` is
    **unchanged**.
 
 Two supporting decisions:
@@ -85,7 +85,7 @@ so the filter sees plaintext. End-to-end-encrypted traffic past Envoy is opaque.
 ## Consequences
 
 - A new lineage source lands events into the *unchanged* downstream half of
-  Headwaters (ingest → projection → read API → UI); no `lineage-service` changes.
+  Headwaters (ingest → projection → read API → UI); no `headwaters` changes.
 - **Lower column-lineage fidelity than the DataFusion path** is accepted up
   front: no catalog means name-based, best-effort columns and no schema facets;
   the ADR 0004 degradation policy keeps it honest (tables reliable, columns

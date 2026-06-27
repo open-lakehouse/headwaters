@@ -1,4 +1,4 @@
-# 0002 — lineage-service Unity Catalog write path
+# 0002 — headwaters Unity Catalog write path
 
 > Status: **Superseded** by [ADR 0006](0006-hybrid-cqrs-postgres-storage.md),
 > which replaced the Delta-Lake/Unity events table with a Postgres event log +
@@ -10,8 +10,8 @@
 
 ## Context
 
-`lineage-service` writes OpenLineage events to a Delta **events table**. Today its
-`DeltaWriter` (`crates/lineage-service/src/writer/delta.rs`) is fully decoupled from Unity
+`headwaters` writes OpenLineage events to a Delta **events table**. Today its
+`DeltaWriter` (`crates/headwaters/src/writer/delta.rs`) is fully decoupled from Unity
 Catalog: it holds a raw `table_uri` plus a flat `storage_options` map, resolves the URI with
 `ensure_table_uri`, and writes via the delta-rs builder. Credentials come from static `AWS_*`
 environment variables.
@@ -23,7 +23,7 @@ location, and ideally its write credentials, from UC OSS the same way the query 
 1. **Write credentials must be vendable.** Historically there was doubt about whether UC OSS
    could vend *write*-scoped temporary credentials (a Delta commit needs `PutObject`). This
    was the single biggest risk.
-2. **The writer must stay lean.** `lineage-service` is a standalone binary; it should not
+2. **The writer must stay lean.** `headwaters` is a standalone binary; it should not
    take a dependency on the whole `hydrofoil` crate and its per-query session machinery just
    to write one table.
 3. **The seam must keep local/test setups simple.** The existing raw-URI behavior must remain
@@ -49,7 +49,7 @@ inject it. The read-path resolver hardcodes `TableOperation::Read`, so the write
     (`Table.storage_location`), vends write credentials with
     `UnityObjectStoreFactory::for_table(name, TableOperation::ReadWrite)`, and injects
     `store.root()` into the Delta builder via `with_storage_backend`.
-- **Add only the minimal UC crates** to `lineage-service`: `unitycatalog-client` (resolution)
+- **Add only the minimal UC crates** to `headwaters`: `unitycatalog-client` (resolution)
   and `unitycatalog-object-store` (write-credential vending). Do **not** depend on
   `hydrofoil` or `datafusion-unitycatalog` (the latter's value is the read-only DataFusion
   resolver, which the writer does not want).
@@ -73,7 +73,7 @@ inject it. The read-path resolver hardcodes `TableOperation::Read`, so the write
 ### Deviation from the upstream per-session credential-isolation decision
 
 The upstream per-session credential-isolation decision mandates a fresh `RuntimeEnv` per session so vended credentials cannot leak across
-*principals*. `lineage-service` is a **single-principal service-account writer** — there is
+*principals*. `headwaters` is a **single-principal service-account writer** — there is
 no second principal to leak to — so one long-lived `UnityObjectStoreFactory` and one cached
 `ReadWrite` store is correct and does not violate the isolation invariant. This deviation is
 intentional and scoped to the writer.

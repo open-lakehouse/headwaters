@@ -26,7 +26,7 @@ independent release.
 | Crate | Package | What it does |
 |---|---|---|
 | [`crates/open-lineage`](crates/open-lineage) | `datafusion-open-lineage` | OpenLineage integration for DataFusion sessions — emits run events (START/COMPLETE/FAIL) with input/output datasets and column-level lineage, extracted at planning time. |
-| [`crates/lineage-service`](crates/lineage-service) | `lineage-service` | An HTTP service that ingests OpenLineage events into an append-only Postgres event log, projects them asynchronously into normalized read tables, and serves a [Marquez](https://marquezproject.ai)-compatible read API for visualization. |
+| [`crates/headwaters`](crates/headwaters) | `headwaters` | An HTTP service that ingests OpenLineage events into an append-only Postgres event log, projects them asynchronously into normalized read tables, and serves a [Marquez](https://marquezproject.ai)-compatible read API for visualization. |
 
 ## Build & test
 
@@ -55,7 +55,7 @@ Two protobuf packages define the service surface:
   search, events, run facets, dataset versions, tags, PII propagation, stats).
 
 The generated Rust types are committed under
-`crates/lineage-service/src/proto/` (`lineage.v1.rs`, `headwaters.read.v1.rs`) so
+`crates/headwaters/src/proto/` (`lineage.v1.rs`, `headwaters.read.v1.rs`) so
 the workspace builds without a codegen step. Regenerate with `just proto-gen`
 (uses [`buf`](https://buf.build) + the remote `buffa` plugin).
 
@@ -77,7 +77,7 @@ language clients. See [`node/README.md`](node/README.md).
 
 ```bash
 just ui-install   # install workspace deps
-just ui-dev       # dev server (proxies ConnectRPC to a local lineage-service)
+just ui-dev       # dev server (proxies ConnectRPC to a local headwaters)
 just ui-sb        # Storybook (mocked, no backend)
 ```
 

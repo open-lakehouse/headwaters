@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Seed a running lineage-service with rich demo lineage.
+# Seed a running headwaters with rich demo lineage.
 #
 # Usage:
 #   ./ingest.sh                       # ingest all bundled datasets at :8091

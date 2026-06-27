@@ -219,8 +219,8 @@ async fn missing_job_is_not_found() {
 
 // --- HTTP-level tests ---------------------------------------------------------
 
-use http_body_util::BodyExt;
 use headwaters::read::http::router as read_router;
+use http_body_util::BodyExt;
 use tower::ServiceExt; // for `oneshot`
 
 async fn get(store: LineageStore, uri: &str) -> (axum::http::StatusCode, String) {
@@ -510,9 +510,7 @@ async fn rebuild_reproduces_the_same_model() {
     let db = start_postgres().await;
     let store = seeded_store(&db).await;
     let before = store.jobs(None, 100, 0).await.unwrap();
-    headwaters::projection::rebuild(&db.pool)
-        .await
-        .unwrap();
+    headwaters::projection::rebuild(&db.pool).await.unwrap();
     let after = store.jobs(None, 100, 0).await.unwrap();
     assert_eq!(before.total_count, after.total_count);
     assert_eq!(after.jobs[0].name, "build_daily");
@@ -679,9 +677,7 @@ async fn facet_metadata_survives_rebuild() {
                 "documentation":{"description":"doc"}}}]}"#,
     )
     .await;
-    headwaters::projection::rebuild(&db.pool)
-        .await
-        .unwrap();
+    headwaters::projection::rebuild(&db.pool).await.unwrap();
     let store = LineageStore::new(db.pool.clone());
     assert_eq!(
         store.job("etl", "build").await.unwrap().location,
@@ -760,9 +756,7 @@ async fn dataset_versions_survive_rebuild() {
     .await;
     let store = LineageStore::new(db.pool.clone());
     let before = store.dataset_versions("w", "d", 100, 0).await.unwrap();
-    headwaters::projection::rebuild(&db.pool)
-        .await
-        .unwrap();
+    headwaters::projection::rebuild(&db.pool).await.unwrap();
     let after = store.dataset_versions("w", "d", 100, 0).await.unwrap();
     assert_eq!(before.total_count, after.total_count);
     assert_eq!(before.versions[0].version, after.versions[0].version);
@@ -772,9 +766,7 @@ async fn dataset_versions_survive_rebuild() {
 async fn column_edges_survive_rebuild_with_latest_wins() {
     let db = start_postgres().await;
     let _ = column_lineage_seeded_store(&db).await;
-    headwaters::projection::rebuild(&db.pool)
-        .await
-        .unwrap();
+    headwaters::projection::rebuild(&db.pool).await.unwrap();
     let rows = sqlx::query(
         "SELECT in_field, out_field FROM column_lineage_edges \
          WHERE out_field = 'id'",
@@ -883,9 +875,7 @@ async fn tag_assignments_survive_rebuild() {
                 {"name":"email","type":"STRING","tags":[{"key":"pii"}]}]}}}}"#,
     )
     .await;
-    headwaters::projection::rebuild(&db.pool)
-        .await
-        .unwrap();
+    headwaters::projection::rebuild(&db.pool).await.unwrap();
     let store = LineageStore::new(db.pool.clone());
     let prop = store.tag_downstream("pii").await.unwrap();
     assert!(

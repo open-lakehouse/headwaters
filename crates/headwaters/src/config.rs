@@ -96,7 +96,7 @@ fn default_port() -> u16 {
 }
 
 /// Top-level service configuration: defaults, overlaid by an optional config
-/// file, overlaid by `LINEAGE__*` environment variables.
+/// file, overlaid by `HEADWATERS__*` environment variables.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct Config {

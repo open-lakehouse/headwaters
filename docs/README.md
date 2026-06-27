@@ -9,5 +9,5 @@
   — feasibility and design for a custom `proxy-wasm` filter that emits lineage from
   Postgres traffic through an Envoy proxy ([ADR 0011](adr/0011-envoy-postgres-lineage-via-proxy-wasm.md)).
 - [Marquez compatibility & divergences](marquez-compatibility.md) — where
-  `lineage-service` matches, diverges from, and goes beyond the Marquez reference
+  `headwaters` matches, diverges from, and goes beyond the Marquez reference
   implementation.

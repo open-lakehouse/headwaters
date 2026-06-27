@@ -8,7 +8,7 @@
 // unambiguous and we are free to evolve it.
 //
 // These messages mirror, field-for-field, the Marquez-compatible JSON the web UI
-// consumes (see `crates/lineage-service/src/read/model.rs`). Proto field names
+// consumes (see `crates/headwaters/src/read/model.rs`). Proto field names
 // are snake_case; the wire JSON is camelCase. A few Marquez quirks (the `type`
 // key, `inEdges`/`outEdges`, polymorphic `data`/`facets` as opaque structs) are
 // represented with `google.protobuf.Struct` and a `type` field so the generated
