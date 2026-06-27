@@ -38,6 +38,10 @@ const OUTPUT_STATS_FACET: &str =
     include_str!("schemas/openlineage/facets/OutputStatisticsOutputDatasetFacet.json");
 const INPUT_STATS_FACET: &str =
     include_str!("schemas/openlineage/facets/InputStatisticsInputDatasetFacet.json");
+const DATA_SOURCE_FACET: &str =
+    include_str!("schemas/openlineage/facets/DatasourceDatasetFacet.json");
+const LIFECYCLE_FACET: &str =
+    include_str!("schemas/openlineage/facets/LifecycleStateChangeDatasetFacet.json");
 
 /// The vendored core schema, registered under the retrieval URI the facet
 /// schemas `$ref`. Built once; owned `Value` contents make it `'static`.
@@ -279,6 +283,74 @@ async fn output_statistics_facet_conforms() {
     assert!(
         checked,
         "an outputStatistics facet was emitted and validated"
+    );
+}
+
+#[tokio::test]
+async fn data_source_facet_conforms() {
+    let validator = validator_for(DATA_SOURCE_FACET);
+
+    // A read emits a dataSource facet on the input; an INSERT emits one on the
+    // output too. One query exercises both sides.
+    let events = capture(
+        &[
+            "CREATE TABLE src (a INT) AS VALUES (1), (2)",
+            "CREATE TABLE dst (a INT) AS VALUES (0)",
+        ],
+        "INSERT INTO dst SELECT a FROM src",
+    )
+    .await;
+
+    let mut checked = false;
+    for event in &events {
+        for ds in event.inputs.iter().chain(event.outputs.iter()) {
+            if let Some(source) = &ds.facets.data_source {
+                let body = serde_json::to_value(source).unwrap();
+                assert_valid(
+                    &validator,
+                    &wrapped("dataSource", &body),
+                    "dataSource facet",
+                );
+                checked = true;
+            }
+        }
+    }
+    assert!(checked, "a dataSource facet was emitted and validated");
+}
+
+#[tokio::test]
+async fn lifecycle_state_change_facet_conforms() {
+    let validator = validator_for(LIFECYCLE_FACET);
+
+    // An INSERT OVERWRITE rewrites the output table, which maps to the spec's
+    // `OVERWRITE` state change (a plain append carries no lifecycle facet). The
+    // state change rides on the output dataset.
+    let events = capture(
+        &[
+            "CREATE TABLE src (a INT) AS VALUES (1), (2)",
+            "CREATE TABLE dst (a INT) AS VALUES (0)",
+        ],
+        "INSERT OVERWRITE dst SELECT a FROM src",
+    )
+    .await;
+
+    let mut checked = false;
+    for event in &events {
+        for output in &event.outputs {
+            if let Some(lifecycle) = &output.facets.lifecycle_state_change {
+                let body = serde_json::to_value(lifecycle).unwrap();
+                assert_valid(
+                    &validator,
+                    &wrapped("lifecycleStateChange", &body),
+                    "lifecycleStateChange facet",
+                );
+                checked = true;
+            }
+        }
+    }
+    assert!(
+        checked,
+        "a lifecycleStateChange facet was emitted and validated"
     );
 }
 

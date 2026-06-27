@@ -10,19 +10,23 @@
 
 use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use datafusion::error::Result;
+use datafusion::logical_expr::dml::InsertOp;
 use datafusion::logical_expr::{DdlStatement, LogicalPlan, WriteOp};
 use datafusion::sql::TableReference;
 
 use crate::column::{ResolvedColumns, resolve_output_columns};
 use crate::config::OpenLineageConfig;
 use crate::facets::{
-    BaseFacet, ColumnLineageDatasetFacet, DatasetFacets, FieldLineage, InputField,
-    SchemaDatasetFacet, SchemaField, Transformation, TransformationType,
+    BaseFacet, ColumnLineageDatasetFacet, DataSourceDatasetFacet, DatasetFacets, FieldLineage,
+    InputField, LifecycleStateChangeDatasetFacet, SchemaDatasetFacet, SchemaField, Transformation,
+    TransformationType,
 };
 use crate::naming::DatasetName;
 
 const SCHEMA_FACET: &str = "1-2-0/SchemaDatasetFacet.json";
 const COLUMN_LINEAGE_FACET: &str = "1-2-0/ColumnLineageDatasetFacet.json";
+const DATA_SOURCE_FACET: &str = "1-0-1/DatasourceDatasetFacet.json";
+const LIFECYCLE_FACET: &str = "1-0-1/LifecycleStateChangeDatasetFacet.json";
 
 /// What a query reads and writes.
 #[derive(Debug, Default)]
@@ -56,6 +60,10 @@ pub struct OutputTable {
     pub fields: Vec<SchemaField>,
     /// Output field name -> source columns, when soundly resolvable.
     pub column_lineage: Option<ResolvedColumns>,
+    /// The `lifecycleStateChange` this write applied (CREATE / OVERWRITE), when
+    /// the write op maps cleanly to a spec enum value. `None` for plain appends,
+    /// updates, and deletes, which have no corresponding state-change value.
+    pub lifecycle: Option<&'static str>,
 }
 
 /// Extract [`QueryLineage`] from an (ideally optimized) logical plan.
@@ -95,6 +103,35 @@ pub fn extract(plan: &LogicalPlan, config: &OpenLineageConfig) -> QueryLineage {
 /// disagree on dataset identity.
 pub(crate) fn dataset_for(table_ref: &TableReference, config: &OpenLineageConfig) -> DatasetName {
     DatasetName::from_table_ref(&config.job_namespace, &table_ref.to_string())
+}
+
+/// Map a write op to its `lifecycleStateChange` value, or `None` when the op has
+/// no clean spec-enum equivalent (plain append, update, delete).
+///
+/// `CTAS` creates; an overwriting/replacing insert overwrites; a plain
+/// `Insert(Append)` adds rows without a state change, so it carries no facet.
+fn lifecycle_for(op: &WriteOp) -> Option<&'static str> {
+    match op {
+        WriteOp::Ctas => Some("CREATE"),
+        WriteOp::Insert(InsertOp::Overwrite | InsertOp::Replace) => Some("OVERWRITE"),
+        WriteOp::Insert(InsertOp::Append) | WriteOp::Update | WriteOp::Delete => None,
+        WriteOp::Truncate => Some("TRUNCATE"),
+    }
+}
+
+/// The `dataSource` dataset facet for a dataset.
+///
+/// A DataFusion table reference is a logical `catalog.schema.table` identity, not
+/// a storage URL, so the data source is named by the qualified table name with a
+/// synthetic `datafusion:` URI (namespace + name). This is informational — it
+/// records which engine/instance the dataset lives in, mirroring how the DuckDB
+/// integration derives its dataSource from the catalog path.
+fn data_source_facet(name: &DatasetName, config: &OpenLineageConfig) -> DataSourceDatasetFacet {
+    DataSourceDatasetFacet {
+        base: BaseFacet::new(&config.producer, DATA_SOURCE_FACET),
+        name: name.name.clone(),
+        uri: format!("datafusion:{}/{}", name.namespace, name.name),
+    }
 }
 
 /// Map Arrow fields to OpenLineage [`SchemaField`]s (name + type string). Shared
@@ -175,6 +212,7 @@ impl TreeNodeVisitor<'_> for LineageVisitor<'_> {
                         // The write target's full table schema -> the output's columns.
                         fields: schema_fields(dml.target.schema().fields()),
                         column_lineage: None,
+                        lifecycle: lifecycle_for(&dml.op),
                     });
                 }
                 WriteOp::Truncate => {}
@@ -185,6 +223,7 @@ impl TreeNodeVisitor<'_> for LineageVisitor<'_> {
                         name: self.dataset_for(&cmd.name),
                         fields: schema_fields(cmd.schema.as_arrow().fields()),
                         column_lineage: None,
+                        lifecycle: Some("CREATE"),
                     });
                 }
                 // `CREATE TABLE ... AS SELECT` lowers to CreateMemoryTable; the
@@ -195,6 +234,7 @@ impl TreeNodeVisitor<'_> for LineageVisitor<'_> {
                         name: self.dataset_for(&cmd.name),
                         fields: schema_fields(cmd.input.schema().as_arrow().fields()),
                         column_lineage: None,
+                        lifecycle: Some("CREATE"),
                     });
                 }
                 _ => {}
@@ -228,6 +268,7 @@ pub(crate) fn input_dataset_facets(
 
     DatasetFacets {
         schema: Some(schema),
+        data_source: Some(data_source_facet(&input.name, config)),
         ..Default::default()
     }
 }
@@ -250,9 +291,21 @@ pub(crate) fn output_dataset_facets(
         fields: output.fields.clone(),
     });
 
+    // dataSource + lifecycleStateChange ride along on every output regardless of
+    // whether column lineage resolved, so build them once.
+    let data_source = Some(data_source_facet(&output.name, config));
+    let lifecycle_state_change = output
+        .lifecycle
+        .map(|state| LifecycleStateChangeDatasetFacet {
+            base: BaseFacet::new(&config.producer, LIFECYCLE_FACET),
+            lifecycle_state_change: state.to_string(),
+        });
+
     let Some(resolved) = &output.column_lineage else {
         return DatasetFacets {
             schema,
+            data_source,
+            lifecycle_state_change,
             ..Default::default()
         };
     };
@@ -261,6 +314,8 @@ pub(crate) fn output_dataset_facets(
         // still emit the schema facet so the dataset carries its columns.
         return DatasetFacets {
             schema,
+            data_source,
+            lifecycle_state_change,
             ..Default::default()
         };
     }
@@ -318,6 +373,8 @@ pub(crate) fn output_dataset_facets(
 
     DatasetFacets {
         schema,
+        data_source,
+        lifecycle_state_change,
         column_lineage: Some(ColumnLineageDatasetFacet {
             base: BaseFacet::new(&config.producer, COLUMN_LINEAGE_FACET),
             fields,

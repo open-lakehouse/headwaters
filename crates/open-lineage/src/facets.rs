@@ -279,6 +279,14 @@ pub struct DatasetFacets {
     /// Alternate identifiers (symlinks) for the dataset.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symlinks: Option<SymlinksDatasetFacet>,
+    /// The lifecycle state change this run applied to the dataset (e.g. it was
+    /// created or overwritten). Maps to the `lifecycleStateChange` spec field;
+    /// only meaningful on outputs.
+    #[serde(
+        rename = "lifecycleStateChange",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub lifecycle_state_change: Option<LifecycleStateChangeDatasetFacet>,
     /// Additional custom dataset facets passed through verbatim.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -411,6 +419,19 @@ pub struct SymlinkIdentifier {
     /// Kind of identifier (e.g. `TABLE`). Maps to the `type` spec field.
     #[serde(rename = "type")]
     pub type_: String,
+}
+
+/// The lifecycle state change a run applied to a dataset (the
+/// `lifecycleStateChange` dataset facet).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LifecycleStateChangeDatasetFacet {
+    /// Common facet fields (`_producer`, `_schemaURL`).
+    #[serde(flatten)]
+    pub base: BaseFacet,
+    /// The state change applied. One of the spec's enum values: `ALTER`,
+    /// `CREATE`, `DROP`, `OVERWRITE`, `RENAME`, `TRUNCATE`.
+    #[serde(rename = "lifecycleStateChange")]
+    pub lifecycle_state_change: String,
 }
 
 /// How an output dataset's fields derive from input dataset fields.

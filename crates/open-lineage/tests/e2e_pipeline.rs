@@ -163,7 +163,9 @@ async fn e2e_pipeline_emits_full_lineage() {
             "output dataset {expected} present; got {outputs:?}"
         );
     }
-    // Every dataset (in + out) shares the dataset namespace.
+    // Every dataset (in + out) shares the dataset namespace and carries a
+    // dataSource facet naming the table (the journey's plain INSERTs are
+    // appends, so no lifecycleStateChange facet — that's covered in conformance).
     for e in &json {
         for side in ["inputs", "outputs"] {
             for d in e[side].as_array().cloned().unwrap_or_default() {
@@ -171,6 +173,16 @@ async fn e2e_pipeline_emits_full_lineage() {
                     d["namespace"],
                     journey::DATASET_NAMESPACE,
                     "dataset uses the shared namespace: {d}"
+                );
+                assert_eq!(
+                    d["facets"]["dataSource"]["name"], d["name"],
+                    "dataset carries a dataSource facet naming it: {d}"
+                );
+                assert!(
+                    d["facets"]["dataSource"]["uri"]
+                        .as_str()
+                        .is_some_and(|u| u.starts_with("datafusion:")),
+                    "dataSource uri is a datafusion: URI: {d}"
                 );
             }
         }
