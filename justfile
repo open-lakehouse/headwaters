@@ -51,6 +51,15 @@ lineage *args:
 seed *files:
     examples/seed/ingest.sh {{ files }}
 
+# run the live end-to-end DataFusion demo against a running lineage-service: it
+# instruments a real DataFusion session, runs a bronze→silver→gold pipeline, and
+# emits the resulting lineage to the service (exercises the full instrumentation
+# path, unlike the static `seed`). Target a non-default host with OPENLINEAGE_URL=…
+# (defaults to http://localhost:8091/api/v1/lineage), or OPENLINEAGE_URL=console
+# for a service-free dry run. Start the server first (`just dev`), then `just ui-dev`.
+demo:
+    cargo run -p datafusion-open-lineage --example e2e_pipeline
+
 # --- local dev Postgres (Docker) ---
 
 # Idempotent: reuses (and starts, if stopped) an existing `{{ PG_CONTAINER }}`
