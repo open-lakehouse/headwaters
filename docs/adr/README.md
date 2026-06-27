@@ -23,6 +23,7 @@ those are referenced inline as prose rather than as numbered ADRs here.
 | [0010](0010-read-api-proto-source-of-truth.md) | Read API modeled in protobuf (`headwaters.read.v1`); REST stays hand-written for now | Accepted |
 | [0011](0011-envoy-postgres-lineage-via-proxy-wasm.md) | Envoy → PostgreSQL lineage via a custom `proxy-wasm` filter | Proposed |
 | [0012](0012-emission-client-crate-extraction.md) | Engine-agnostic emission client crate (`openlineage-client`) | Accepted |
+| [0013](0013-read-api-typed-enums-and-client-prep.md) | Read-API enums, additive `Search` filters, consumer-focused docs | Accepted |
 
 See also [`docs/marquez-compatibility.md`](../marquez-compatibility.md) — a
 living reference for where the service matches, diverges from, and goes beyond

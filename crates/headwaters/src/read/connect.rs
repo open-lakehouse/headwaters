@@ -127,7 +127,14 @@ impl ReadService for LineageStore {
         request: ServiceRequest<'_, pb::SearchRequest>,
     ) -> ServiceResult<pb::SearchResponse> {
         let limit = limit_or(request.limit, DEFAULT_LIMIT);
-        Response::ok(self.search(request.q, limit).await?)
+        // `ENTITY_KIND_UNSPECIFIED` (and any field-level node kind) means "no
+        // filter" — only an explicit JOB/DATASET narrows the search.
+        let kind = match request.r#type.as_known() {
+            Some(k @ (pb::EntityKind::JOB | pb::EntityKind::DATASET)) => Some(k),
+            _ => None,
+        };
+        let namespace = (!request.namespace.is_empty()).then_some(request.namespace);
+        Response::ok(self.search(request.q, limit, kind, namespace).await?)
     }
 
     async fn get_lineage(
