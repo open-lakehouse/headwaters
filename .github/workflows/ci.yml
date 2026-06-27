@@ -37,6 +37,7 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       proto: ${{ steps.filter.outputs.proto }}
+      ui: ${{ steps.filter.outputs.ui }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -64,6 +65,9 @@ jobs:
               - 'buf.lock'
               - 'crates/headwaters/src/proto/**'
               - 'crates/headwaters/src/connect_gen/**'
+            ui:
+              - 'node/**'
+              - 'crates/headwaters/ui.lock'
 
   # fmt, clippy, test and coverage are independent jobs that run in parallel.
   # Splitting them (rather than one sequential job) means a clippy or fmt failure
@@ -235,6 +239,30 @@ jobs:
             git diff --stat
             exit 1
           fi
+
+  # The bundled lineage UI (node/) ships inside the headwaters Docker image but
+  # lives outside the crate, so release-plz can't see UI changes. crates/
+  # headwaters/ui.lock is a fingerprint of node/ that lives in the crate; a UI
+  # change must land with its regenerated lock so release-plz bumps headwaters
+  # and the Docker image rebuilds. Fail if the committed lock is stale — same
+  # "regenerate and diff" pattern as proto-check. See `just ui-fingerprint`.
+  ui-fingerprint:
+    name: ui-fingerprint
+    needs: changes
+    if: ${{ needs.changes.outputs.ui == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3.0.0
+
+      - name: Check UI fingerprint is up to date
+        run: just ui-fingerprint-check
 
   test:
     name: test
@@ -430,7 +458,7 @@ jobs:
   ci:
     name: ci
     if: ${{ always() }}
-    needs: [fmt, machete, clippy, msrv, proto-check, test, coverage]
+    needs: [fmt, machete, clippy, msrv, proto-check, ui-fingerprint, test, coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -446,6 +474,7 @@ jobs:
             "clippy:${{ needs.clippy.result }}" \
             "msrv:${{ needs.msrv.result }}" \
             "proto-check:${{ needs.proto-check.result }}" \
+            "ui-fingerprint:${{ needs.ui-fingerprint.result }}" \
             "test:${{ needs.test.result }}" \
             "coverage:${{ needs.coverage.result }}"; do
             name="${r%%:*}"; result="${r##*:}"

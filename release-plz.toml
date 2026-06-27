@@ -12,10 +12,12 @@
 #   - openlineage-client     -> published to crates.io (a library).
 #   - datafusion-openlineage -> published to crates.io (depends on the client,
 #     so release-plz publishes the client first).
-#   - headwaters             -> `publish = false`: a deployable app, NOT
-#     published to crates.io. Its git tag `headwaters-v<version>` instead
-#     triggers the Docker image build/push to GHCR (see release-plz.yml ->
-#     .github/workflows/docker-release.yml).
+#   - headwaters             -> `git_only = true`: a deployable app, NOT
+#     published to crates.io. release-plz versions/changelogs/tags it from git
+#     (not the registry), and its git tag `headwaters-v<version>` triggers the
+#     Docker image build/push to GHCR (see release-plz.yml ->
+#     .github/workflows/docker-release.yml). Its bundled UI participates via
+#     crates/headwaters/ui.lock — see `just ui-fingerprint`.
 #
 # Config reference: https://release-plz.dev/docs/config
 
@@ -57,8 +59,23 @@ pr_draft = false
 [[package]]
 name = "headwaters"
 # Version + changelog + git tag + GitHub release, but no `cargo publish` — the
-# tag drives the Docker release instead. (Cargo.toml also sets publish = false
-# as a belt-and-suspenders guard against an accidental publish.)
+# tag drives the Docker release instead.
+#
+# `git_only = true` (NOT `publish = false`) is what makes that work. headwaters
+# has `publish = false` in its Cargo.toml, so it isn't on crates.io; with a
+# plain release-plz `publish = false` override, release-plz would still try to
+# read the crate's "current version" from the cargo registry, fail to find it,
+# and silently SKIP the crate — no bump, no tag, so the Docker job never fires.
+# `git_only` instead derives the current version from the existing
+# `headwaters-v<version>` git tag (the `git_tag_name` pattern in [workspace]),
+# bumps from the conventional-commit history, writes the changelog, and creates
+# the next tag + GitHub release — everything except `cargo publish`. (Cargo.toml
+# `publish = false` also stays as the belt-and-suspenders publish guard.)
+#
+# release-plz requires `publish = false` to be set explicitly alongside
+# `git_only = true` (the two are mutually exclusive, and the [workspace] default
+# is `publish = true`), so both are pinned here.
+git_only = true
 publish = false
 
 [[package]]
