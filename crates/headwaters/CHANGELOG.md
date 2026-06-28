@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.2...headwaters-v0.0.3) - 2026-06-28
+
+### Added
+
+- Rust read-API client + shared headwaters-proto crate (#37)
+
+### Changed
+
+- refine read API for client generation (enums, Search filters, docs) (#35)
+
 ## [0.0.2](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.1...headwaters-v0.0.2) - 2026-06-27
 
 ### Added

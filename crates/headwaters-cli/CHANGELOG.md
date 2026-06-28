@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.0.3](https://github.com/open-lakehouse/headwaters/compare/datafusion-openlineage-v0.0.2...datafusion-openlineage-v0.0.3) - 2026-06-28
+## [0.0.2](https://github.com/open-lakehouse/headwaters/releases/tag/headwaters-cli-v0.0.2) - 2026-06-28
 
-### Build
+### Added
 
-- *(deps)* bump DataFusion 53.1 -> 54 (#41)
+- the hw CLI for inspecting a lineage estate (#38)
