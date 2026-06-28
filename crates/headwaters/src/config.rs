@@ -25,6 +25,13 @@ pub enum ConfigError {
          (e.g. /lineage)"
     )]
     InvalidBasePath(String),
+
+    #[error(
+        "invalid {field}: must be greater than 0 (got {value}) — a zero interval, \
+         buffer/channel size, or pool size would panic a worker or wedge the \
+         connection pool at startup"
+    )]
+    NonPositive { field: &'static str, value: u64 },
 }
 
 fn default_pool_size() -> u32 {
@@ -207,6 +214,31 @@ impl Config {
         // A DSN must be resolvable so a misconfigured deployment fails at
         // startup rather than on the first write.
         self.postgres.resolve_url()?;
+
+        // Zero-valued timers/sizes are caught here so a misconfig fails fast at
+        // load rather than panicking a background task later:
+        // `tokio::time::interval(Duration::ZERO)` and `mpsc::channel(0)` both
+        // panic, a 0-connection pool can never hand out a connection (every
+        // query hangs/times out), and a 0 buffer_size would flush a one-event
+        // batch on every event.
+        let positive = |field: &'static str, value: u64| -> Result<(), ConfigError> {
+            if value == 0 {
+                Err(ConfigError::NonPositive { field, value })
+            } else {
+                Ok(())
+            }
+        };
+        positive("writer.flush_interval_ms", self.writer.flush_interval_ms)?;
+        positive("writer.buffer_size", self.writer.buffer_size as u64)?;
+        positive(
+            "writer.channel_capacity",
+            self.writer.channel_capacity as u64,
+        )?;
+        positive(
+            "postgres.projection_interval_ms",
+            self.postgres.projection_interval_ms,
+        )?;
+        positive("postgres.pool_size", self.postgres.pool_size as u64)?;
         // The base path is interpolated verbatim into the served index.html (a
         // `<base href>` attribute and a JS string) and used to rewrite request
         // paths, so restrict it to safe URL-path characters. This rejects quotes,
@@ -284,6 +316,58 @@ mod tests {
         // Untouched fields keep their defaults.
         assert_eq!(cfg.postgres.projection_interval_ms, 500);
         assert_eq!(cfg.writer.flush_interval_ms, 500);
+    }
+
+    #[test]
+    fn test_validate_rejects_zero_intervals_and_pool_size() {
+        let url = "postgres://u:p@db/lineage";
+        let base = || {
+            let mut c = Config::default();
+            c.postgres.url = Some(url.into());
+            c
+        };
+        base().validate().expect("valid defaults pass");
+
+        let mut c = base();
+        c.writer.flush_interval_ms = 0;
+        assert!(matches!(
+            c.validate(),
+            Err(ConfigError::NonPositive {
+                field: "writer.flush_interval_ms",
+                ..
+            })
+        ));
+
+        let mut c = base();
+        c.postgres.projection_interval_ms = 0;
+        assert!(matches!(
+            c.validate(),
+            Err(ConfigError::NonPositive {
+                field: "postgres.projection_interval_ms",
+                ..
+            })
+        ));
+
+        let mut c = base();
+        c.postgres.pool_size = 0;
+        assert!(matches!(
+            c.validate(),
+            Err(ConfigError::NonPositive {
+                field: "postgres.pool_size",
+                ..
+            })
+        ));
+
+        // `mpsc::channel(0)` panics — must be rejected at load too.
+        let mut c = base();
+        c.writer.channel_capacity = 0;
+        assert!(matches!(
+            c.validate(),
+            Err(ConfigError::NonPositive {
+                field: "writer.channel_capacity",
+                ..
+            })
+        ));
     }
 
     #[test]
