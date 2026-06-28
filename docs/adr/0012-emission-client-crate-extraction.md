@@ -57,7 +57,8 @@ unopinionated seam.
   `openlineage-client` — no DataFusion in its tree. This is verified in CI by
   asserting `cargo tree -p openlineage-client` contains no `datafusion`.
 - Two crates publish to crates.io (client first, since the integration depends on
-  it); the bootstrap-publish workflow and `release-plz.toml` order them.
+  it); `release-plz.toml` orders them. (Each crate's one-time first publish, which
+  predates crates.io Trusted Publishing, is a manual token publish — see CONTRIBUTING.)
 - `OpenLineageConfig` is engine-neutral; the DataFusion engine identity moves
   behind a `DataFusionConfig` extension trait (`for_datafusion`).
 - The `Transport` trait gained defaulted `emit_batch` and `flush` methods. `flush`
