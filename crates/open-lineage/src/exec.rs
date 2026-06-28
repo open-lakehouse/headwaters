@@ -122,12 +122,12 @@ impl RunState {
         if self.emitted.swap(true, Ordering::SeqCst) {
             return;
         }
+        let mut event = self.complete.clone();
+        // The template's `eventTime` was set at plan time; refresh it to the
+        // moment execution actually ended so run duration is meaningful.
+        event.event_time = Utc::now().to_rfc3339();
         if self.failed.load(Ordering::SeqCst) {
-            let mut event = self.complete.clone();
             event.event_type = RunEventType::Fail;
-            // The template's `eventTime` was set at plan time; refresh it to the
-            // moment execution actually ended so run duration is meaningful.
-            event.event_time = Utc::now().to_rfc3339();
             let message = self
                 .error
                 .lock()
@@ -140,16 +140,11 @@ impl RunState {
                 programming_language: "Rust".to_string(),
                 stack_trace: None,
             });
-            self.client.emit(event);
         } else {
-            let mut event = self.complete.clone();
-            // The template's `eventTime` was set at plan time; refresh it to the
-            // moment execution actually ended so run duration is meaningful.
-            event.event_time = Utc::now().to_rfc3339();
             self.attach_output_statistics(&mut event);
             self.attach_input_statistics(&mut event);
-            self.client.emit(event);
         }
+        self.client.emit(event);
     }
 
     /// Attach an `outputStatistics` facet to each output dataset of the COMPLETE
@@ -209,6 +204,18 @@ impl RunState {
         }
 
         let inner = self.inner.lock().unwrap().clone();
+        // A dataset scanned more than once (self-join, self-union, correlated
+        // subquery) collapses to a single input dataset, but the metric
+        // aggregate sums over every leaf scan and would over-count. Only a
+        // single leaf scan can be unambiguously attributed to the lone input,
+        // so skip rather than emit a doubled total.
+        if count_leaf_scans(&inner) != 1 {
+            tracing::trace!(
+                target: "openlineage",
+                "skipping inputStatistics: dataset scanned by multiple leaf nodes"
+            );
+            return;
+        }
         let (rows, bytes) = aggregate_scan_metrics(&inner);
         let row_count = rows.map(|n| n as i64);
         let size = bytes.map(|n| n as i64);
@@ -239,13 +246,16 @@ fn aggregate_scan_metrics(plan: &Arc<dyn ExecutionPlan>) -> (Option<usize>, Opti
 
     if let Some(metrics) = plan.metrics() {
         let metrics = metrics.aggregate_by_name();
-        // Only count rows from leaf scans, identified by a `bytes_scanned`
-        // metric; intermediate nodes also report `output_rows` and would
-        // double-count.
-        if let Some(b) = metrics.sum_by_name("bytes_scanned") {
-            *bytes.get_or_insert(0) += b.as_usize();
+        // Only count rows from leaf scans: intermediate nodes also report
+        // `output_rows` and would double-count. Leaf-ness (no children) is the
+        // right discriminator — `bytes_scanned` is parquet-specific, so gating
+        // on it dropped `output_rows` for memory/CSV/JSON/custom sources.
+        if plan.children().is_empty() {
             if let Some(r) = metrics.output_rows() {
                 *rows.get_or_insert(0) += r;
+            }
+            if let Some(b) = metrics.sum_by_name("bytes_scanned") {
+                *bytes.get_or_insert(0) += b.as_usize();
             }
         }
     }
@@ -261,6 +271,19 @@ fn aggregate_scan_metrics(plan: &Arc<dyn ExecutionPlan>) -> (Option<usize>, Opti
     }
 
     (rows, bytes)
+}
+
+/// Count the leaf scan nodes in the executed plan tree.
+///
+/// Used to detect when a single input dataset is read by more than one scan
+/// (self-join/union/correlated subquery), where the summed scan-metric
+/// aggregate would over-count that dataset's read statistics.
+fn count_leaf_scans(plan: &Arc<dyn ExecutionPlan>) -> usize {
+    let children = plan.children();
+    if children.is_empty() {
+        return 1;
+    }
+    children.iter().map(|child| count_leaf_scans(child)).sum()
 }
 
 /// Wraps the root physical plan, emitting a terminal lineage event when
@@ -476,10 +499,5 @@ fn write_count(batch: &RecordBatch) -> Option<u64> {
         return None;
     }
     let counts = batch.column(0).as_any().downcast_ref::<UInt64Array>()?;
-    Some(
-        (0..counts.len())
-            .filter(|i| counts.is_valid(*i))
-            .map(|i| counts.value(i))
-            .sum(),
-    )
+    Some(counts.iter().flatten().sum())
 }
