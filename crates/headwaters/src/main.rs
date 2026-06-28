@@ -52,10 +52,13 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let store = LineageStore::new(pool.clone());
-    let app = http::router(AppState {
-        writer: writer.handle(),
-        store,
-    });
+    let app = http::router(
+        AppState {
+            writer: writer.handle(),
+            store,
+        },
+        &cfg.ui.base_path,
+    );
 
     let addr = format!("0.0.0.0:{}", cfg.port);
     tracing::info!("headwaters listening on {}", addr);
