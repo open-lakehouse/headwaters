@@ -11,6 +11,12 @@ import { defineConfig } from "vite";
 const LINEAGE_URL = process.env.LINEAGE_URL ?? "http://localhost:8091";
 
 export default defineConfig({
+  // Emit *relative* asset URLs (e.g. `assets/index-*.js`, not `/assets/...`) so
+  // one build can be served under any URL prefix: the server injects a
+  // `<base href="{prefix}/">` into index.html (see crates/headwaters/src/http.rs)
+  // and the browser resolves these relative URLs against it. Lets an operator set
+  // HEADWATERS__UI__BASE_PATH at runtime without rebuilding the bundle.
+  base: "./",
   plugins: [react(), tailwindcss()],
   server: {
     port: 3010,
