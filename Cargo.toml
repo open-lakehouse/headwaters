@@ -19,9 +19,9 @@ connectrpc = { version = "0.7" }
 headwaters-client = { version = "0.0.2", path = "crates/headwaters-client" }
 headwaters-cli = { version = "0.0.2", path = "crates/headwaters-cli" }
 headwaters-proto = { version = "0.0.2", path = "crates/headwaters-proto" }
-datafusion = "53.1"
-datafusion-common = "53.1"
-datafusion-expr = "53.1"
+datafusion = "54"
+datafusion-common = "54"
+datafusion-expr = "54"
 futures = "0.3.32"
 object_store = { version = "0.13.2", features = ["azure", "aws", "gcp"] }
 olai-http = { version = "0.0.1" }
