@@ -2,4 +2,4 @@
 # `just ui-fingerprint`. DO NOT EDIT BY HAND. This file lives in the
 # headwaters crate so a UI change registers as a crate change and release-plz
 # rebuilds the Docker image — see the recipe and release-plz.toml.
-ee534b660e1b791222781e684ff0e9dba7e74537ea9c7bd9927d16b4f46e1ac5
+8cb22bcda9963d25d432f64cda6aed6a70ee77b3756e62d1ce89070b532cabd0

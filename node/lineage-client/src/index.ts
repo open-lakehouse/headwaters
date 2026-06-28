@@ -57,6 +57,7 @@ export type {
 export { ReadService } from "./gen/headwaters/read/v1/service_pb.js";
 export {
   clientTransport,
+  createDefaultTransport,
   getTransport,
   registerTransport,
 } from "./transport.js";

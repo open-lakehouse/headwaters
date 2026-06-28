@@ -74,10 +74,13 @@ async fn ingest(pool: &PgPool, json: &str) {
 /// The server task is detached and dies with the test process.
 async fn serve(pool: PgPool) -> String {
     let writer = BufferedWriter::spawn(Vec::new(), BufferedWriterConfig::default());
-    let app = http::router(AppState {
-        writer: writer.handle(),
-        store: LineageStore::new(pool),
-    });
+    let app = http::router(
+        AppState {
+            writer: writer.handle(),
+            store: LineageStore::new(pool),
+        },
+        "",
+    );
     let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
         .await
         .expect("bind ephemeral port");

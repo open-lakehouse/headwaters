@@ -19,6 +19,12 @@ pub enum ConfigError {
          (e.g. postgres://user:pass@host:5432/lineage)"
     )]
     MissingDatabaseUrl,
+
+    #[error(
+        "invalid ui.base_path {0:?}: only letters, digits, and `-._~/` are allowed \
+         (e.g. /lineage)"
+    )]
+    InvalidBasePath(String),
 }
 
 fn default_pool_size() -> u32 {
@@ -95,6 +101,22 @@ fn default_port() -> u16 {
     8091
 }
 
+/// Web UI serving settings.
+///
+/// By default the bundled single-page app is served from the service root (`/`).
+/// Set [`base_path`](UiConfig::base_path) to serve it (and every API route) under
+/// a sub-path instead — the "static prefix" pattern used when Headwaters sits
+/// behind a gateway at e.g. `https://platform.example.com/lineage/`. The value is
+/// normalized at load time (see [`Config::normalize`]): leading slash enforced,
+/// trailing slash stripped, so `lineage`, `/lineage`, and `/lineage/` all become
+/// `/lineage`; empty means "serve at root", unchanged from the default.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct UiConfig {
+    /// URL prefix the UI and all API routes are served under. Empty = root.
+    pub base_path: String,
+}
+
 /// Top-level service configuration: defaults, overlaid by an optional config
 /// file, overlaid by `HEADWATERS__*` environment variables.
 #[derive(Debug, Clone, Deserialize)]
@@ -106,6 +128,8 @@ pub struct Config {
     pub postgres: PostgresConfig,
     /// Buffered-writer tuning for the ingest path.
     pub writer: WriterConfig,
+    /// Web UI serving settings (e.g. a static URL prefix).
+    pub ui: UiConfig,
 }
 
 impl Default for Config {
@@ -114,6 +138,7 @@ impl Default for Config {
             port: default_port(),
             postgres: PostgresConfig::default(),
             writer: WriterConfig::default(),
+            ui: UiConfig::default(),
         }
     }
 }
@@ -164,8 +189,17 @@ impl Config {
             cfg.postgres.url = Some(url);
         }
 
+        cfg.normalize();
         cfg.validate()?;
         Ok(cfg)
+    }
+
+    /// Canonicalize values that accept loose input. Currently just the UI base
+    /// path: trim surrounding whitespace, drop any trailing slashes, and ensure a
+    /// single leading slash, so `lineage`, `/lineage`, and `/lineage/` all become
+    /// `/lineage` and the empty string (serve at root) stays empty.
+    fn normalize(&mut self) {
+        self.ui.base_path = normalize_base_path(&self.ui.base_path);
     }
 
     /// Validate cross-cutting invariants that serde can't express on its own.
@@ -173,7 +207,31 @@ impl Config {
         // A DSN must be resolvable so a misconfigured deployment fails at
         // startup rather than on the first write.
         self.postgres.resolve_url()?;
+        // The base path is interpolated verbatim into the served index.html (a
+        // `<base href>` attribute and a JS string) and used to rewrite request
+        // paths, so restrict it to safe URL-path characters. This rejects quotes,
+        // angle brackets, whitespace, and control characters at startup — closing
+        // an HTML/JS-injection vector and guaranteeing it parses as a URI path.
+        let bp = &self.ui.base_path;
+        if !bp.is_empty()
+            && !bp
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'/'))
+        {
+            return Err(ConfigError::InvalidBasePath(bp.clone()));
+        }
         Ok(())
+    }
+}
+
+/// Canonicalize a UI base path: empty stays empty; otherwise exactly one leading
+/// `/` and no trailing `/` (e.g. `lineage/` -> `/lineage`, `/` -> empty).
+fn normalize_base_path(raw: &str) -> String {
+    let trimmed = raw.trim().trim_matches('/');
+    if trimmed.is_empty() {
+        String::new()
+    } else {
+        format!("/{trimmed}")
     }
 }
 
@@ -275,5 +333,78 @@ mod tests {
     #[test]
     fn test_load_missing_explicit_path_is_error() {
         assert!(Config::load(Some("/nonexistent/headwaters.toml")).is_err());
+    }
+
+    #[test]
+    fn test_ui_base_path_defaults_to_empty() {
+        assert_eq!(Config::default().ui.base_path, "");
+        let cfg = from_toml("").unwrap();
+        assert_eq!(cfg.ui.base_path, "");
+    }
+
+    #[test]
+    fn test_ui_base_path_parses_from_file() {
+        let cfg = from_toml(
+            r#"
+            [ui]
+            base_path = "/lineage"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(cfg.ui.base_path, "/lineage");
+    }
+
+    #[test]
+    fn test_normalize_base_path() {
+        // Empty / root-only collapse to "serve at root".
+        assert_eq!(normalize_base_path(""), "");
+        assert_eq!(normalize_base_path("   "), "");
+        assert_eq!(normalize_base_path("/"), "");
+        assert_eq!(normalize_base_path("///"), "");
+        // Leading slash enforced, trailing slash(es) stripped, inner kept.
+        assert_eq!(normalize_base_path("lineage"), "/lineage");
+        assert_eq!(normalize_base_path("/lineage"), "/lineage");
+        assert_eq!(normalize_base_path("/lineage/"), "/lineage");
+        assert_eq!(normalize_base_path("  /lineage/  "), "/lineage");
+        assert_eq!(normalize_base_path("a/b"), "/a/b");
+    }
+
+    #[test]
+    fn test_validate_accepts_safe_base_paths() {
+        for bp in ["", "/lineage", "/data-lineage", "/v2/lineage", "/a_b.c~d"] {
+            let cfg = Config {
+                postgres: PostgresConfig {
+                    url: Some("postgres://u:p@db/lineage".into()),
+                    ..PostgresConfig::default()
+                },
+                ui: UiConfig {
+                    base_path: bp.into(),
+                },
+                ..Config::default()
+            };
+            assert!(cfg.validate().is_ok(), "should accept {bp:?}");
+        }
+    }
+
+    #[test]
+    fn test_validate_rejects_unsafe_base_paths() {
+        // Quotes / angle brackets / whitespace would let a base path break out of
+        // the injected `<base href>` attribute or JS string in index.html.
+        for bp in ["/x\"><script>", "/has space", "/quote\"here", "/semi;colon"] {
+            let cfg = Config {
+                postgres: PostgresConfig {
+                    url: Some("postgres://u:p@db/lineage".into()),
+                    ..PostgresConfig::default()
+                },
+                ui: UiConfig {
+                    base_path: bp.into(),
+                },
+                ..Config::default()
+            };
+            assert!(
+                matches!(cfg.validate(), Err(ConfigError::InvalidBasePath(_))),
+                "should reject {bp:?}"
+            );
+        }
     }
 }

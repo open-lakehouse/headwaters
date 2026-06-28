@@ -20,13 +20,23 @@
 import type { Transport } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 
+/**
+ * Build a Connect-over-fetch transport rooted at `baseUrl` (default `"/"`, the
+ * current origin). A host serving the UI under a URL prefix passes that prefix
+ * here so RPCs POST to `{prefix}/headwaters.read.v1.ReadService/*` — see the
+ * scaffold app's `main.tsx`, which reads the server-injected base path. The
+ * client package owns the `@connectrpc/connect-web` dependency, so hosts get a
+ * correctly-configured transport without taking it on themselves.
+ */
+export function createDefaultTransport(baseUrl = "/"): Transport {
+  return createConnectTransport({ baseUrl });
+}
+
 // Default: Connect-over-fetch against the current origin. An empty base resolves
 // against the dev origin; a Vite proxy forwards the RPC path prefix
 // (/headwaters.read.v1.ReadService/*) to headwaters. See the app's
 // vite.config.ts.
-const defaultTransport: Transport = createConnectTransport({
-  baseUrl: "/",
-});
+const defaultTransport: Transport = createDefaultTransport();
 
 let currentTransport: Transport = defaultTransport;
 

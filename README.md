@@ -87,6 +87,41 @@ just ui-dev       # dev server (proxies ConnectRPC to a local headwaters instanc
 just ui-sb        # Storybook (mocked, no backend)
 ```
 
+### Serving under a URL prefix
+
+By default the UI and all API routes are served from the service root (`/`). To
+put Headwaters behind a gateway at a sub-path (the "static prefix" pattern), set
+a base path at startup — no rebuild needed, one image serves at any prefix:
+
+```bash
+# env var (config key is ui.base_path; HEADWATERS__<SECTION>__<KEY>)
+HEADWATERS__UI__BASE_PATH=/lineage
+```
+
+```toml
+# or in the config file
+[ui]
+base_path = "/lineage"
+```
+
+The value is normalized to a single leading slash and no trailing slash
+(`lineage`, `/lineage`, and `/lineage/` are equivalent); empty means "serve at
+root". With a prefix set, the **entire** surface — UI, the REST read API
+(`/api/v1`), the OpenLineage ingest endpoints, and the ConnectRPC service — moves
+under it, e.g. `https://platform.example.com/lineage/`.
+
+**Gateway contract: forward the full prefixed path; do not strip the prefix.**
+Headwaters mounts every route under the prefix and serves an `index.html` that
+carries it (via `<base href>` and a `window.__HEADWATERS_BASE_PATH__` global), so
+the simplest and most robust setup is to pass the path through unchanged:
+
+```nginx
+location /lineage/ {
+    proxy_pass http://headwaters:8091;   # no trailing path -> prefix preserved
+    proxy_set_header Host $host;
+}
+```
+
 ## Documentation
 
 Design records and decisions live under [`docs/`](docs) — start with the
