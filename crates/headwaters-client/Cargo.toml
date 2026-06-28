@@ -19,6 +19,16 @@ connectrpc = { workspace = true, features = ["client"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 http = "1"
+http-body = "1"
+# Optional: cloud-provider auth (AWS/Azure/GCP/Databricks) via olai-http's
+# ConnectRPC transport. Enabled by the `cloud-auth` feature.
+olai-http = { workspace = true, optional = true }
+
+[features]
+default = []
+# Talk to servers fronted by cloud-provider auth, signing each request with
+# olai-http's CloudClient instead of a static bearer token.
+cloud-auth = ["dep:olai-http"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
