@@ -192,7 +192,10 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Build on MSRV
-        run: cargo build --workspace --all-features --locked
+        # Not --locked: freshly released deps (e.g. olai-http) can lag in the
+        # crates.io proxy used to author commits, so the committed lockfile may
+        # not yet pin them; let cargo resolve and update the lock here.
+        run: cargo build --workspace --all-features
 
   # The generated proto + ConnectRPC code under crates/headwaters/src/
   # {proto,connect_gen}/ is committed (so the workspace builds without a codegen
