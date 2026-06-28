@@ -30,9 +30,7 @@ impl FacetProcessor for RunMetaProcessor {
         else {
             return;
         };
-        let at = ev
-            .event_time
-            .unwrap_or_else(|| DateTime::<Utc>::from_timestamp_nanos(0));
+        let at = super::core::event_at(ev);
 
         // nominalTime → start/end window (RFC3339 strings → instants).
         let (mut nominal_start, mut nominal_end) = (None, None);

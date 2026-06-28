@@ -25,9 +25,7 @@ impl FacetProcessor for SchemaProcessor {
 
     fn process(&self, ev: &RawEvent, out: &mut Vec<Mutation>) {
         let Some(raw) = &ev.raw else { return };
-        let at = ev
-            .event_time
-            .unwrap_or_else(|| DateTime::<Utc>::from_timestamp_nanos(0));
+        let at = super::core::event_at(ev);
         let run_id = ev.run_id.clone();
 
         // Datasets can carry a schema on inputs, outputs, or a standalone

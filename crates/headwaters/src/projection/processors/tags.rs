@@ -29,9 +29,7 @@ impl FacetProcessor for TagsProcessor {
 
     fn process(&self, ev: &RawEvent, out: &mut Vec<Mutation>) {
         let Some(raw) = &ev.raw else { return };
-        let at = ev
-            .event_time
-            .unwrap_or_else(|| DateTime::<Utc>::from_timestamp_nanos(0));
+        let at = super::core::event_at(ev);
 
         // Job-level tags.
         if let (Some(ns), Some(name)) = (&ev.job_namespace, &ev.job_name)

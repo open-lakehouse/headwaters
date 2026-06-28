@@ -16,7 +16,11 @@ use crate::read::ids::{dataset_node_id, job_node_id};
 
 /// The event time, or the epoch for an unknown timestamp — matching the old
 /// fold, which used `0` so the latest-wins guards still have a total order.
-fn event_at(ev: &RawEvent) -> DateTime<Utc> {
+///
+/// Shared by every processor that stamps its mutations with the event time, so
+/// the unknown-timestamp sentinel lives in exactly one place (the latest-wins
+/// ordering across all read tables depends on it being consistent).
+pub(crate) fn event_at(ev: &RawEvent) -> DateTime<Utc> {
     ev.event_time
         .unwrap_or_else(|| DateTime::<Utc>::from_timestamp_nanos(0))
 }
