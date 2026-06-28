@@ -19,6 +19,12 @@ pub enum ConfigError {
          (e.g. postgres://user:pass@host:5432/lineage)"
     )]
     MissingDatabaseUrl,
+
+    #[error(
+        "invalid ui.base_path {0:?}: only letters, digits, and `-._~/` are allowed \
+         (e.g. /lineage)"
+    )]
+    InvalidBasePath(String),
 }
 
 fn default_pool_size() -> u32 {
@@ -201,6 +207,19 @@ impl Config {
         // A DSN must be resolvable so a misconfigured deployment fails at
         // startup rather than on the first write.
         self.postgres.resolve_url()?;
+        // The base path is interpolated verbatim into the served index.html (a
+        // `<base href>` attribute and a JS string) and used to rewrite request
+        // paths, so restrict it to safe URL-path characters. This rejects quotes,
+        // angle brackets, whitespace, and control characters at startup — closing
+        // an HTML/JS-injection vector and guaranteeing it parses as a URI path.
+        let bp = &self.ui.base_path;
+        if !bp.is_empty()
+            && !bp
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'/'))
+        {
+            return Err(ConfigError::InvalidBasePath(bp.clone()));
+        }
         Ok(())
     }
 }
@@ -348,5 +367,44 @@ mod tests {
         assert_eq!(normalize_base_path("/lineage/"), "/lineage");
         assert_eq!(normalize_base_path("  /lineage/  "), "/lineage");
         assert_eq!(normalize_base_path("a/b"), "/a/b");
+    }
+
+    #[test]
+    fn test_validate_accepts_safe_base_paths() {
+        for bp in ["", "/lineage", "/data-lineage", "/v2/lineage", "/a_b.c~d"] {
+            let cfg = Config {
+                postgres: PostgresConfig {
+                    url: Some("postgres://u:p@db/lineage".into()),
+                    ..PostgresConfig::default()
+                },
+                ui: UiConfig {
+                    base_path: bp.into(),
+                },
+                ..Config::default()
+            };
+            assert!(cfg.validate().is_ok(), "should accept {bp:?}");
+        }
+    }
+
+    #[test]
+    fn test_validate_rejects_unsafe_base_paths() {
+        // Quotes / angle brackets / whitespace would let a base path break out of
+        // the injected `<base href>` attribute or JS string in index.html.
+        for bp in ["/x\"><script>", "/has space", "/quote\"here", "/semi;colon"] {
+            let cfg = Config {
+                postgres: PostgresConfig {
+                    url: Some("postgres://u:p@db/lineage".into()),
+                    ..PostgresConfig::default()
+                },
+                ui: UiConfig {
+                    base_path: bp.into(),
+                },
+                ..Config::default()
+            };
+            assert!(
+                matches!(cfg.validate(), Err(ConfigError::InvalidBasePath(_))),
+                "should reject {bp:?}"
+            );
+        }
     }
 }

@@ -99,19 +99,20 @@ fn router_in(state: AppState, ui_dir: impl AsRef<Path>, base_path: &str) -> Rout
         .route("/api/v1/lineage/batch", post(ingest_batch))
         .with_state(state);
 
-    // The SPA entry (`index.html`) is always served through `serve_index` so the
-    // base path is injected — never straight off disk. `serve_index` ignores the
-    // request, so a zero-arg handler closure suffices; this factory stamps out one
-    // per route that needs it (the explicit index routes and the deep-link
-    // fallback) without juggling clones inline.
+    // The SPA entry (`index.html`) is always served through a handler so the base
+    // path is injected — never straight off disk. The bundle is static, so the
+    // rewritten entry is rendered ONCE here (at startup) and shared; requests just
+    // clone the cached `Arc` body, with no per-request disk read or string work.
+    // `None` (no bundle on disk — API-only runs) means the handler 404s. This
+    // factory stamps out one zero-arg handler per route that needs it (the
+    // explicit index routes and the deep-link fallback).
     let base_path = base_path.to_string();
+    let index_html: Arc<Option<String>> = Arc::new(render_index(&ui_dir, &base_path));
     let index_handler = || {
-        let ui_dir = ui_dir.clone();
-        let base_path = base_path.clone();
+        let index_html = index_html.clone();
         get(move || {
-            let ui_dir = ui_dir.clone();
-            let base_path = base_path.clone();
-            async move { serve_index(&ui_dir, &base_path).await }
+            let index_html = index_html.clone();
+            async move { serve_index(&index_html) }
         })
     };
 
@@ -217,8 +218,9 @@ fn rewrite_path(req: &mut axum::extract::Request, new_path: &str) {
 /// `node/app/src/main.tsx`). Empty string = served at root.
 const BASE_PATH_GLOBAL: &str = "__HEADWATERS_BASE_PATH__";
 
-/// Serve the SPA entry point (`index.html`) with the active base path injected,
-/// for the catch-all fallback (deep links like `/jobs`, and the prefix root).
+/// Render the SPA entry point (`index.html`) with the active base path injected,
+/// once at startup. Returns `None` when no bundle is on disk (API-only runs), so
+/// the index routes 404 and the server stays up.
 ///
 /// Two things are injected just inside `<head>`:
 ///   - `<base href="{base_path}/">` so the bundle's *relative* asset URLs
@@ -226,14 +228,12 @@ const BASE_PATH_GLOBAL: &str = "__HEADWATERS_BASE_PATH__";
 ///   - `<script>window.__HEADWATERS_BASE_PATH__ = "{base_path}"</script>` so the
 ///     client-side router and the ConnectRPC transport pick up the prefix.
 ///
-/// When `base_path` is empty the base href is `/` and the global is `""` — the
-/// SPA behaves exactly as a root deployment. A missing bundle (API-only runs)
-/// returns 404, leaving the API serving and the server up.
-async fn serve_index(ui_dir: &Path, base_path: &str) -> axum::response::Response {
-    let html = match tokio::fs::read_to_string(ui_dir.join("index.html")).await {
-        Ok(html) => html,
-        Err(_) => return StatusCode::NOT_FOUND.into_response(),
-    };
+/// `base_path` is validated to safe URL-path characters at config load (see
+/// [`crate::config`]), so interpolating it verbatim here is injection-safe. When
+/// it is empty the base href is `/` and the global is `""` — the SPA behaves
+/// exactly as a root deployment.
+fn render_index(ui_dir: &Path, base_path: &str) -> Option<String> {
+    let html = std::fs::read_to_string(ui_dir.join("index.html")).ok()?;
 
     // `<base href>` needs a trailing slash so relative URLs resolve as
     // `/{base_path}/assets/...`; root is just `/`.
@@ -256,12 +256,21 @@ async fn serve_index(ui_dir: &Path, base_path: &str) -> axum::response::Response
         }
         None => format!("{injection}{html}"),
     };
+    Some(rewritten)
+}
 
-    (
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        Html(rewritten),
-    )
-        .into_response()
+/// Serve the pre-rendered SPA entry (the catch-all fallback for deep links like
+/// `/jobs`, and the prefix root). 404s when there is no bundle (see
+/// [`render_index`]).
+fn serve_index(index_html: &Option<String>) -> axum::response::Response {
+    match index_html {
+        Some(html) => (
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            Html(html.clone()),
+        )
+            .into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 #[derive(Serialize)]
