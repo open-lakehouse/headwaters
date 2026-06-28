@@ -10,6 +10,9 @@ pub const ENV_URL: &str = "HEADWATERS_URL";
 pub const ENV_TOKEN: &str = "HEADWATERS_TOKEN";
 /// Environment variable holding the per-request timeout, in milliseconds.
 pub const ENV_TIMEOUT_MS: &str = "HEADWATERS_TIMEOUT_MS";
+/// Environment variable selecting a cloud-auth provider for the `cloud-auth`
+/// feature: one of `aws`, `azure`, `gcp`/`google`, or `databricks`.
+pub const ENV_AUTH: &str = "HEADWATERS_AUTH";
 
 /// Default per-request timeout when none is configured.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);

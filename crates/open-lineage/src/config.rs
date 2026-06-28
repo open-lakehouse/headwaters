@@ -57,7 +57,10 @@ mod tests {
         let cfg = OpenLineageConfig::for_datafusion();
         assert_eq!(cfg.producer, DATAFUSION_PRODUCER);
         assert_eq!(cfg.engine_name, "DataFusion");
-        assert_eq!(cfg.adapter_version, env!("CARGO_PKG_VERSION"));
+        // `engine_version` is DataFusion's version, stamped by this crate.
         assert!(!cfg.engine_version.is_empty());
+        // Note: `adapter_version` is owned and stamped by `openlineage-client`
+        // (its own CARGO_PKG_VERSION) and covered by that crate's tests — it is
+        // *not* this crate's version, so we don't assert it here.
     }
 }

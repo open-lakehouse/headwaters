@@ -24,7 +24,7 @@ datafusion-common = "54"
 datafusion-expr = "54"
 futures = "0.3.32"
 object_store = { version = "0.13.2", features = ["azure", "aws", "gcp"] }
-olai-http = { version = "0.0.1" }
+olai-http = { version = "0.0.4", features = ["connectrpc"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 sqlx = { version = "0.8", default-features = false, features = [
@@ -45,3 +45,4 @@ url = { version = "2.5.2", features = [
     "std",
 ], default-features = false }
 uuid = { version = "1", features = ["v4", "v5"] }
+

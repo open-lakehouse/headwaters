@@ -30,7 +30,7 @@ pub mod nodeid;
 pub mod types;
 
 pub use client::HeadwatersClient;
-pub use config::{DEFAULT_TIMEOUT, ENV_TIMEOUT_MS, ENV_TOKEN, ENV_URL, HeadwatersConfig};
+pub use config::{DEFAULT_TIMEOUT, ENV_AUTH, ENV_TIMEOUT_MS, ENV_TOKEN, ENV_URL, HeadwatersConfig};
 pub use error::Error;
 pub use nodeid::{dataset_field_node_id, dataset_node_id, job_node_id};
 pub use types::*;

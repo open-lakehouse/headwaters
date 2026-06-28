@@ -17,6 +17,12 @@ pub enum Error {
     /// The RPC failed — a transport error, or a non-OK status from the server.
     #[error("read API request failed: {0}")]
     Rpc(#[from] connectrpc::ConnectError),
+
+    /// Constructing a cloud-provider credential client failed (e.g. invalid or
+    /// missing credentials). Only present with the `cloud-auth` feature.
+    #[cfg(feature = "cloud-auth")]
+    #[error("cloud auth setup failed: {0}")]
+    CloudAuth(#[from] olai_http::Error),
 }
 
 impl Error {
