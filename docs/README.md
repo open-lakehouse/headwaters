@@ -14,3 +14,8 @@
 - [Marquez compatibility & divergences](marquez-compatibility.md) — where
   `headwaters` matches, diverges from, and goes beyond the Marquez reference
   implementation.
+- [CLI / server consolidation — design & handover](cli-server-consolidation-design.md)
+  — how the `hw` CLI should relate to the `headwaters` server (an opt-in `server`
+  feature + `hw serve`), how that maps onto one multi-target Dockerfile and the
+  eventual published crates. A deferred design; execute against it in a later
+  session.
