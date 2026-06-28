@@ -24,6 +24,26 @@ pub(crate) mod queries;
 
 use sqlx::PgPool;
 
+/// Default page size when a request omits `limit` (proto3 unset / missing query
+/// param). Shared by the REST and Connect surfaces so both page identically.
+pub(crate) const DEFAULT_LIMIT: usize = 100;
+
+/// Hard upper bound on any read page size. An unbounded `limit` would let a
+/// single request materialize and serialize an entire table (memory exhaustion /
+/// DoS), so both surfaces clamp to this ceiling. Mirrors the `MAX_DEPTH` cap the
+/// lineage traversal already applies.
+pub(crate) const MAX_LIMIT: usize = 1000;
+
+/// Resolve a requested page size to a safe, surface-consistent value: a missing
+/// or non-positive request falls back to `default`, and anything above
+/// [`MAX_LIMIT`] is clamped down. Used by both the REST `Pagination` extractor
+/// and the Connect `limit_or` so `limit=0`, unset, negative, and oversized
+/// requests all resolve the same way regardless of transport.
+pub(crate) fn resolve_limit(requested: usize, default: usize) -> usize {
+    let n = if requested == 0 { default } else { requested };
+    n.min(MAX_LIMIT)
+}
+
 /// Errors surfaced by the read layer. The HTTP layer maps these onto status
 /// codes (404 for not-found, 500 otherwise).
 #[derive(Debug, thiserror::Error)]
