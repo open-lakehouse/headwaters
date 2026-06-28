@@ -21,7 +21,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use datafusion::common::tree_node::TreeNode;
 use datafusion::logical_expr::utils::grouping_set_to_exprlist;
-use datafusion::logical_expr::{DdlStatement, Distinct, Expr, JoinType, LogicalPlan, WriteOp};
+use datafusion::logical_expr::{
+    CreateMemoryTable, CreateView, DdlStatement, Distinct, Expr, JoinType, LogicalPlan, WriteOp,
+};
 
 use crate::config::OpenLineageConfig;
 use crate::extract::dataset_for;
@@ -174,12 +176,16 @@ pub(crate) fn resolve_output_columns(
             WriteOp::Delete | WriteOp::Truncate => None,
         },
         // `CREATE TABLE ... AS SELECT` lowers to CreateMemoryTable; the new
-        // table's fields are exactly the query's output fields.
-        LogicalPlan::Ddl(DdlStatement::CreateMemoryTable(cmd)) => {
-            let resolved = resolve(&cmd.input, config)?;
-            let schema = cmd.input.schema().clone();
+        // table's fields are exactly the query's output fields. `CREATE VIEW`
+        // is structurally identical (a named plan over a SELECT input).
+        LogicalPlan::Ddl(
+            DdlStatement::CreateMemoryTable(CreateMemoryTable { input, .. })
+            | DdlStatement::CreateView(CreateView { input, .. }),
+        ) => {
+            let resolved = resolve(input, config)?;
+            let schema = input.schema().clone();
             if resolved.columns.len() != schema.fields().len() {
-                return degrade(plan, "CTAS input arity mismatch");
+                return degrade(plan, "CTAS/view input arity mismatch");
             }
             Some(keyed_by(resolved, |i| schema.field(i).name().clone()))
         }
@@ -203,6 +209,18 @@ fn keyed_by(node: NodeLineage, name: impl Fn(usize) -> String) -> ResolvedColumn
         fields,
         indirect: node.indirect,
     }
+}
+
+/// Strip any layers of [`Expr::Alias`] to reach the underlying expression.
+///
+/// `Expr::unalias` consumes `self` and clones, so this borrowing form is used
+/// where only a reference to the inner expression is needed.
+fn peel_aliases(expr: &Expr) -> &Expr {
+    let mut inner = expr;
+    while let Expr::Alias(alias) = inner {
+        inner = &alias.expr;
+    }
+    inner
 }
 
 fn degrade<T>(plan: &LogicalPlan, reason: &str) -> Option<T> {
@@ -434,10 +452,7 @@ fn resolve(plan: &LogicalPlan, config: &OpenLineageConfig) -> Option<NodeLineage
             let mut columns = child.columns.clone();
             let mut indirect = child.indirect.clone();
             for expr in &window.window_expr {
-                let mut inner = expr;
-                while let Expr::Alias(alias) = inner {
-                    inner = &alias.expr;
-                }
+                let inner = peel_aliases(expr);
                 if let Expr::WindowFunction(wf) = inner {
                     let mut sources = ColumnSources::default();
                     for arg in &wf.params.args {
@@ -539,10 +554,7 @@ fn expr_sources(
     if has_hidden_sources(expr) {
         return degrade(child_plan, "subquery in expression");
     }
-    let mut inner = expr;
-    while let Expr::Alias(alias) = inner {
-        inner = &alias.expr;
-    }
+    let inner = peel_aliases(expr);
     if let Expr::Column(col) = inner {
         let i = child_plan.schema().maybe_index_of_column(col)?;
         return Some(child.columns[i].clone().upgraded(min));

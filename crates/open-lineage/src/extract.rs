@@ -181,24 +181,10 @@ impl TreeNodeVisitor<'_> for LineageVisitor<'_> {
                 // after projection pushdown `SELECT a FROM t` would otherwise
                 // report `t` as having only column `a`, causing the dataset's
                 // schema version to flap between queries.
-                let fields: Vec<SchemaField> = scan
-                    .source
-                    .schema()
-                    .fields()
-                    .iter()
-                    .map(|f| SchemaField {
-                        name: f.name().to_string(),
-                        type_: f.data_type().to_string(),
-                        description: None,
-                    })
-                    .collect();
-                // Dedupe by `(namespace, name)`: a self-join scans the same
-                // table twice but it is a single input dataset.
-                if !self
-                    .inputs
-                    .iter()
-                    .any(|i| i.name.namespace == dataset.namespace && i.name.name == dataset.name)
-                {
+                let fields = schema_fields(scan.source.schema().fields());
+                // Dedupe by dataset identity: a self-join scans the same table
+                // twice but it is a single input dataset.
+                if !self.inputs.iter().any(|i| i.name == dataset) {
                     self.inputs.push(InputTable {
                         name: dataset,
                         fields,
@@ -235,6 +221,22 @@ impl TreeNodeVisitor<'_> for LineageVisitor<'_> {
                         fields: schema_fields(cmd.input.schema().as_arrow().fields()),
                         column_lineage: None,
                         lifecycle: Some("CREATE"),
+                    });
+                }
+                // `CREATE VIEW v AS SELECT ...` defines a derived dataset: the
+                // view is the output, its SELECT's scans are inputs (picked up
+                // by the TableScan arm). `OR REPLACE` overwrites an existing
+                // definition; a plain create is a CREATE.
+                DdlStatement::CreateView(cmd) => {
+                    self.outputs.push(OutputTable {
+                        name: self.dataset_for(&cmd.name),
+                        fields: schema_fields(cmd.input.schema().as_arrow().fields()),
+                        column_lineage: None,
+                        lifecycle: Some(if cmd.or_replace {
+                            "OVERWRITE"
+                        } else {
+                            "CREATE"
+                        }),
                     });
                 }
                 _ => {}
@@ -301,24 +303,20 @@ pub(crate) fn output_dataset_facets(
             lifecycle_state_change: state.to_string(),
         });
 
-    let Some(resolved) = &output.column_lineage else {
-        return DatasetFacets {
-            schema,
-            data_source,
-            lifecycle_state_change,
-            ..Default::default()
-        };
+    // No column lineage to attach — either none resolved, or it resolved empty
+    // (e.g. an all-literal INSERT / bulk ingest). Still emit the schema +
+    // dataSource + lifecycle facets so the dataset carries its columns.
+    let resolved = match &output.column_lineage {
+        Some(resolved) if !resolved.fields.is_empty() => resolved,
+        _ => {
+            return DatasetFacets {
+                schema,
+                data_source,
+                lifecycle_state_change,
+                ..Default::default()
+            };
+        }
     };
-    if resolved.fields.is_empty() {
-        // No column lineage resolvable (e.g. all-literal INSERT / bulk ingest):
-        // still emit the schema facet so the dataset carries its columns.
-        return DatasetFacets {
-            schema,
-            data_source,
-            lifecycle_state_change,
-            ..Default::default()
-        };
-    }
 
     let direct = |subtype: &str| Transformation {
         type_: TransformationType::Direct,

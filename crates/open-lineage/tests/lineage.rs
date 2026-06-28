@@ -585,6 +585,105 @@ async fn multi_input_read_omits_input_statistics() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[tokio::test]
+async fn non_parquet_file_read_emits_row_count() {
+    use datafusion::prelude::CsvReadOptions;
+
+    // `bytes_scanned` is a parquet-only metric; CSV (and other non-parquet file
+    // sources) report `output_rows` via `BaselineMetrics` but no `bytes_scanned`.
+    // Row counting is gated on leaf-ness, not on that parquet-specific metric, so
+    // the read still reports rowCount (size is omitted, absent a bytes metric).
+    let dir = std::env::temp_dir().join("ol_csv_row_count_test");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let csv = dir.join("data.csv");
+    std::fs::write(&csv, "a\n1\n2\n3\n4\n").unwrap();
+
+    let transport = RecordingTransport::default();
+    let client = OpenLineageClient::new(Arc::new(transport.clone()));
+    let base = SessionContext::new();
+    let state = instrument_session_state_simple(base.state(), client, config());
+    let instrumented = SessionContext::new_with_state(state);
+    instrumented
+        .register_csv("t", csv.to_str().unwrap(), CsvReadOptions::default())
+        .await
+        .unwrap();
+
+    let df = instrumented.sql("SELECT a FROM t").await.unwrap();
+    let _ = df.collect().await.unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let events = transport.events.lock().unwrap();
+    let complete = events
+        .iter()
+        .find(|e| e.event_type == RunEventType::Complete && !e.inputs.is_empty())
+        .expect("a COMPLETE with an input dataset");
+
+    let json = serde_json::to_value(complete).unwrap();
+    let stats = &json["inputs"][0]["inputFacets"]["inputStatistics"];
+    assert_eq!(
+        stats["rowCount"], 4,
+        "four rows read from a non-parquet (CSV) source: {json}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn self_join_omits_input_statistics() {
+    use datafusion::prelude::CsvReadOptions;
+
+    // A self-join collapses to a single input dataset, but two physical scans
+    // of that table are summed by the metric aggregate. Rather than emit a
+    // doubled total, input statistics are dropped when more than one leaf scan
+    // is present. Use a CSV source so the scans DO carry `output_rows` metrics —
+    // a metric-less memory source would pass this test trivially.
+    let dir = std::env::temp_dir().join("ol_self_join_test");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let csv = dir.join("data.csv");
+    std::fs::write(&csv, "a\n1\n2\n3\n").unwrap();
+
+    let transport = RecordingTransport::default();
+    let client = OpenLineageClient::new(Arc::new(transport.clone()));
+    let base = SessionContext::new();
+    let state = instrument_session_state_simple(base.state(), client, config());
+    let instrumented = SessionContext::new_with_state(state);
+    instrumented
+        .register_csv("t", csv.to_str().unwrap(), CsvReadOptions::default())
+        .await
+        .unwrap();
+
+    let df = instrumented
+        .sql("SELECT l.a FROM t l JOIN t r ON l.a = r.a")
+        .await
+        .unwrap();
+    let _ = df.collect().await.unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let events = transport.events.lock().unwrap();
+    let complete = events
+        .iter()
+        .find(|e| {
+            e.event_type == RunEventType::Complete
+                && e.inputs.len() == 1
+                && e.inputs[0].name.contains('t')
+        })
+        .expect("a COMPLETE with the single self-joined input");
+
+    let has_stats = complete.inputs[0]
+        .input_facets
+        .as_ref()
+        .map(|f| f.input_statistics.is_some())
+        .unwrap_or(false);
+    assert!(
+        !has_stats,
+        "self-join must omit inputStatistics to avoid double-counting"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // ---------------------------------------------------------------------------
 // 4. Context provider injects orchestration metadata
 // ---------------------------------------------------------------------------
@@ -655,6 +754,45 @@ async fn extract_ctas_has_output() {
     let lineage = extract(&plan, &config());
     assert_eq!(lineage.outputs.len(), 1, "CTAS target is an output");
     assert!(!lineage.inputs.is_empty(), "src is an input");
+}
+
+#[tokio::test]
+async fn extract_create_view_has_output() {
+    let ctx = SessionContext::new();
+    ctx.sql("CREATE TABLE src (a INT, b INT) AS VALUES (1, 2)")
+        .await
+        .unwrap();
+    // CREATE VIEW defines a derived dataset: the view is the output, the
+    // SELECT's scans are inputs. Column lineage resolves through to the view.
+    let plan = ctx
+        .state()
+        .create_logical_plan("CREATE VIEW v AS SELECT a FROM src")
+        .await
+        .unwrap();
+    let lineage = extract(&plan, &config());
+    assert_eq!(lineage.outputs.len(), 1, "the view is an output");
+    assert!(lineage.outputs[0].name.name.contains('v'), "output is v");
+    assert!(
+        !lineage.outputs[0].fields.is_empty(),
+        "view carries a schema facet"
+    );
+    assert_eq!(
+        lineage.outputs[0].lifecycle,
+        Some("CREATE"),
+        "plain CREATE VIEW is a CREATE lifecycle"
+    );
+    assert!(
+        lineage.inputs.iter().any(|i| i.name.name.contains("src")),
+        "src is an input"
+    );
+    let cl = lineage.outputs[0]
+        .column_lineage
+        .as_ref()
+        .expect("column lineage resolves for the view");
+    assert!(
+        cl.fields.contains_key("a"),
+        "view column `a` traces to source"
+    );
 }
 
 // ---------------------------------------------------------------------------
