@@ -96,12 +96,12 @@ into a `headwaters` release.
 - **Branch from `main`** and open a pull request; do not push to `main`.
 - **Releases are automated.** Don't bump crate versions or edit `CHANGELOG.md`
   by hand — release-plz maintains both from the merged commit history.
-- **A brand-new crate needs a one-time bootstrap publish.** The release workflow
+- **A brand-new crate needs a one-time manual first publish.** The release flow
   authenticates to crates.io via Trusted Publishing (OIDC), which can only be set
   up on a crate that already exists — so the *first* publish of a new crate can't
-  use it. Run the **Bootstrap publish** workflow (Actions → Bootstrap publish)
-  once per new crate, in dependency order, then register Trusted Publishing for
-  it on crates.io so all later releases flow through release-plz over OIDC.
+  use it. A maintainer runs `cargo publish` once (with a crates.io token), in
+  dependency order, then registers Trusted Publishing for the crate on crates.io
+  so all later releases flow through release-plz over OIDC.
 
 ## License
 
