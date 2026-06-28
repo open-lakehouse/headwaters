@@ -6,8 +6,6 @@
 //! `sourceCodeLocation`, and the parent job identity also appears on the run's
 //! `parent` facet). Emits a single [`Mutation::SetJobMeta`], latest-wins by `at`.
 
-use chrono::{DateTime, Utc};
-
 use crate::lineage::v1::JobTypeJobFacet;
 use crate::projection::RawEvent;
 use crate::projection::mutation::Mutation;
@@ -25,9 +23,7 @@ impl FacetProcessor for JobMetaProcessor {
             return;
         };
         let Some(raw) = &ev.raw else { return };
-        let at = ev
-            .event_time
-            .unwrap_or_else(|| DateTime::<Utc>::from_timestamp_nanos(0));
+        let at = super::core::event_at(ev);
 
         let job_facets = raw.get("job").and_then(|j| j.get("facets"));
 
@@ -91,6 +87,7 @@ impl FacetProcessor for JobMetaProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{DateTime, Utc};
     use serde_json::json;
 
     #[test]

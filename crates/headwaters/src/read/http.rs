@@ -98,7 +98,8 @@ async fn stats_lineage_events(
     State(store): State<LineageStore>,
     Query(p): Query<StatsParams>,
 ) -> Result<impl IntoResponse, ReadError> {
-    let resp = store.stats_lineage_events(&p.period, p.limit).await?;
+    let limit = super::resolve_limit(p.limit, default_stats_limit());
+    let resp = store.stats_lineage_events(&p.period, limit).await?;
     Ok(Json(resp.buckets))
 }
 
@@ -113,7 +114,8 @@ async fn stats_asset(
     Path(asset): Path<String>,
     Query(p): Query<StatsParams>,
 ) -> Result<impl IntoResponse, ReadError> {
-    match store.stats_asset(&asset, &p.period, p.limit).await {
+    let limit = super::resolve_limit(p.limit, default_stats_limit());
+    match store.stats_asset(&asset, &p.period, limit).await {
         Ok(resp) => Ok(Json(resp.buckets)),
         Err(ReadError::NotFound(_)) => {
             Ok(Json(Vec::<crate::headwaters::read::v1::StatBucket>::new()))
@@ -160,8 +162,19 @@ struct Pagination {
     offset: usize,
 }
 
+impl Pagination {
+    /// The page size to query, resolved against the shared default/ceiling so the
+    /// REST surface clamps identically to Connect: `limit=0` → default,
+    /// oversized → [`MAX_LIMIT`](super::MAX_LIMIT). Without this, `?limit=0`
+    /// returned an empty page and an arbitrarily large `?limit` could materialize
+    /// a whole table.
+    fn limit(&self) -> usize {
+        super::resolve_limit(self.limit, super::DEFAULT_LIMIT)
+    }
+}
+
 fn default_limit() -> usize {
-    100
+    super::DEFAULT_LIMIT
 }
 
 async fn list_namespaces(
@@ -175,7 +188,7 @@ async fn list_all_jobs(
     State(store): State<LineageStore>,
     Query(page): Query<Pagination>,
 ) -> Result<impl IntoResponse, ReadError> {
-    Ok(Json(store.jobs(None, page.limit, page.offset).await?))
+    Ok(Json(store.jobs(None, page.limit(), page.offset).await?))
 }
 
 async fn list_jobs(
@@ -185,7 +198,7 @@ async fn list_jobs(
 ) -> Result<impl IntoResponse, ReadError> {
     Ok(Json(
         store
-            .jobs(Some(&namespace), page.limit, page.offset)
+            .jobs(Some(&namespace), page.limit(), page.offset)
             .await?,
     ))
 }
@@ -209,7 +222,7 @@ async fn list_all_datasets(
     State(store): State<LineageStore>,
     Query(page): Query<Pagination>,
 ) -> Result<impl IntoResponse, ReadError> {
-    Ok(Json(store.datasets(None, page.limit, page.offset).await?))
+    Ok(Json(store.datasets(None, page.limit(), page.offset).await?))
 }
 
 async fn list_datasets(
@@ -219,7 +232,7 @@ async fn list_datasets(
 ) -> Result<impl IntoResponse, ReadError> {
     Ok(Json(
         store
-            .datasets(Some(&namespace), page.limit, page.offset)
+            .datasets(Some(&namespace), page.limit(), page.offset)
             .await?,
     ))
 }
@@ -249,9 +262,10 @@ async fn search(
     Query(params): Query<SearchParams>,
 ) -> Result<impl IntoResponse, ReadError> {
     let kind = params.r#type.as_deref().and_then(parse_entity_kind);
+    let limit = super::resolve_limit(params.limit, super::DEFAULT_LIMIT);
     Ok(Json(
         store
-            .search(&params.q, params.limit, kind, params.namespace.as_deref())
+            .search(&params.q, limit, kind, params.namespace.as_deref())
             .await?,
     ))
 }
@@ -307,7 +321,7 @@ async fn get_dataset_versions(
 ) -> Result<impl IntoResponse, ReadError> {
     Ok(Json(
         store
-            .dataset_versions(&namespace, &dataset, page.limit, page.offset)
+            .dataset_versions(&namespace, &dataset, page.limit(), page.offset)
             .await?,
     ))
 }
@@ -316,7 +330,7 @@ async fn list_events(
     State(store): State<LineageStore>,
     Query(page): Query<Pagination>,
 ) -> Result<impl IntoResponse, ReadError> {
-    Ok(Json(store.events(page.limit, page.offset).await?))
+    Ok(Json(store.events(page.limit(), page.offset).await?))
 }
 
 async fn get_run_facets(

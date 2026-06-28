@@ -52,7 +52,16 @@ pub fn event_to_row(evt: &OpenLineageEventView<'_>) -> Option<EventRow> {
 }
 
 fn ts_to_utc(ts: &buffa_types::google::protobuf::TimestampView<'_>) -> DateTime<Utc> {
-    Utc.timestamp_opt(ts.seconds, ts.nanos as u32)
+    // `nanos` is an `i32` and a well-formed proto Timestamp keeps it in
+    // `[0, 1_000_000_000)`, but a malformed producer can send a negative or
+    // out-of-range value. Casting straight to `u32` would wrap a negative into a
+    // huge value, `timestamp_opt` would reject it, and the fallback would
+    // silently rewrite the event to the epoch — corrupting time ordering. Carry
+    // any nanos overflow/underflow into the seconds instead so the instant is
+    // preserved.
+    let extra_secs = ts.nanos.div_euclid(1_000_000_000) as i64;
+    let nanos = ts.nanos.rem_euclid(1_000_000_000) as u32;
+    Utc.timestamp_opt(ts.seconds.saturating_add(extra_secs), nanos)
         .single()
         .unwrap_or_else(|| DateTime::<Utc>::from_timestamp_nanos(0))
 }

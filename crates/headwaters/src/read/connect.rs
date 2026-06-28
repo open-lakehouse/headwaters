@@ -18,20 +18,23 @@
 
 use connectrpc::{ConnectError, RequestContext, Response, ServiceRequest, ServiceResult};
 
-use super::{LineageStore, ReadError};
+use super::{DEFAULT_LIMIT, LineageStore, ReadError};
 use crate::connect_gen::headwaters::read::v1::ReadService;
 use crate::proto::headwaters::read::v1 as pb;
 
 /// REST-parity defaults for pagination / traversal knobs absent on the wire
-/// (proto3 scalars default to 0 / empty).
-const DEFAULT_LIMIT: usize = 100;
+/// (proto3 scalars default to 0 / empty). `DEFAULT_LIMIT`/`MAX_LIMIT` live in
+/// [`super`] so the REST and Connect surfaces share one source of truth.
 const DEFAULT_DEPTH: usize = 20;
 const DEFAULT_STATS_LIMIT: usize = 30;
 const DEFAULT_PERIOD: &str = "day";
 
-/// `0` (proto3 unset) → the REST default page size.
+/// `0` (proto3 unset) / negative → `default`; oversized → clamped to the shared
+/// [`MAX_LIMIT`](super::MAX_LIMIT) ceiling. Shares [`super::resolve_limit`] with
+/// the REST surface so both clamp page sizes identically. (`depth` reuses this
+/// for the same unset-and-clamp behavior.)
 fn limit_or(n: i32, default: usize) -> usize {
-    if n <= 0 { default } else { n as usize }
+    super::resolve_limit(n.max(0) as usize, default)
 }
 
 /// Map the read layer's errors onto the Connect error envelope: not-found stays

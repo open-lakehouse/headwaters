@@ -24,9 +24,7 @@ impl FacetProcessor for DatasetMetaProcessor {
 
     fn process(&self, ev: &RawEvent, out: &mut Vec<Mutation>) {
         let Some(raw) = &ev.raw else { return };
-        let at = ev
-            .event_time
-            .unwrap_or_else(|| DateTime::<Utc>::from_timestamp_nanos(0));
+        let at = super::core::event_at(ev);
 
         for key in ["inputs", "outputs"] {
             if let Some(arr) = raw.get(key).and_then(|v| v.as_array()) {
@@ -71,11 +69,17 @@ fn emit_for(ds: &JsonValue, at: DateTime<Utc>, out: &mut Vec<Mutation>) {
     }
 
     // lifecycleStateChange DROP → soft-delete (untyped facet, read from JSON).
+    // Only DROP carries a delete signal: it sets `deleted = Some(true)`. Any
+    // other lifecycle state (CREATE, ALTER, OVERWRITE, …) is *not* an
+    // un-delete — mapping it to `Some(false)` would let an unrelated ALTER
+    // resurrect a dataset that an earlier DROP soft-deleted. Leave `deleted`
+    // untouched (`None`) for non-DROP states.
     let deleted = facets
         .get("lifecycleStateChange")
         .and_then(|l| l.get("lifecycleStateChange"))
         .and_then(|v| v.as_str())
-        .map(|s| s.eq_ignore_ascii_case("DROP"));
+        .filter(|s| s.eq_ignore_ascii_case("DROP"))
+        .map(|_| true);
 
     if description.is_none() && source_name.is_none() && deleted.is_none() {
         return;
@@ -160,6 +164,25 @@ mod tests {
                 Some(true)
             ))
         );
+    }
+
+    /// A non-DROP lifecycle state must not emit a `deleted` signal (which would
+    /// resurrect a previously soft-deleted dataset).
+    #[test]
+    fn non_drop_lifecycle_leaves_deleted_unset() {
+        let ev = event(json!([{
+            "namespace": "w", "name": "d", "facets": {
+                "documentation": {"description": "still here"},
+                "lifecycleStateChange": {"lifecycleStateChange": "ALTER"}
+            }
+        }]));
+        let mut out = Vec::new();
+        DatasetMetaProcessor.process(&ev, &mut out);
+        let deleted = out.iter().find_map(|m| match m {
+            Mutation::SetDatasetMeta { deleted, .. } => Some(*deleted),
+            _ => None,
+        });
+        assert_eq!(deleted, Some(None));
     }
 
     #[test]
