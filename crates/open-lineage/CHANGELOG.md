@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5](https://github.com/open-lakehouse/headwaters/compare/datafusion-openlineage-v0.0.4...datafusion-openlineage-v0.0.5) - 2026-06-29
+
+### Fixed
+
+- input-statistics row counting + CREATE VIEW lineage (#47)
+
 ## [0.0.4](https://github.com/open-lakehouse/headwaters/compare/datafusion-openlineage-v0.0.3...datafusion-openlineage-v0.0.4) - 2026-06-28
 
 ### Added
