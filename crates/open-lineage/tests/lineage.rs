@@ -15,8 +15,8 @@ use datafusion_openlineage::event::{RunEvent, RunEventType};
 use datafusion_openlineage::extract::extract;
 use datafusion_openlineage::transport::{NoopTransport, Transport, TransportError};
 use datafusion_openlineage::{
-    LineageContextProvider, OpenLineageClient, instrument_session_state,
-    instrument_session_state_simple,
+    LineageContextProvider, OpenLineage, OpenLineageClient, OpenLineageSqlExt,
+    instrument_session_state, instrument_session_state_simple,
 };
 use serde_json::Value;
 use uuid::Uuid;
@@ -1252,4 +1252,267 @@ async fn partition_count_change_emits_one_terminal() {
         "exactly one COMPLETE after a partition-count-changing rewrite"
     );
     assert_eq!(fails, 0, "no spurious FAIL");
+}
+
+// ---------------------------------------------------------------------------
+// 9. CTAS / CREATE VIEW lineage via `sql_with_lineage`
+//
+// DataFusion executes `CREATE TABLE ... AS SELECT` and `CREATE VIEW ... AS
+// SELECT` outside the query-planner hook (the planner only ever sees the SELECT
+// body, stripped of the DDL wrapper), so `ctx.sql(...)` captures the inputs but
+// not the created dataset — and a CREATE VIEW emits nothing at all. The
+// `OpenLineageSqlExt::sql_with_lineage` entry point runs lineage extraction on
+// the full DDL plan and emits the events around execution. These assert the
+// output dataset is present (the regression) without asserting row statistics,
+// which the delegate-to-`execute_logical_plan` path does not carry for CTAS.
+// ---------------------------------------------------------------------------
+
+/// An instrumented context plus the transport recording its events. Setup DDL is
+/// run through plain `sql()` (no events) so only the statement under test is
+/// recorded.
+async fn instrumented_ctx() -> (SessionContext, RecordingTransport) {
+    let transport = RecordingTransport::default();
+    let client = OpenLineageClient::new(Arc::new(transport.clone()));
+    let base = SessionContext::new();
+    let state = instrument_session_state_simple(base.state(), client, config());
+    (SessionContext::new_with_state(state), transport)
+}
+
+#[tokio::test]
+async fn ctas_emits_start_and_complete_with_output() {
+    let (ctx, transport) = instrumented_ctx().await;
+    // Setup via plain sql(): no lineage events, so the recording is clean.
+    ctx.sql("CREATE TABLE src (a INT) AS VALUES (1), (2)")
+        .await
+        .unwrap();
+
+    // The statement under test, through the lineage-aware entry point.
+    ctx.sql_with_lineage("CREATE TABLE dst AS SELECT a FROM src")
+        .await
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let events = transport.events.lock().unwrap();
+
+    let start = events
+        .iter()
+        .find(|e| e.event_type == RunEventType::Start)
+        .expect("a START for the CTAS");
+    let run_id = start.run.run_id;
+    let complete = events
+        .iter()
+        .find(|e| e.event_type == RunEventType::Complete && e.run.run_id == run_id)
+        .expect("a COMPLETE under the same run id");
+
+    // The created table is recorded as an output (this is the regression: with
+    // plain sql() the planner never sees the CreateMemoryTable wrapper, so the
+    // COMPLETE would have empty outputs).
+    assert_eq!(complete.outputs.len(), 1, "CTAS target is an output");
+    let json = serde_json::to_value(complete).unwrap();
+    assert!(
+        json["outputs"][0]["name"].as_str().unwrap().contains("dst"),
+        "output is dst: {json}"
+    );
+    assert!(
+        json["outputs"][0]["facets"]["schema"].is_object(),
+        "output carries a schema facet: {json}"
+    );
+    assert_eq!(
+        json["outputs"][0]["facets"]["lifecycleStateChange"]["lifecycleStateChange"], "CREATE",
+        "CTAS is a CREATE lifecycle: {json}"
+    );
+    // The SELECT body's scan is still an input.
+    assert_eq!(complete.inputs.len(), 1, "src is an input");
+    assert!(
+        json["inputs"][0]["name"].as_str().unwrap().contains("src"),
+        "input is src: {json}"
+    );
+}
+
+#[tokio::test]
+async fn ctas_emits_column_lineage() {
+    let (ctx, transport) = instrumented_ctx().await;
+    ctx.sql("CREATE TABLE src (a INT, b INT) AS VALUES (1, 2)")
+        .await
+        .unwrap();
+
+    ctx.sql_with_lineage("CREATE TABLE dst AS SELECT a, a + b AS s FROM src")
+        .await
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let events = transport.events.lock().unwrap();
+    let complete = events
+        .iter()
+        .find(|e| e.event_type == RunEventType::Complete && !e.outputs.is_empty())
+        .expect("a COMPLETE with an output dataset");
+
+    let json = serde_json::to_value(complete).unwrap();
+    assert!(
+        json["outputs"][0]["facets"]["columnLineage"].is_object(),
+        "CTAS output carries a columnLineage facet: {json}"
+    );
+}
+
+#[tokio::test]
+async fn create_view_emits_output() {
+    let (ctx, transport) = instrumented_ctx().await;
+    ctx.sql("CREATE TABLE src (a INT) AS VALUES (1)")
+        .await
+        .unwrap();
+
+    // CREATE VIEW is registered without ever being planned, so plain sql() emits
+    // nothing; sql_with_lineage extracts from the full plan and emits the view as
+    // an output.
+    ctx.sql_with_lineage("CREATE VIEW v AS SELECT a FROM src")
+        .await
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let events = transport.events.lock().unwrap();
+
+    let start = events
+        .iter()
+        .find(|e| e.event_type == RunEventType::Start)
+        .expect("a START for the CREATE VIEW");
+    let complete = events
+        .iter()
+        .find(|e| e.event_type == RunEventType::Complete && e.run.run_id == start.run.run_id)
+        .expect("a COMPLETE under the same run id");
+
+    assert_eq!(complete.outputs.len(), 1, "the view is an output");
+    let json = serde_json::to_value(complete).unwrap();
+    assert!(
+        json["outputs"][0]["name"].as_str().unwrap().contains('v'),
+        "output is v: {json}"
+    );
+    assert!(
+        json["outputs"][0]["facets"]["schema"].is_object(),
+        "view carries a schema facet: {json}"
+    );
+    assert_eq!(
+        json["outputs"][0]["facets"]["lifecycleStateChange"]["lifecycleStateChange"], "CREATE",
+        "plain CREATE VIEW is a CREATE lifecycle: {json}"
+    );
+}
+
+#[tokio::test]
+async fn ctas_failure_emits_fail() {
+    let (ctx, transport) = instrumented_ctx().await;
+    // A zero row makes the divide fail at execution time.
+    ctx.sql("CREATE TABLE src (a INT) AS VALUES (1), (2), (0)")
+        .await
+        .unwrap();
+
+    let result = ctx
+        .sql_with_lineage("CREATE TABLE dst AS SELECT 10 / a AS r FROM src")
+        .await;
+    // The CTAS materializes its body eagerly, so the divide-by-zero surfaces here.
+    assert!(result.is_err(), "CTAS body fails at execution");
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let events = transport.events.lock().unwrap();
+
+    let start = events
+        .iter()
+        .find(|e| e.event_type == RunEventType::Start)
+        .expect("a START for the failing CTAS");
+    let run_id = start.run.run_id;
+    let fail = events
+        .iter()
+        .find(|e| e.event_type == RunEventType::Fail && e.run.run_id == run_id)
+        .expect("a FAIL under the same run id");
+    let completes = events
+        .iter()
+        .filter(|e| e.event_type == RunEventType::Complete && e.run.run_id == run_id)
+        .count();
+    assert_eq!(completes, 0, "no COMPLETE for a failed CTAS");
+
+    let json = serde_json::to_value(fail).unwrap();
+    assert!(
+        json["run"]["facets"]["errorMessage"].is_object(),
+        "FAIL carries an errorMessage facet: {json}"
+    );
+}
+
+#[tokio::test]
+async fn non_ddl_sql_through_with_lineage_matches_planner_path() {
+    let (ctx, transport) = instrumented_ctx().await;
+    ctx.sql("CREATE TABLE src (a INT) AS VALUES (1), (2), (3)")
+        .await
+        .unwrap();
+    ctx.sql("CREATE TABLE dst (a INT) AS VALUES (0)")
+        .await
+        .unwrap();
+
+    // A plain SELECT and an INSERT routed through sql_with_lineage take the
+    // delegate path; the normal planner produces the lineage, with no duplicate
+    // events from sql_with_lineage itself.
+    let df = ctx.sql_with_lineage("SELECT a FROM src").await.unwrap();
+    let _ = df.collect().await.unwrap();
+    let df = ctx
+        .sql_with_lineage("INSERT INTO dst SELECT a FROM src")
+        .await
+        .unwrap();
+    let _ = df.collect().await.unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let events = transport.events.lock().unwrap();
+    // The SELECT emits one START/COMPLETE; the INSERT another. Each run id has
+    // exactly one START and one COMPLETE — no doubling.
+    for ty in [RunEventType::Start, RunEventType::Complete] {
+        let n = events.iter().filter(|e| e.event_type == ty).count();
+        assert_eq!(n, 2, "expected 2 {ty:?} events (SELECT + INSERT), got {n}");
+    }
+}
+
+#[tokio::test]
+async fn uninstrumented_session_falls_through() {
+    // No instrumentation: sql_with_lineage behaves like sql and emits nothing.
+    let ctx = SessionContext::new();
+    ctx.sql("CREATE TABLE src (a INT) AS VALUES (1)")
+        .await
+        .unwrap();
+    // A CTAS still creates the table (no panic, no error) even with no planner
+    // extension to recover.
+    ctx.sql_with_lineage("CREATE TABLE dst AS SELECT a FROM src")
+        .await
+        .unwrap();
+    let n = ctx
+        .sql("SELECT COUNT(*) FROM dst")
+        .await
+        .unwrap()
+        .collect()
+        .await
+        .unwrap();
+    assert!(!n.is_empty(), "dst was created by the fall-through CTAS");
+}
+
+#[tokio::test]
+async fn with_lineage_convenience_installs_instrumentation() {
+    let transport = RecordingTransport::default();
+    let client = OpenLineageClient::new(Arc::new(transport.clone()));
+
+    // The consume-and-return convenience wires the same instrumentation as the
+    // builder + new_with_state dance.
+    let ctx =
+        SessionContext::new().with_lineage(OpenLineage::builder().client(client).config(config()));
+    ctx.sql("CREATE TABLE src (a INT) AS VALUES (1), (2)")
+        .await
+        .unwrap();
+    ctx.sql_with_lineage("CREATE TABLE dst AS SELECT a FROM src")
+        .await
+        .unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let events = transport.events.lock().unwrap();
+    let complete = events
+        .iter()
+        .find(|e| e.event_type == RunEventType::Complete && !e.outputs.is_empty())
+        .expect("a COMPLETE with an output dataset from the convenience-instrumented context");
+    let json = serde_json::to_value(complete).unwrap();
+    assert!(
+        json["outputs"][0]["name"].as_str().unwrap().contains("dst"),
+        "output is dst: {json}"
+    );
 }
