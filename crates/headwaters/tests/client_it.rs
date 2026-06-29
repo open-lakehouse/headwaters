@@ -80,6 +80,7 @@ async fn serve(pool: PgPool) -> String {
             store: LineageStore::new(pool),
         },
         "",
+        true,
     );
     let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
         .await

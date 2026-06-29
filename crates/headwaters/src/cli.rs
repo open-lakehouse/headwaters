@@ -50,6 +50,12 @@ pub struct ServeArgs {
     /// `headwaters=debug`). An explicit `RUST_LOG` still wins.
     #[arg(long)]
     pub log_level: Option<String>,
+
+    /// Run API-only: do not serve the bundled web UI. Overrides config; equivalent
+    /// to `ui.serve = false` / `HEADWATERS__UI__SERVE=false`. Use when embedding a
+    /// custom UI built on the shipped components, or serving no UI at all.
+    #[arg(long)]
+    pub no_ui: bool,
 }
 
 impl ServeArgs {
@@ -60,6 +66,12 @@ impl ServeArgs {
         }
         if let Some(port) = self.port {
             cfg.port = port;
+        }
+        // A bare `--no-ui` opts out of serving the UI; absent, the config/env
+        // value (default `true`) stands. The flag can only disable, never
+        // re-enable, so its absence never clobbers a configured `serve = true`.
+        if self.no_ui {
+            cfg.ui.serve = false;
         }
     }
 }
@@ -153,9 +165,35 @@ mod tests {
                 assert!(args.host.is_none());
                 assert!(args.port.is_none());
                 assert!(args.log_level.is_none());
+                assert!(!args.no_ui);
             }
             _ => panic!("expected serve"),
         }
+    }
+
+    #[test]
+    fn no_ui_flag_overlays_serve() {
+        // Without the flag, the configured value (default `true`) stands.
+        let cli = Cli::try_parse_from(["headwaters", "serve"]).unwrap();
+        let Command::Serve(args) = cli.command else {
+            panic!("expected serve");
+        };
+        let mut cfg = Config::default();
+        args.overlay(&mut cfg);
+        assert!(
+            cfg.ui.serve,
+            "absent --no-ui leaves serve at its config value"
+        );
+
+        // `--no-ui` disables serving the bundled UI.
+        let cli = Cli::try_parse_from(["headwaters", "serve", "--no-ui"]).unwrap();
+        let Command::Serve(args) = cli.command else {
+            panic!("expected serve");
+        };
+        assert!(args.no_ui);
+        let mut cfg = Config::default();
+        args.overlay(&mut cfg);
+        assert!(!cfg.ui.serve);
     }
 
     #[test]

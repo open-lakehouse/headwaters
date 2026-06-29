@@ -115,6 +115,10 @@ fn default_host() -> String {
     "0.0.0.0".to_string()
 }
 
+fn default_serve_ui() -> bool {
+    true
+}
+
 /// Web UI serving settings.
 ///
 /// By default the bundled single-page app is served from the service root (`/`).
@@ -124,11 +128,31 @@ fn default_host() -> String {
 /// normalized at load time (see [`Config::normalize`]): leading slash enforced,
 /// trailing slash stripped, so `lineage`, `/lineage`, and `/lineage/` all become
 /// `/lineage`; empty means "serve at root", unchanged from the default.
-#[derive(Debug, Clone, Default, Deserialize)]
+///
+/// The bundled UI is one consumer of the read API; Headwaters also ships its core
+/// UI components so others can build their own front-ends against the same API.
+/// Set [`serve`](UiConfig::serve) to `false` to run the service API-only — the SPA
+/// routes are not mounted and the bundle on disk is ignored — for deployments that
+/// embed a custom UI (or none) and want only the ingest + read surface.
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct UiConfig {
     /// URL prefix the UI and all API routes are served under. Empty = root.
     pub base_path: String,
+    /// Whether to serve the bundled single-page app. `true` (default) mounts the
+    /// SPA routes; `false` runs API-only (ingest + read), even if a bundle is on
+    /// disk. The CLI `--no-ui` flag and `HEADWATERS__UI__SERVE=false` both set
+    /// this.
+    pub serve: bool,
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self {
+            base_path: String::new(),
+            serve: default_serve_ui(),
+        }
+    }
 }
 
 /// Top-level service configuration: defaults, overlaid by an optional config
@@ -539,6 +563,25 @@ mod tests {
     }
 
     #[test]
+    fn test_ui_serve_defaults_to_true() {
+        assert!(Config::default().ui.serve);
+        let cfg = from_toml("").unwrap();
+        assert!(cfg.ui.serve);
+    }
+
+    #[test]
+    fn test_ui_serve_parses_from_file() {
+        let cfg = from_toml(
+            r#"
+            [ui]
+            serve = false
+            "#,
+        )
+        .unwrap();
+        assert!(!cfg.ui.serve);
+    }
+
+    #[test]
     fn test_normalize_base_path() {
         // Empty / root-only collapse to "serve at root".
         assert_eq!(normalize_base_path(""), "");
@@ -563,6 +606,7 @@ mod tests {
                 },
                 ui: UiConfig {
                     base_path: bp.into(),
+                    ..UiConfig::default()
                 },
                 ..Config::default()
             };
@@ -582,6 +626,7 @@ mod tests {
                 },
                 ui: UiConfig {
                     base_path: bp.into(),
+                    ..UiConfig::default()
                 },
                 ..Config::default()
             };
