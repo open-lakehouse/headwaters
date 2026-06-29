@@ -61,5 +61,6 @@ pub use exec::OpenLineageExec;
 pub use extract::{QueryLineage, extract};
 pub use rule::{LineageExtensionPlanner, LineageMarker, OpenLineageQueryPlanner};
 pub use session::{
-    OpenLineage, OpenLineageBuilder, instrument_session_state, instrument_session_state_simple,
+    OpenLineage, OpenLineageBuilder, OpenLineageSqlExt, instrument_session_state,
+    instrument_session_state_simple,
 };

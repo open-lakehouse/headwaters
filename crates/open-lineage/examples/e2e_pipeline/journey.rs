@@ -203,11 +203,13 @@ struct Transform<'a> {
 /// the insert as its `sql` facet), register upstream Parquet inputs, create the
 /// empty output table, run the `INSERT`, and persist the result to Parquet.
 ///
-/// Why `INSERT INTO` and not `CREATE TABLE AS SELECT`: DataFusion executes the
-/// CTAS write itself, so its target never reaches the instrumented physical
-/// planner and no output dataset is captured. An `INSERT INTO` of an existing
-/// table lowers to a `Dml(Insert)` node that the planner sees, so the write
-/// becomes a real output edge with runtime row statistics.
+/// Why `INSERT INTO` and not `CREATE TABLE AS SELECT`: DataFusion executes a CTAS
+/// write itself, outside the instrumented planner. CTAS *can* be captured via
+/// `OpenLineageSqlExt::sql_with_lineage` (output dataset, schema, column lineage),
+/// but because DataFusion materializes the body internally that path carries no
+/// runtime row statistics. An `INSERT INTO` of an existing table lowers to a
+/// `Dml(Insert)` node the planner sees directly, so the write becomes an output
+/// edge *with* runtime row statistics — which this stats-showcasing example wants.
 async fn run_transform(
     client: &OpenLineageClient,
     pipeline: &Pipeline,
