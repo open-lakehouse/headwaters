@@ -68,6 +68,7 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
             store,
         },
         &cfg.ui.base_path,
+        cfg.ui.serve,
     );
 
     let addr = cfg.bind_addr();

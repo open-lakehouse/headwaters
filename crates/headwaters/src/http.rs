@@ -55,11 +55,12 @@ const UI_DIR: &str = "web";
 /// endpoints, the Marquez-compatible read API under `/api/v1`, and the
 /// ConnectRPC read service under [`CONNECT_PREFIX`].
 ///
-/// Anything not matched by an API route falls back to the bundled single-page
-/// app in [`UI_DIR`]: real files come off disk, and any other path (deep links
-/// like `/jobs`) falls back to `index.html` so the SPA's client-side router
-/// takes over. API routes are matched first, so they are never shadowed. When
-/// [`UI_DIR`] has no bundle (local API-only runs), those paths 404.
+/// With `serve_ui` on (the default), anything not matched by an API route falls
+/// back to the bundled single-page app in [`UI_DIR`]: real files come off disk,
+/// and any other path (deep links like `/jobs`) falls back to `index.html` so the
+/// SPA's client-side router takes over. API routes are matched first, so they are
+/// never shadowed. When [`UI_DIR`] has no bundle (local API-only runs), those
+/// paths 404.
 ///
 /// When `base_path` is non-empty (e.g. `/lineage`) the *entire* surface — UI,
 /// REST API, and ConnectRPC — is mounted under that prefix, so the service can
@@ -68,17 +69,23 @@ const UI_DIR: &str = "web";
 /// rewritten to carry the prefix (see [`serve_index`]), so one image works at
 /// any prefix without a rebuild.
 ///
+/// When `serve_ui` is `false` the service runs API-only: the SPA routes (root,
+/// `index.html`, and the deep-link/asset fallback) are not mounted, and any
+/// non-API path 404s regardless of whether a bundle is on disk. This is for
+/// deployments that embed their own UI (built on the shipped components) or serve
+/// none. The REST API, ConnectRPC, `/health`, and `/version` are unaffected.
+///
 /// A permissive [`CorsLayer`] is applied because a separately-hosted web UI
 /// (e.g. the Marquez reference UI, or the Vite dev server) calls these endpoints
 /// directly from another origin.
-pub fn router(state: AppState, base_path: &str) -> Router {
-    router_in(state, UI_DIR, base_path)
+pub fn router(state: AppState, base_path: &str, serve_ui: bool) -> Router {
+    router_in(state, UI_DIR, base_path, serve_ui)
 }
 
 /// [`router`], with the SPA directory injected — the seam is so tests can point
 /// at a fixture bundle instead of the hardcoded [`UI_DIR`], and exercise the
 /// base-path mounting with a known prefix.
-fn router_in(state: AppState, ui_dir: impl AsRef<Path>, base_path: &str) -> Router {
+fn router_in(state: AppState, ui_dir: impl AsRef<Path>, base_path: &str, serve_ui: bool) -> Router {
     let ui_dir = ui_dir.as_ref().to_path_buf();
     let read_routes = read::http::router(state.store.clone());
 
@@ -99,15 +106,50 @@ fn router_in(state: AppState, ui_dir: impl AsRef<Path>, base_path: &str) -> Rout
         .route("/api/v1/lineage/batch", post(ingest_batch))
         .with_state(state);
 
-    // The SPA entry (`index.html`) is always served through a handler so the base
-    // path is injected — never straight off disk. The bundle is static, so the
-    // rewritten entry is rendered ONCE here (at startup) and shared; requests just
-    // clone the cached `Arc` body, with no per-request disk read or string work.
-    // `None` (no bundle on disk — API-only runs) means the handler 404s. This
-    // factory stamps out one zero-arg handler per route that needs it (the
-    // explicit index routes and the deep-link fallback).
     let base_path = base_path.to_string();
-    let index_html: Arc<Option<String>> = Arc::new(render_index(&ui_dir, &base_path));
+
+    let app = ingest_routes
+        .merge(read_routes)
+        // Mount the Connect dispatcher under its own path prefix. `route_service`
+        // (not `nest_service`) keeps the full URI intact, which the dispatcher
+        // needs since it routes on the fully-qualified `service/method` path.
+        // axum 0.7 catch-all syntax is `/*param` (`{*param}` is 0.8); keep this in
+        // step with the `:param` captures in `read::http` until the crate moves.
+        .route_service(
+            &format!("{CONNECT_PREFIX}/*rest"),
+            connect_router.into_axum_service(),
+        );
+
+    // The SPA routes are mounted only when UI serving is enabled. With them off
+    // the service is API-only: non-API paths fall through to a plain 404 (axum's
+    // default fallback), and the bundle on disk — if any — is never read.
+    let app = if serve_ui {
+        mount_spa(app, &ui_dir, &base_path)
+    } else {
+        app
+    };
+
+    mount_under_base(app, &base_path)
+        // Per-request tracing (method, path, status, latency) for operability;
+        // verbosity is controlled by the `RUST_LOG`/`tower_http` env filter.
+        .layer(TraceLayer::new_for_http())
+        .layer(CorsLayer::permissive())
+}
+
+/// Layer the bundled single-page app onto `app`: the templated entry at `/` and
+/// `/index.html`, and a `ServeDir` fallback that serves real asset files off disk
+/// and falls back to the templated entry for deep links. Returns `app` augmented
+/// with those routes; callers gate this on the UI being enabled.
+///
+/// The SPA entry (`index.html`) is always served through a handler so the base
+/// path is injected — never straight off disk. The bundle is static, so the
+/// rewritten entry is rendered ONCE here (at startup) and shared; requests just
+/// clone the cached `Arc` body, with no per-request disk read or string work.
+/// `None` (no bundle on disk — API-only runs) means the handler 404s. The handler
+/// factory stamps out one zero-arg handler per route that needs it (the explicit
+/// index routes and the deep-link fallback).
+fn mount_spa(app: Router, ui_dir: &Path, base_path: &str) -> Router {
+    let index_html: Arc<Option<String>> = Arc::new(render_index(ui_dir, base_path));
     let index_handler = || {
         let index_html = index_html.clone();
         get(move || {
@@ -121,33 +163,17 @@ fn router_in(state: AppState, ui_dir: impl AsRef<Path>, base_path: &str) -> Rout
     // `serve_index` for the base-path injection). Its own fallback handles deep
     // links: any path that isn't a real file -> the templated SPA entry, so the
     // client-side router takes over (and a missing bundle -> 404).
-    let serve_assets = ServeDir::new(&ui_dir)
+    let serve_assets = ServeDir::new(ui_dir)
         .append_index_html_on_directories(false)
         .fallback(index_handler());
 
-    let app = ingest_routes
-        .merge(read_routes)
+    app
         // The SPA entry, templated, at the root and its explicit file name —
         // ServeDir would otherwise serve these straight off disk, un-injected.
         .route("/", index_handler())
         .route("/index.html", index_handler())
-        // Mount the Connect dispatcher under its own path prefix. `route_service`
-        // (not `nest_service`) keeps the full URI intact, which the dispatcher
-        // needs since it routes on the fully-qualified `service/method` path.
-        // axum 0.7 catch-all syntax is `/*param` (`{*param}` is 0.8); keep this in
-        // step with the `:param` captures in `read::http` until the crate moves.
-        .route_service(
-            &format!("{CONNECT_PREFIX}/*rest"),
-            connect_router.into_axum_service(),
-        )
         // Everything else: real asset files off disk, else the templated SPA entry.
-        .fallback_service(serve_assets);
-
-    mount_under_base(app, &base_path)
-        // Per-request tracing (method, path, status, latency) for operability;
-        // verbosity is controlled by the `RUST_LOG`/`tower_http` env filter.
-        .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive())
+        .fallback_service(serve_assets)
 }
 
 /// Mount `app` under `base_path`, or return it unchanged when the prefix is
@@ -445,7 +471,7 @@ mod serve_ui_tests {
     #[tokio::test]
     async fn api_routes_are_not_shadowed_by_the_spa_fallback() {
         let dir = write_bundle();
-        let app = router_in(test_state(), dir.path(), "");
+        let app = router_in(test_state(), dir.path(), "", true);
         let resp = app
             .oneshot(Request::get("/health").body(Body::empty()).unwrap())
             .await
@@ -457,7 +483,7 @@ mod serve_ui_tests {
     #[tokio::test]
     async fn version_reports_the_crate_version() {
         let dir = write_bundle();
-        let app = router_in(test_state(), dir.path(), "");
+        let app = router_in(test_state(), dir.path(), "", true);
         let resp = app
             .oneshot(Request::get("/version").body(Body::empty()).unwrap())
             .await
@@ -472,7 +498,7 @@ mod serve_ui_tests {
     #[tokio::test]
     async fn deep_links_fall_back_to_index_html() {
         let dir = write_bundle();
-        let app = router_in(test_state(), dir.path(), "");
+        let app = router_in(test_state(), dir.path(), "", true);
         // A client-side route with no matching file -> index.html, 200.
         let resp = app
             .oneshot(
@@ -489,7 +515,7 @@ mod serve_ui_tests {
     #[tokio::test]
     async fn real_assets_are_served_from_disk() {
         let dir = write_bundle();
-        let app = router_in(test_state(), dir.path(), "");
+        let app = router_in(test_state(), dir.path(), "", true);
         let resp = app
             .oneshot(Request::get("/assets/app.js").body(Body::empty()).unwrap())
             .await
@@ -503,7 +529,7 @@ mod serve_ui_tests {
         // API-only runs (no bundle copied in): non-API paths just 404, the
         // server stays up.
         let dir = tempfile::tempdir().expect("tempdir"); // empty: no index.html
-        let app = router_in(test_state(), dir.path(), "");
+        let app = router_in(test_state(), dir.path(), "", true);
         let resp = app
             .oneshot(Request::get("/jobs").body(Body::empty()).unwrap())
             .await
@@ -516,7 +542,7 @@ mod serve_ui_tests {
         // The Connect path prefix reaches the dispatcher rather than the SPA
         // fallback (a bare GET is rejected by Connect, not served index.html).
         let dir = write_bundle();
-        let app = router_in(test_state(), dir.path(), "");
+        let app = router_in(test_state(), dir.path(), "", true);
         let resp = app
             .oneshot(
                 Request::get("/headwaters.read.v1.ReadService/ListNamespaces")
@@ -534,7 +560,7 @@ mod serve_ui_tests {
         // Even at root (empty prefix) the entry is rewritten: base href `/`, the
         // global as the empty string. The SPA then behaves as a root deployment.
         let dir = write_bundle();
-        let app = router_in(test_state(), dir.path(), "");
+        let app = router_in(test_state(), dir.path(), "", true);
         let resp = app
             .oneshot(Request::get("/jobs").body(Body::empty()).unwrap())
             .await
@@ -556,7 +582,7 @@ mod serve_ui_tests {
     #[tokio::test]
     async fn prefixed_health_works_and_unprefixed_404s() {
         let dir = write_bundle();
-        let app = router_in(test_state(), dir.path(), PREFIX);
+        let app = router_in(test_state(), dir.path(), PREFIX, true);
         let ok = app
             .clone()
             .oneshot(Request::get("/lineage/health").body(Body::empty()).unwrap())
@@ -576,7 +602,7 @@ mod serve_ui_tests {
     #[tokio::test]
     async fn prefixed_deep_link_serves_index_with_injected_prefix() {
         let dir = write_bundle();
-        let app = router_in(test_state(), dir.path(), PREFIX);
+        let app = router_in(test_state(), dir.path(), PREFIX, true);
         let resp = app
             .oneshot(
                 Request::get("/lineage/jobs/deep/link")
@@ -598,7 +624,7 @@ mod serve_ui_tests {
     #[tokio::test]
     async fn prefixed_assets_are_served_from_disk() {
         let dir = write_bundle();
-        let app = router_in(test_state(), dir.path(), PREFIX);
+        let app = router_in(test_state(), dir.path(), PREFIX, true);
         let resp = app
             .oneshot(
                 Request::get("/lineage/assets/app.js")
@@ -614,7 +640,7 @@ mod serve_ui_tests {
     #[tokio::test]
     async fn prefixed_connect_rpc_reaches_the_dispatcher() {
         let dir = write_bundle();
-        let app = router_in(test_state(), dir.path(), PREFIX);
+        let app = router_in(test_state(), dir.path(), PREFIX, true);
         let resp = app
             .oneshot(
                 Request::get("/lineage/headwaters.read.v1.ReadService/ListNamespaces")
@@ -633,7 +659,7 @@ mod serve_ui_tests {
         // `<base href>` is absolute, so a missing trailing slash still resolves
         // assets correctly — no redirect needed).
         let dir = write_bundle();
-        let app = router_in(test_state(), dir.path(), PREFIX);
+        let app = router_in(test_state(), dir.path(), PREFIX, true);
         for path in ["/lineage", "/lineage/"] {
             let resp = app
                 .clone()
@@ -653,11 +679,84 @@ mod serve_ui_tests {
     async fn paths_outside_the_prefix_404() {
         // A path that only shares the prefix as a substring is not under it.
         let dir = write_bundle();
-        let app = router_in(test_state(), dir.path(), PREFIX);
+        let app = router_in(test_state(), dir.path(), PREFIX, true);
         let resp = app
             .oneshot(Request::get("/lineagex/jobs").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    // UI opt-out (`serve_ui = false`): the API surface stays up, but the SPA
+    // routes are gone — even with a bundle on disk — so non-API paths 404 and the
+    // bundle is never served.
+    #[tokio::test]
+    async fn ui_disabled_keeps_api_routes() {
+        let dir = write_bundle();
+        let app = router_in(test_state(), dir.path(), "", false);
+        let resp = app
+            .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(body_string(resp).await, "OK");
+    }
+
+    #[tokio::test]
+    async fn ui_disabled_does_not_serve_the_bundle() {
+        // A bundle is on disk, but with the UI off the root, the entry file, and
+        // assets all 404 — nothing is served off disk.
+        let dir = write_bundle();
+        let app = router_in(test_state(), dir.path(), "", false);
+        for path in ["/", "/index.html", "/assets/app.js", "/jobs/deep/link"] {
+            let resp = app
+                .clone()
+                .oneshot(Request::get(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::NOT_FOUND, "path {path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn ui_disabled_still_routes_connect_rpc() {
+        // The Connect dispatcher is part of the API surface, so it stays mounted
+        // when the UI is off.
+        let dir = write_bundle();
+        let app = router_in(test_state(), dir.path(), "", false);
+        let resp = app
+            .oneshot(
+                Request::get("/headwaters.read.v1.ReadService/ListNamespaces")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // Reached Connect, not a 404 from a missing route.
+        assert_ne!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn ui_disabled_under_a_base_path_serves_api_only() {
+        // With both a prefix and the UI off, the API lives under the prefix and
+        // the SPA is absent: prefixed `/health` works, prefixed deep links 404.
+        let dir = write_bundle();
+        let app = router_in(test_state(), dir.path(), PREFIX, false);
+        let ok = app
+            .clone()
+            .oneshot(Request::get("/lineage/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(ok.status(), StatusCode::OK);
+
+        let gone = app
+            .oneshot(
+                Request::get("/lineage/jobs/deep/link")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(gone.status(), StatusCode::NOT_FOUND);
     }
 }
