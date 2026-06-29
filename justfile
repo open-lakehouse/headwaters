@@ -42,7 +42,7 @@ test:
 # `just dev` instead.
 lineage *args:
     RUST_LOG="${RUST_LOG:-headwaters=debug}" \
-    cargo run -p headwaters -- {{ args }}
+    cargo run -p headwaters -- serve {{ args }}
 
 # seed a running headwaters instance with the rich demo lineage in examples/seed
 # (regenerates the Headwaters demo graph, then POSTs it + the vendored Marquez
@@ -137,7 +137,7 @@ pg-shell:
 dev *args: pg-up
     DATABASE_URL="{{ DATABASE_URL }}" \
     RUST_LOG="${RUST_LOG:-headwaters=debug}" \
-    cargo run -p headwaters -- {{ args }}
+    cargo run -p headwaters -- serve {{ args }}
 
 # Stop headwaters with Ctrl-C first. Also removes the Marquez UI if it
 # was started.
@@ -304,4 +304,4 @@ ui-fingerprint-check:
 lineage-ui *args: ui-build
     rm -rf web && cp -r node/app/dist web
     RUST_LOG="${RUST_LOG:-headwaters=debug}" \
-    cargo run -p headwaters -- {{ args }}
+    cargo run -p headwaters -- serve {{ args }}

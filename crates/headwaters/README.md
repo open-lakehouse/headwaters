@@ -102,7 +102,7 @@ The service needs a Postgres database; it runs its own migrations (`migrations/`
 
 ```sh
 export DATABASE_URL=postgres://user:pass@localhost:5432/lineage
-cargo run -p headwaters                 # or: cargo run -p headwaters -- path/to/config.toml
+cargo run -p headwaters -- serve                       # or: serve -c path/to/config.toml
 # then, from another shell:
 curl -XPOST localhost:8091/api/v1/lineage \
   -H 'content-type: application/json' \
@@ -110,23 +110,40 @@ curl -XPOST localhost:8091/api/v1/lineage \
 curl localhost:8091/health    # -> OK
 ```
 
+### CLI
+
+The binary has two subcommands:
+
+```sh
+headwaters serve [--config PATH] [--host HOST] [--port PORT] [--log-level LEVEL]
+headwaters healthcheck    # GET /health; exit 0 if healthy, non-zero otherwise
+```
+
+`serve` runs the service; its flags overlay the layered config below (CLI flags
+win). `healthcheck` self-probes `/health` and is what the distroless Docker image's
+`HEALTHCHECK` runs (distroless has no shell, so the usual `curl`-based probe can't
+work) — see [`examples/compose/`](../../examples/compose/) for a Docker Compose stack.
+
 ### Configuration (`src/config.rs`)
 
 Configuration is a TOML (or YAML/JSON) file, layered with defaults and environment overrides.
-`Config::load` composes three sources, lowest precedence first:
+`Config::load` composes three sources, lowest precedence first, then `serve`'s CLI flags overlay
+the result (highest precedence):
 
 1. **struct defaults** — every field has one, so an empty or partial file is valid;
-2. **the config file** — passed as the binary's first argument, or via the `HEADWATERS_CONFIG`
-   env var. A file requested explicitly that is missing or malformed is a hard error (a
-   misconfigured deployment refuses to start rather than silently running on defaults);
+2. **the config file** — passed via `serve --config PATH` (or the `HEADWATERS_CONFIG` env var).
+   A file requested explicitly that is missing or malformed is a hard error (a misconfigured
+   deployment refuses to start rather than silently running on defaults);
 3. **`HEADWATERS__*` environment overrides** — `__` separates nested keys, e.g.
-   `HEADWATERS__PORT=9000` or `HEADWATERS__WRITER__BUFFER_SIZE=200`.
+   `HEADWATERS__HOST=0.0.0.0`, `HEADWATERS__PORT=9000`, or `HEADWATERS__WRITER__BUFFER_SIZE=200`;
+4. **`serve` CLI flags** — `--host`, `--port`, `--log-level` override the above.
 
 The Postgres DSN is then overlaid from `DATABASE_URL` if set, so the credential never needs to
 live in the checked-in file. A resolvable DSN is required — the service fails fast at startup if
 neither `postgres.url` nor `DATABASE_URL` is present.
 
 ```toml
+host = "0.0.0.0"            # interface to bind (default 0.0.0.0 = all interfaces)
 port = 8091                 # HTTP listen port
 
 [postgres]

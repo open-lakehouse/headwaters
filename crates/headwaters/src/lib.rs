@@ -14,12 +14,16 @@ pub(crate) mod proto {
     pub use headwaters_proto::headwaters;
 }
 
+pub mod cli;
 pub mod config;
 pub mod http;
 pub mod ingest;
 pub mod projection;
 pub mod read;
+mod run;
 pub mod writer;
+
+pub use run::run;
 
 // Shared Postgres/testcontainers scaffolding for the integration tests. Lives in
 // `src/` (not `tests/common/`) so inline `#[cfg(test)]` modules — notably the

@@ -80,7 +80,8 @@ COPY . .
 RUN cargo build --release --bin headwaters
 
 # Minimal runtime: distroless cc (glibc + openssl) for the dynamically-linked
-# binary, nonroot. No shell/package manager — run healthchecks from compose.
+# binary, nonroot. No shell/package manager, so the healthcheck below can't shell
+# out to curl/wget — it runs the binary's own `healthcheck` subcommand instead.
 FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 ARG EXPIRES=Never
 LABEL org.opencontainers.image.title="headwaters" quay.expires-after="${EXPIRES}"
@@ -90,4 +91,13 @@ COPY --from=builder /app/target/release/headwaters /usr/local/bin/app
 # there. Absent the bundle the static routes just 404 — the API still serves.
 WORKDIR /app
 COPY --from=ui /ui/app/dist ./web
-ENTRYPOINT ["/usr/local/bin/app"]
+# Documents the listen port (default 8091; override with HEADWATERS__PORT).
+EXPOSE 8091
+# Self-probe: the binary GETs its own /health and exits 0/1. Exec-form (JSON
+# array) is REQUIRED — distroless has no shell for the string form. The probe
+# reads the same config/env the server does, so it targets the right port.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD ["/usr/local/bin/app", "healthcheck"]
+# `serve` is baked in so a CMD-less `docker run` still starts the server; a probe
+# (`docker run … healthcheck`) overrides it with the full arg vector.
+ENTRYPOINT ["/usr/local/bin/app", "serve"]
