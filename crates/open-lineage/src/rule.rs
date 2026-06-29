@@ -48,6 +48,23 @@ use crate::event::RunEvent;
 use crate::exec::OpenLineageExec;
 use crate::extract::{QueryLineage, extract};
 
+tokio::task_local! {
+    /// Set while [`OpenLineageQueryPlanner::execute_ddl_with_lineage`] runs the DDL,
+    /// so the *nested* `create_physical_plan` that DataFusion triggers for the body
+    /// (e.g. `create_memory_table` collecting the CTAS SELECT) does not emit a
+    /// second, spurious run. Task-local rather than a shared flag so it is scoped to
+    /// this one execution's task tree and never suppresses a concurrent query on
+    /// another task. See [`suppressing_nested_lineage`].
+    static SUPPRESS_NESTED_LINEAGE: ();
+}
+
+/// True when the current task is inside an `execute_ddl_with_lineage` call, i.e.
+/// any `create_physical_plan` here is the nested body of a DDL run already being
+/// reported and must not emit its own events.
+fn nested_lineage_suppressed() -> bool {
+    SUPPRESS_NESTED_LINEAGE.try_with(|()| ()).is_ok()
+}
+
 // ---------------------------------------------------------------------------
 // The plan-carried marker.
 // ---------------------------------------------------------------------------
@@ -226,6 +243,13 @@ impl OpenLineageQueryPlanner {
         plan: &LogicalPlan,
         session_state: &SessionState,
     ) -> Option<(Uuid, QueryLineage, LineageContext)> {
+        // A `create_physical_plan` nested inside `execute_ddl_with_lineage` is the
+        // DDL body (e.g. the CTAS SELECT that `create_memory_table` collects); the
+        // enclosing DDL run already reports it, so emit nothing here.
+        if nested_lineage_suppressed() {
+            return None;
+        }
+
         let mut lineage = extract(plan, &self.config);
         let cx = self.context.context(session_state).await;
         // The SQL text isn't recoverable from the plan; take it from the
@@ -282,7 +306,14 @@ impl OpenLineageQueryPlanner {
             lineage.sql = Some(raw_sql.to_string());
         }
 
-        match ctx.execute_logical_plan(plan).await {
+        // Run the DDL with nested-lineage suppression set: `execute_logical_plan`
+        // dispatches CTAS/CREATE VIEW to `create_memory_table`/`create_view`, which
+        // collect the SELECT body back through *this* planner; without the guard
+        // that body would emit its own (input-only) run alongside this DDL run.
+        let result = SUPPRESS_NESTED_LINEAGE
+            .scope((), ctx.execute_logical_plan(plan))
+            .await;
+        match result {
             Ok(df) => {
                 let mut event = complete_event(run_id, &lineage, &cx, &self.config);
                 // The template's `eventTime` was set above; refresh it to when the

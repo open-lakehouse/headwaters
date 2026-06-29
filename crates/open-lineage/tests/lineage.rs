@@ -1294,6 +1294,20 @@ async fn ctas_emits_start_and_complete_with_output() {
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     let events = transport.events.lock().unwrap();
 
+    // Exactly one run: the DDL. The CTAS body is collected back through the
+    // instrumented planner, but nested-lineage suppression keeps it from emitting
+    // its own (input-only) run — so no phantom second START/COMPLETE.
+    let starts = events
+        .iter()
+        .filter(|e| e.event_type == RunEventType::Start)
+        .count();
+    let completes = events
+        .iter()
+        .filter(|e| e.event_type == RunEventType::Complete)
+        .count();
+    assert_eq!(starts, 1, "exactly one START (no nested body run)");
+    assert_eq!(completes, 1, "exactly one COMPLETE (no nested body run)");
+
     let start = events
         .iter()
         .find(|e| e.event_type == RunEventType::Start)
@@ -1370,6 +1384,16 @@ async fn create_view_emits_output() {
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     let events = transport.events.lock().unwrap();
+
+    // Exactly one run for the CREATE VIEW (no nested body run).
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| e.event_type == RunEventType::Start)
+            .count(),
+        1,
+        "exactly one START"
+    );
 
     let start = events
         .iter()
