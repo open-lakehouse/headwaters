@@ -83,3 +83,20 @@ any extension planners the host already had.
 - **Revisit trigger:** if a future DataFusion exposes `&SessionState` (or a
   per-query mutable context) to analyzer/optimizer rules, the START/context half
   could also move off the `QueryPlanner`; re-open this then.
+- **DDL-with-input (CTAS / `CREATE VIEW`) is handled *above* the planner.**
+  `SessionContext::execute_logical_plan` dispatches `CreateMemoryTable` /
+  `CreateView` to its own catalog routines before any `QueryPlanner` sees the
+  wrapper — for CTAS it plans only the stripped SELECT body (so the created table
+  was silently dropped from lineage), and `CREATE VIEW` is never planned at all (so
+  it emitted nothing). The planner seam therefore cannot capture these. They are
+  instead handled by `OpenLineageSqlExt::sql_with_lineage` (`src/session.rs`),
+  which runs `extract` on the *full* DDL plan, emits START, delegates the create to
+  `execute_logical_plan`, and emits COMPLETE/FAIL around it — the same
+  extract→START→terminal split as the planner, lifted one level up. The
+  instrumentation parts are recovered via a `SessionConfig` extension (the
+  `QueryPlanner` trait is not `Any`, so the registered planner can't be
+  downcast). COMPLETE on this path carries the output dataset, schema, lifecycle,
+  and column lineage but no `outputStatistics.rowCount` (DataFusion materializes
+  the body internally, leaving no stream for `OpenLineageExec` to count); a
+  row-stats parity pass that drives the body through `OpenLineageExec` is a
+  possible follow-up.

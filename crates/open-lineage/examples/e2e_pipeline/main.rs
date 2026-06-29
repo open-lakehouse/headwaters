@@ -41,9 +41,11 @@
 //! SELECT's scans of registered Parquet become input datasets (with schema +
 //! input statistics) and the insert target becomes the output dataset (with
 //! schema + column lineage). `INSERT INTO` is used rather than `CREATE TABLE AS
-//! SELECT` because DataFusion executes a CTAS write itself, so its target never
-//! reaches the instrumented planner and no output edge is captured; an insert of
-//! an existing table lowers to a `Dml` node the planner sees. The output is then
+//! SELECT` because DataFusion executes a CTAS write itself, outside the planner:
+//! CTAS lineage is available via `OpenLineageSqlExt::sql_with_lineage` but without
+//! runtime row statistics (the body is materialized internally), whereas an insert
+//! of an existing table lowers to a `Dml` node the planner sees directly — so this
+//! statistics-focused example uses `INSERT INTO`. The output is then
 //! persisted to Parquet (via an uninstrumented context, so the read emits
 //! nothing) for the next stage to pick up.
 

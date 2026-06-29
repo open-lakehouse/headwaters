@@ -202,9 +202,11 @@ async fn column_lineage_facet_conforms() {
     let validator = validator_for(COLUMN_LINEAGE_FACET);
 
     // An INSERT with a derived column produces a columnLineage facet on the
-    // output. (In-memory `CREATE TABLE AS` is intercepted by DataFusion before
-    // physical planning, so its output never reaches the instrumented planner —
-    // a DML write is the path that flows an output dataset end-to-end.)
+    // output. (DataFusion intercepts in-memory `CREATE TABLE AS` before physical
+    // planning, so via plain `sql()` its output never reaches the instrumented
+    // planner; the `OpenLineageSqlExt::sql_with_lineage` entry point handles that
+    // case. An INSERT is used here because it flows an output dataset end-to-end
+    // through the ordinary planner path with no special entry point.)
     let events = capture(
         &[
             "CREATE TABLE src (a INT, b INT) AS VALUES (1, 2), (3, 4)",
