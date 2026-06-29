@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.4...headwaters-v0.0.5) - 2026-06-29
+
+### Added
+
+- configurable UI base path (static prefix) (#45)
+
+### Fixed
+
+- *(writer)* retain events on sink failure instead of dropping them (#49)
+- *(projection)* upsert dataset meta so a DROP isn't lost before the row exists (#50)
+- correctness fixes from full crate review (#48)
+
 ## [0.0.3](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.2...headwaters-v0.0.3) - 2026-06-28
 
 ### Added
