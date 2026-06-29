@@ -106,6 +106,9 @@ impl HealthcheckArgs {
         if let Some(port) = self.port {
             cfg.port = port;
         }
+        // Re-validate after the overlay so e.g. `--host ''` fails with a clear
+        // config error rather than a cryptic connect error on a malformed URL.
+        cfg.validate()?;
         Ok(cfg.health_url())
     }
 }

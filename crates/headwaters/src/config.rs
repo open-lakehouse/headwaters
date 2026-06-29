@@ -228,13 +228,18 @@ impl Config {
     /// The URL a local health probe should GET (see the `healthcheck`
     /// subcommand). The wildcard bind hosts `0.0.0.0` / `::` are not connectable
     /// targets, so they map to the corresponding loopback address; any other
-    /// host is used verbatim. The UI base path (empty by default) is included so
-    /// the probe works when the whole surface is mounted under a prefix.
+    /// host is used verbatim. A literal IPv6 host is wrapped in brackets so the
+    /// authority parses (`http://[2001:db8::1]:8091/...`, per RFC 3986). The UI
+    /// base path (empty by default) is included so the probe works when the whole
+    /// surface is mounted under a prefix.
     pub fn health_url(&self) -> String {
         let host = match self.host.as_str() {
-            "0.0.0.0" => "127.0.0.1",
-            "::" | "[::]" => "[::1]",
-            h => h,
+            "0.0.0.0" => "127.0.0.1".to_string(),
+            "::" | "[::]" => "[::1]".to_string(),
+            // A literal IPv6 address (contains `:`, not already bracketed) must be
+            // bracketed in a URL authority or the host/port split is ambiguous.
+            h if h.contains(':') && !h.starts_with('[') => format!("[{h}]"),
+            h => h.to_string(),
         };
         format!("http://{host}:{}{}/health", self.port, self.ui.base_path)
     }
@@ -372,6 +377,16 @@ mod tests {
         c.port = 8091;
         c.ui.base_path = "/lineage".into();
         assert_eq!(c.health_url(), "http://127.0.0.1:8091/lineage/health");
+
+        // A literal (non-wildcard) IPv6 host must be bracketed, and one that is
+        // already bracketed is left as-is.
+        let mut c = Config {
+            host: "2001:db8::1".into(),
+            ..Config::default()
+        };
+        assert_eq!(c.health_url(), "http://[2001:db8::1]:8091/health");
+        c.host = "[2001:db8::1]".into();
+        assert_eq!(c.health_url(), "http://[2001:db8::1]:8091/health");
     }
 
     #[test]
