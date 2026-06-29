@@ -115,7 +115,7 @@ curl localhost:8091/health    # -> OK
 The binary has two subcommands:
 
 ```sh
-headwaters serve [--config PATH] [--host HOST] [--port PORT] [--log-level LEVEL]
+headwaters serve [--config PATH] [--host HOST] [--port PORT] [--log-level LEVEL] [--no-ui]
 headwaters healthcheck    # GET /health; exit 0 if healthy, non-zero otherwise
 ```
 
@@ -136,7 +136,8 @@ the result (highest precedence):
    deployment refuses to start rather than silently running on defaults);
 3. **`HEADWATERS__*` environment overrides** — `__` separates nested keys, e.g.
    `HEADWATERS__HOST=0.0.0.0`, `HEADWATERS__PORT=9000`, or `HEADWATERS__WRITER__BUFFER_SIZE=200`;
-4. **`serve` CLI flags** — `--host`, `--port`, `--log-level` override the above.
+4. **`serve` CLI flags** — `--host`, `--port`, `--log-level`, and `--no-ui` override the above.
+   `--no-ui` runs the service API-only (same as `ui.serve = false` / `HEADWATERS__UI__SERVE=false`).
 
 The Postgres DSN is then overlaid from `DATABASE_URL` if set, so the credential never needs to
 live in the checked-in file. A resolvable DSN is required — the service fails fast at startup if
@@ -155,7 +156,17 @@ projection_interval_ms = 500   # how often the projector polls the event log
 buffer_size = 100           # flush once this many events are buffered
 flush_interval_ms = 500     # flush at least this often, even below buffer_size
 channel_capacity = 1000     # bounded ingest channel depth (backpressure point)
+
+[ui]
+serve = true                # serve the bundled web UI; false = API-only (ingest + read)
+# base_path = "/lineage"    # serve the UI and every API route under a sub-path
 ```
+
+Headwaters bundles its web UI in the Docker image, but also ships its core UI
+components so you can build your own front-end against the read API. Set
+`ui.serve = false` (or pass `--no-ui`) to run the service API-only — the SPA
+routes are not mounted and any bundle on disk is ignored, leaving only the
+ingest + read API, `/health`, and `/version`.
 
 `RUST_LOG` controls tracing verbosity (e.g. `RUST_LOG=headwaters=info`).
 
