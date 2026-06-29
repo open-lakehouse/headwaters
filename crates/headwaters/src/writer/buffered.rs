@@ -36,6 +36,12 @@ pub struct BufferedWriterConfig {
     pub flush_interval: Duration,
     /// Bounded ingestion channel depth; enqueue applies backpressure once full.
     pub channel_capacity: usize,
+    /// How many times a flush retries a failing sink (with exponential backoff)
+    /// before giving up on this attempt and re-buffering the batch for the next
+    /// trigger. Total tries = `flush_max_retries + 1`.
+    pub flush_max_retries: u32,
+    /// Base backoff between flush retries; doubled each attempt.
+    pub flush_retry_backoff: Duration,
 }
 
 impl Default for BufferedWriterConfig {
@@ -44,6 +50,8 @@ impl Default for BufferedWriterConfig {
             buffer_size: 100,
             flush_interval: Duration::from_millis(500),
             channel_capacity: 1000,
+            flush_max_retries: 3,
+            flush_retry_backoff: Duration::from_millis(100),
         }
     }
 }
@@ -76,7 +84,16 @@ pub struct BufferedWriter {
 
 impl BufferedWriter {
     /// Spawn the background flush task.
+    ///
+    /// Currently only a single sink is supported: [`flush`] re-sends the whole
+    /// batch to every sink on retry, which would double-insert into a sink that
+    /// already accepted the batch. Adding a second sink requires per-sink success
+    /// tracking first — this assert guards the invariant in debug builds.
     pub fn spawn(sinks: Vec<Arc<dyn EventSink>>, cfg: BufferedWriterConfig) -> Self {
+        debug_assert!(
+            sinks.len() <= 1,
+            "multiple sinks need per-sink retry tracking to avoid double-inserts; see flush()"
+        );
         let (tx, rx) = mpsc::channel(cfg.channel_capacity);
         let task = tokio::spawn(run(rx, sinks, cfg));
         Self {
@@ -89,16 +106,40 @@ impl BufferedWriter {
         self.handle.clone()
     }
 
-    /// Close the channel and await a final drain.
+    /// Close the channel and await a final drain, bounded by `drain_timeout`.
     ///
     /// The task only exits once *every* sender is dropped, so all cloned
     /// [`BufferedWriterHandle`]s (e.g. the one in axum state) must be dropped
     /// before calling this — otherwise the channel never closes and the await
     /// blocks. In `main.rs` this is guaranteed by stopping the HTTP server (and
     /// thus dropping its state) before `shutdown`.
-    pub async fn shutdown(self) {
+    ///
+    /// The final drain retries a failing sink (see [`flush`]), so a dead
+    /// Postgres would otherwise wedge the drain forever. `drain_timeout` caps the
+    /// wait: on expiry the task is aborted and the still-buffered events are lost,
+    /// but the process can exit instead of hanging. Pick a timeout long enough to
+    /// absorb a brief blip but short enough to satisfy the orchestrator's
+    /// termination grace period.
+    pub async fn shutdown(self, drain_timeout: Duration) {
         drop(self.handle);
-        let _ = self.task.await;
+        let mut task = self.task;
+        match tokio::time::timeout(drain_timeout, &mut task).await {
+            // Drained (or returned) within the deadline.
+            Ok(Ok(())) => {}
+            // The task panicked — surface it rather than report a clean drain.
+            Ok(Err(e)) => {
+                tracing::error!("buffered writer task ended abnormally during drain: {e}");
+            }
+            // Timed out: `timeout` only stops awaiting, so abort to actually stop
+            // the task instead of leaking it until process exit.
+            Err(_) => {
+                task.abort();
+                tracing::error!(
+                    ?drain_timeout,
+                    "buffered writer drain timed out; aborted with events still buffered"
+                );
+            }
+        }
     }
 }
 
@@ -123,29 +164,55 @@ async fn run(
                 Some(event) => {
                     buf.push(event);
                     if buf.len() >= cfg.buffer_size {
-                        flush(&sinks, &mut buf).await;
-                        interval.reset();
+                        // Only reset the cadence when the flush actually drained
+                        // the buffer. On a failed flush the batch is retained, so
+                        // resetting would push the interval-tick retry a full
+                        // interval out and starve it while events keep arriving.
+                        if flush(&sinks, &mut buf, &cfg).await {
+                            interval.reset();
+                        }
                     }
                 }
-                // All senders dropped: drain whatever is buffered and exit.
+                // All senders dropped: drain whatever is buffered and exit. The
+                // per-flush retry already backs off; if the final flush still
+                // fails the events are retained but we must not loop forever on a
+                // dead sink, so the caller (`shutdown`) bounds this with a
+                // timeout. Retry until the buffer drains or we're cancelled.
                 None => {
-                    flush(&sinks, &mut buf).await;
+                    while !flush(&sinks, &mut buf, &cfg).await {
+                        tokio::time::sleep(cfg.flush_retry_backoff).await;
+                    }
                     return;
                 }
             },
             _ = interval.tick() => {
-                flush(&sinks, &mut buf).await;
+                flush(&sinks, &mut buf, &cfg).await;
             }
         }
     }
 }
 
-/// Convert the buffered events to `EventRow`s and fan them out to every sink.
-/// Clears the buffer unconditionally — a sink failure drops that flush's events
-/// (logged) rather than wedging the pipeline.
-async fn flush(sinks: &[Arc<dyn EventSink>], buf: &mut Vec<OwnedEvent>) {
+/// Convert the buffered events to `EventRow`s and fan them out to every sink,
+/// retrying a failing sink with exponential backoff. **The buffer is cleared
+/// only when the batch was durably written to every sink.** If a sink still
+/// fails after all retries, the events are *retained* in `buf` so the next flush
+/// trigger re-attempts them — we are the terminal source-of-truth writer, so a
+/// transient outage must not silently drop events ("backpressure, not drop").
+///
+/// Returns `true` if the batch was written and the buffer cleared, `false` if it
+/// was retained for retry.
+///
+/// NOTE: with the single configured sink this re-sends the whole batch on retry,
+/// which is safe. If a second sink is ever added, per-sink success tracking must
+/// land too — re-sending a batch that one sink already accepted would
+/// double-insert into that sink (the `events` INSERT is not idempotent).
+async fn flush(
+    sinks: &[Arc<dyn EventSink>],
+    buf: &mut Vec<OwnedEvent>,
+    cfg: &BufferedWriterConfig,
+) -> bool {
     if buf.is_empty() {
-        return;
+        return true;
     }
     let count = buf.len();
 
@@ -156,15 +223,51 @@ async fn flush(sinks: &[Arc<dyn EventSink>], buf: &mut Vec<OwnedEvent>) {
         .filter_map(|ev| event_to_row(ev.reborrow()))
         .collect();
 
-    if !rows.is_empty() {
-        for sink in sinks {
-            if let Err(e) = sink.append(&rows).await {
-                tracing::error!("{} flush failed ({count} events): {e}", sink.name());
-            }
+    // Nothing to persist (all views empty) — clearing is correct, no data lost.
+    if rows.is_empty() {
+        buf.clear();
+        return true;
+    }
+
+    let mut backoff = cfg.flush_retry_backoff;
+    for attempt in 0..=cfg.flush_max_retries {
+        if append_all(sinks, &rows).await {
+            buf.clear();
+            return true;
+        }
+        // Don't sleep after the final attempt.
+        if attempt < cfg.flush_max_retries {
+            tokio::time::sleep(backoff).await;
+            backoff = backoff.saturating_mul(2);
         }
     }
 
-    buf.clear();
+    // Every retry failed. Keep the events buffered for the next trigger rather
+    // than dropping them. Warn loudly when the retained buffer grows past the
+    // channel depth — the sink has been down long enough that ingest is now
+    // backpressured (the bounded channel is filling behind this retained batch).
+    if buf.len() >= cfg.channel_capacity {
+        tracing::error!(
+            buffered = buf.len(),
+            "sink down: {count} events retained for retry, ingest is backpressured"
+        );
+    } else {
+        tracing::warn!("flush failed, retaining {count} events for retry");
+    }
+    false
+}
+
+/// Append `rows` to every sink. Returns `true` only if *all* sinks succeeded;
+/// a failing sink is logged and the next sink still runs.
+async fn append_all(sinks: &[Arc<dyn EventSink>], rows: &[crate::writer::row::EventRow]) -> bool {
+    let mut all_ok = true;
+    for sink in sinks {
+        if let Err(e) = sink.append(rows).await {
+            tracing::error!("{} flush failed ({} events): {e}", sink.name(), rows.len());
+            all_ok = false;
+        }
+    }
+    all_ok
 }
 
 #[cfg(test)]
@@ -215,18 +318,55 @@ mod tests {
         (sink, sinks)
     }
 
+    /// A sink that returns `Err` for its first `fail_first` `append` calls (with
+    /// non-empty rows), then succeeds — modelling a transient outage. Records the
+    /// total rows it has accepted (successful calls only) and every call attempt.
+    struct FailingSink {
+        fail_first: usize,
+        calls: AtomicUsize,
+        accepted_rows: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl EventSink for FailingSink {
+        fn name(&self) -> &'static str {
+            "failing"
+        }
+        async fn append(&self, rows: &[EventRow]) -> Result<(), SinkError> {
+            if rows.is_empty() {
+                return Ok(());
+            }
+            let n = self.calls.fetch_add(1, Ordering::SeqCst);
+            if n < self.fail_first {
+                return Err(SinkError::Postgres("transient".into()));
+            }
+            self.accepted_rows.fetch_add(rows.len(), Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    /// A `BufferedWriterConfig` with fast retries for tests, overriding only the
+    /// fields a test cares about via the closure.
+    fn test_cfg(f: impl FnOnce(&mut BufferedWriterConfig)) -> BufferedWriterConfig {
+        let mut cfg = BufferedWriterConfig {
+            buffer_size: 100,
+            flush_interval: Duration::from_secs(3600),
+            channel_capacity: 16,
+            flush_max_retries: 3,
+            flush_retry_backoff: Duration::from_millis(1),
+        };
+        f(&mut cfg);
+        cfg
+    }
+
+    /// A generous drain timeout for shutdown in tests that expect a clean drain.
+    const TEST_DRAIN: Duration = Duration::from_secs(5);
+
     #[tokio::test]
     async fn flushes_when_buffer_size_reached() {
         let (sink, sinks) = counting();
         // Large interval so only the size trigger can fire within the test.
-        let writer = BufferedWriter::spawn(
-            sinks,
-            BufferedWriterConfig {
-                buffer_size: 3,
-                flush_interval: Duration::from_secs(3600),
-                channel_capacity: 16,
-            },
-        );
+        let writer = BufferedWriter::spawn(sinks, test_cfg(|c| c.buffer_size = 3));
         let h = writer.handle();
         for i in 0..3 {
             h.enqueue(event(&format!("r{i}"))).await.unwrap();
@@ -237,7 +377,7 @@ mod tests {
         assert_eq!(sink.rows.load(Ordering::SeqCst), 3);
         // Drop the handle before shutting down so the channel can close.
         drop(h);
-        writer.shutdown().await;
+        writer.shutdown(TEST_DRAIN).await;
     }
 
     #[tokio::test]
@@ -245,11 +385,7 @@ mod tests {
         let (sink, sinks) = counting();
         let writer = BufferedWriter::spawn(
             sinks,
-            BufferedWriterConfig {
-                buffer_size: 100,
-                flush_interval: Duration::from_millis(50),
-                channel_capacity: 16,
-            },
+            test_cfg(|c| c.flush_interval = Duration::from_millis(50)),
         );
         let h = writer.handle();
         h.enqueue(event("r0")).await.unwrap();
@@ -259,27 +395,82 @@ mod tests {
         assert!(sink.flushes.load(Ordering::SeqCst) >= 1);
         assert_eq!(sink.rows.load(Ordering::SeqCst), 2);
         drop(h);
-        writer.shutdown().await;
+        writer.shutdown(TEST_DRAIN).await;
     }
 
     #[tokio::test]
     async fn drains_remaining_on_shutdown() {
         let (sink, sinks) = counting();
-        let writer = BufferedWriter::spawn(
-            sinks,
-            BufferedWriterConfig {
-                buffer_size: 100,
-                flush_interval: Duration::from_secs(3600),
-                channel_capacity: 16,
-            },
-        );
+        let writer = BufferedWriter::spawn(sinks, test_cfg(|_| {}));
         let h = writer.handle();
         h.enqueue(event("r0")).await.unwrap();
         h.enqueue(event("r1")).await.unwrap();
         drop(h);
         // shutdown drops the last sender, closing the channel and forcing a
         // final drain flush.
-        writer.shutdown().await;
+        writer.shutdown(TEST_DRAIN).await;
         assert_eq!(sink.rows.load(Ordering::SeqCst), 2);
+    }
+
+    /// A transient sink failure must NOT drop events: the interval flush fails,
+    /// the events stay buffered, and the shutdown drain (after the sink recovers)
+    /// writes all of them.
+    #[tokio::test]
+    async fn transient_failure_then_success_writes_all() {
+        let sink = Arc::new(FailingSink {
+            fail_first: 2,
+            calls: AtomicUsize::new(0),
+            accepted_rows: AtomicUsize::new(0),
+        });
+        let sinks: Vec<Arc<dyn EventSink>> = vec![sink.clone()];
+        // Short interval so a flush fires (and fails) before shutdown; retries
+        // are fast. fail_first=2 with 3 max-retries means the first flush burns
+        // attempts then succeeds on the 3rd within a single flush call.
+        let writer = BufferedWriter::spawn(
+            sinks,
+            test_cfg(|c| {
+                c.flush_interval = Duration::from_millis(20);
+                c.flush_max_retries = 5;
+            }),
+        );
+        let h = writer.handle();
+        h.enqueue(event("r0")).await.unwrap();
+        h.enqueue(event("r1")).await.unwrap();
+        drop(h);
+        writer.shutdown(TEST_DRAIN).await;
+        // No events lost despite the first two append attempts failing.
+        assert_eq!(sink.accepted_rows.load(Ordering::SeqCst), 2);
+    }
+
+    /// While a sink is down, the buffer must be RETAINED (not cleared) so the
+    /// events are still there to write once it recovers. We assert the writer
+    /// eventually persists everything across a failure window.
+    #[tokio::test]
+    async fn sink_failure_retains_events_until_recovery() {
+        let sink = Arc::new(FailingSink {
+            // Fail enough times that the first flush's retries are all exhausted
+            // (max_retries=2 → 3 tries), forcing a re-buffer, then recover.
+            fail_first: 3,
+            calls: AtomicUsize::new(0),
+            accepted_rows: AtomicUsize::new(0),
+        });
+        let sinks: Vec<Arc<dyn EventSink>> = vec![sink.clone()];
+        let writer = BufferedWriter::spawn(
+            sinks,
+            test_cfg(|c| {
+                c.flush_interval = Duration::from_millis(20);
+                c.flush_max_retries = 2;
+            }),
+        );
+        let h = writer.handle();
+        h.enqueue(event("r0")).await.unwrap();
+        h.enqueue(event("r1")).await.unwrap();
+        // Let the first interval flush exhaust its retries and re-buffer.
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        drop(h);
+        // The drain keeps retrying until the sink recovers (after 3 failed
+        // calls); all events land, none dropped.
+        writer.shutdown(TEST_DRAIN).await;
+        assert_eq!(sink.accepted_rows.load(Ordering::SeqCst), 2);
     }
 }
