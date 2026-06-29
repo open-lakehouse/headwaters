@@ -115,6 +115,12 @@ pub enum Mutation {
     /// Each field is `Option`; the applier sets only the present ones, guarded
     /// latest-wins by `at`. Distinct from `UpsertRunState` so a metadata-only
     /// event (e.g. a late facet) doesn't touch the state machine.
+    ///
+    /// No stub-insert is needed here: `RunMetaProcessor` and `RunStateProcessor`
+    /// gate on the *same* run+job identity, so whenever this is emitted the
+    /// co-emitted `UpsertRunState` has already created the `runs` row in the same
+    /// event. (Contrast `SetDatasetMeta`, where a DROP can be the dataset's only
+    /// event and must stub-insert.)
     SetRunMeta {
         run_id: String,
         at: DateTime<Utc>,
