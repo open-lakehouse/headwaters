@@ -1,6 +1,6 @@
 [package]
 name = "headwaters"
-version = "0.0.5"
+version = "0.0.6"
 description = "OpenLineage ingest + Marquez-compatible read service (HTTP + ConnectRPC + Postgres)"
 edition = "2024"
 rust-version.workspace = true

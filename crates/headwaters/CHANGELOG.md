@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.5...headwaters-v0.0.6) - 2026-06-29
+
+### Added
+
+- make web UI serving configurable (--no-ui / ui.serve) (#53)
+- CLI with serve + self-healthcheck for distroless Compose healthchecks (#51)
+
 ## [0.0.5](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.4...headwaters-v0.0.5) - 2026-06-29
 
 ### Added
