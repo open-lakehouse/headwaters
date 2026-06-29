@@ -444,9 +444,12 @@ async fn set_run_meta(
     parent_run_id: &Option<String>,
     error_message: &Option<String>,
 ) -> Result<(), sqlx::Error> {
-    // Latest-wins by `runs.meta_at` (the inline `$6 >= meta_at OR meta_at IS
-    // NULL` guard): a newer event's present fields win; a field absent from
-    // this event ($N IS NULL) keeps the stored value; an out-of-order older
+    // A bare UPDATE (no stub-insert) is sufficient here: `RunMetaProcessor` and
+    // `RunStateProcessor` gate on the same run+job identity, so the co-emitted
+    // `UpsertRunState` always creates the `runs` row in the same event before
+    // this runs. Latest-wins by `runs.meta_at` (the inline `$6 >= meta_at OR
+    // meta_at IS NULL` guard): a newer event's present fields win; a field absent
+    // from this event ($N IS NULL) keeps the stored value; an out-of-order older
     // event is ignored.
     sqlx::query(
         "UPDATE runs SET \
@@ -519,16 +522,25 @@ async fn set_dataset_meta(
     source_name: &Option<String>,
     deleted: &Option<bool>,
 ) -> Result<(), sqlx::Error> {
+    // Stub-insert the datasets row so a dataset-facet event (e.g. a
+    // lifecycleStateChange DROP) that arrives before any schema/edge event isn't
+    // lost. The stub mirrors `note_dataset`'s no-schema shape (empty `fields`,
+    // NULL `schema_at`); the DO UPDATE applies the meta fields under the same
+    // latest-wins `meta_at` guard the bare UPDATE used. `SetDatasetMeta` always
+    // carries the (namespace, name) identity, so no fallback is needed.
     sqlx::query(
-        "UPDATE datasets SET \
-            description = CASE WHEN ($6 >= meta_at OR meta_at IS NULL) AND $3 IS NOT NULL \
-                              THEN $3 ELSE description END, \
-            source_name = CASE WHEN ($6 >= meta_at OR meta_at IS NULL) AND $4 IS NOT NULL \
-                               THEN $4 ELSE source_name END, \
-            deleted     = CASE WHEN ($6 >= meta_at OR meta_at IS NULL) AND $5 IS NOT NULL \
-                               THEN $5 ELSE deleted END, \
-            meta_at = GREATEST(meta_at, $6) \
-         WHERE namespace = $1 AND name = $2",
+        "INSERT INTO datasets (namespace, name, created_at, updated_at, fields, \
+                               schema_at, description, source_name, deleted, meta_at) \
+         VALUES ($1, $2, $6, $6, '[]'::jsonb, NULL, $3, $4, \
+                 COALESCE($5, false), $6) \
+         ON CONFLICT (namespace, name) DO UPDATE SET \
+            description = CASE WHEN ($6 >= datasets.meta_at OR datasets.meta_at IS NULL) AND $3 IS NOT NULL \
+                              THEN $3 ELSE datasets.description END, \
+            source_name = CASE WHEN ($6 >= datasets.meta_at OR datasets.meta_at IS NULL) AND $4 IS NOT NULL \
+                               THEN $4 ELSE datasets.source_name END, \
+            deleted     = CASE WHEN ($6 >= datasets.meta_at OR datasets.meta_at IS NULL) AND $5 IS NOT NULL \
+                               THEN $5 ELSE datasets.deleted END, \
+            meta_at = GREATEST(datasets.meta_at, $6)",
     )
     .bind(namespace)
     .bind(name)
