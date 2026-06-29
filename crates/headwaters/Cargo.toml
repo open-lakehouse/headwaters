@@ -25,6 +25,14 @@ sqlx = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 config = { workspace = true }
+# CLI surface for the binary: `serve` + a self-`healthcheck` subcommand. Matches
+# the feature set headwaters-cli uses (clap is declared per-crate, not workspace).
+clap = { version = "4", features = ["derive", "env", "wrap_help"] }
+# The `healthcheck` subcommand probes /health over HTTP via `blocking` (keeps that
+# path off the tokio runtime); rustls avoids a system OpenSSL dependency in the
+# distroless image. `json` is for the conformance harness (test-only) — kept here
+# rather than a dev-dep so cargo doesn't split the feature set.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
 axum = "0.7"
@@ -62,5 +70,5 @@ tempfile = "3"
 bytes = "1"
 testcontainers = { version = "0.27", features = ["http_wait"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
-# The conformance harness posts events to / reads from the real Marquez over HTTP.
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# `reqwest` (used by the conformance harness to post to / read from the real
+# Marquez over HTTP) is a regular dependency now — see the `[dependencies]` entry.

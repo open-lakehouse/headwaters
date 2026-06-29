@@ -1,125 +1,52 @@
-use std::sync::Arc;
-use std::time::Duration;
-
 use anyhow::Context;
-use sqlx::postgres::PgPoolOptions;
+use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use headwaters::config::{Config, WriterConfig};
-use headwaters::http::{self, AppState};
-use headwaters::projection::Projector;
-use headwaters::read::LineageStore;
-use headwaters::writer::buffered::{BufferedWriter, BufferedWriterConfig};
-use headwaters::writer::postgres::PostgresSink;
-use headwaters::writer::sink::EventSink;
+use headwaters::cli::{Cli, Command, ServeArgs, run_healthcheck};
+use headwaters::config::Config;
 
-/// Upper bound on the graceful-shutdown drain of the buffered writer. The drain
-/// retries a failing sink, so without a cap a dead Postgres would hang process
-/// exit; this keeps termination within a typical orchestrator grace period.
-const WRITER_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
+fn main() -> anyhow::Result<()> {
+    match Cli::parse().command {
+        // Synchronous: a `reqwest::blocking` probe needs no tokio runtime, so the
+        // healthcheck path stays cheap. Map the result to a process exit code so
+        // Docker/Compose can gate on it.
+        Command::Healthcheck(args) => std::process::exit(match run_healthcheck(&args) {
+            Ok(()) => 0,
+            Err(e) => {
+                eprintln!("healthcheck failed: {e}");
+                1
+            }
+        }),
+        Command::Serve(args) => serve(args),
+    }
+}
 
+/// Initialize tracing, resolve the config (file/env, then CLI overlay), and run
+/// the server. Tracing init lives here (the binary), not in `headwaters::run`, so
+/// the library never fights a host that already installed a subscriber.
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn serve(args: ServeArgs) -> anyhow::Result<()> {
+    // `--log-level` seeds `RUST_LOG` only when it is unset, so an explicit
+    // `RUST_LOG` still wins (it is the env layer in the precedence model). This
+    // runs at single-threaded entry, before the runtime spins up any threads, so
+    // the `set_var` is sound.
+    if std::env::var_os("RUST_LOG").is_none()
+        && let Some(level) = &args.log_level
+    {
+        // SAFETY: single-threaded program entry; no other thread can be reading
+        // the environment yet.
+        unsafe { std::env::set_var("RUST_LOG", level) };
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    // Config file path: first positional arg, else the HEADWATERS_CONFIG env var
-    // (handled inside Config::load). With neither, run on defaults + HEADWATERS__*
-    // env overrides (DATABASE_URL still supplies the DSN).
-    let config_path = std::env::args().nth(1);
-    let cfg = Config::load(config_path.as_ref()).context("invalid configuration")?;
+    let mut cfg = Config::load(args.config.as_ref()).context("invalid configuration")?;
+    args.overlay(&mut cfg);
+    // Re-validate: the CLI overlay may have changed host/port after load's own
+    // validation, and an invalid override should fail fast at startup.
+    cfg.validate().context("invalid configuration")?;
 
-    // One pool shared by the sink, the projector, and the read store.
-    let url = cfg
-        .postgres
-        .resolve_url()
-        .context("invalid configuration")?;
-    let pool = PgPoolOptions::new()
-        .max_connections(cfg.postgres.pool_size)
-        .connect(url)
-        .await
-        .context("failed to connect to Postgres")?;
-
-    sqlx::migrate!()
-        .run(&pool)
-        .await
-        .context("failed to run database migrations")?;
-
-    // Write path: buffered ingest -> Postgres `events` (append-only).
-    let sinks: Vec<Arc<dyn EventSink>> = vec![Arc::new(PostgresSink::new(pool.clone()))];
-    let writer = BufferedWriter::spawn(sinks, writer_config(&cfg.writer));
-
-    // Async projection: fold `events` into the read tables.
-    let projector = Projector::spawn(
-        pool.clone(),
-        Duration::from_millis(cfg.postgres.projection_interval_ms),
-    );
-
-    let store = LineageStore::new(pool.clone());
-    let app = http::router(
-        AppState {
-            writer: writer.handle(),
-            store,
-        },
-        &cfg.ui.base_path,
-    );
-
-    let addr = format!("0.0.0.0:{}", cfg.port);
-    tracing::info!("headwaters listening on {}", addr);
-
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .with_context(|| format!("failed to bind {addr}"))?;
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .context("server error")?;
-
-    // The server has stopped accepting requests and dropped its handler state
-    // (and the writer handle inside it), so the channel can now close. Drain
-    // buffered events, then stop the projector after a final fold. The drain
-    // retries a failing sink, so bound it: a dead Postgres must not wedge exit
-    // past the orchestrator's termination grace period.
-    tracing::info!("draining buffered writer");
-    writer.shutdown(WRITER_DRAIN_TIMEOUT).await;
-    tracing::info!("stopping projection worker");
-    projector.shutdown().await;
-    pool.close().await;
-    Ok(())
-}
-
-fn writer_config(cfg: &WriterConfig) -> BufferedWriterConfig {
-    BufferedWriterConfig {
-        buffer_size: cfg.buffer_size,
-        flush_interval: Duration::from_millis(cfg.flush_interval_ms),
-        channel_capacity: cfg.channel_capacity,
-        // Flush retry/backoff use the built-in defaults; not yet exposed as
-        // config knobs.
-        ..BufferedWriterConfig::default()
-    }
-}
-
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install SIGTERM handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        _ = ctrl_c => tracing::info!("received Ctrl+C, shutting down gracefully"),
-        _ = terminate => tracing::info!("received SIGTERM, shutting down gracefully"),
-    }
+    headwaters::run(cfg).await
 }
