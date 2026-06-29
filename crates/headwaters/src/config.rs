@@ -26,6 +26,9 @@ pub enum ConfigError {
     )]
     InvalidBasePath(String),
 
+    #[error("host must not be empty: set `host` or HEADWATERS__HOST (e.g. 0.0.0.0)")]
+    EmptyHost,
+
     #[error(
         "invalid {field}: must be greater than 0 (got {value}) — a zero interval, \
          buffer/channel size, or pool size would panic a worker or wedge the \
@@ -108,6 +111,10 @@ fn default_port() -> u16 {
     8091
 }
 
+fn default_host() -> String {
+    "0.0.0.0".to_string()
+}
+
 /// Web UI serving settings.
 ///
 /// By default the bundled single-page app is served from the service root (`/`).
@@ -129,6 +136,9 @@ pub struct UiConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    /// Host/interface the HTTP + ConnectRPC server binds. Default `0.0.0.0`
+    /// (all interfaces); set e.g. `127.0.0.1` to bind loopback only.
+    pub host: String,
     /// TCP port the HTTP + ConnectRPC server listens on.
     pub port: u16,
     /// Postgres connection + projection settings.
@@ -142,6 +152,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            host: default_host(),
             port: default_port(),
             postgres: PostgresConfig::default(),
             writer: WriterConfig::default(),
@@ -209,11 +220,35 @@ impl Config {
         self.ui.base_path = normalize_base_path(&self.ui.base_path);
     }
 
+    /// The `host:port` the server binds. Used by `headwaters::run`.
+    pub fn bind_addr(&self) -> String {
+        format!("{}:{}", self.host, self.port)
+    }
+
+    /// The URL a local health probe should GET (see the `healthcheck`
+    /// subcommand). The wildcard bind hosts `0.0.0.0` / `::` are not connectable
+    /// targets, so they map to the corresponding loopback address; any other
+    /// host is used verbatim. The UI base path (empty by default) is included so
+    /// the probe works when the whole surface is mounted under a prefix.
+    pub fn health_url(&self) -> String {
+        let host = match self.host.as_str() {
+            "0.0.0.0" => "127.0.0.1",
+            "::" | "[::]" => "[::1]",
+            h => h,
+        };
+        format!("http://{host}:{}{}/health", self.port, self.ui.base_path)
+    }
+
     /// Validate cross-cutting invariants that serde can't express on its own.
-    fn validate(&self) -> Result<(), ConfigError> {
+    pub fn validate(&self) -> Result<(), ConfigError> {
         // A DSN must be resolvable so a misconfigured deployment fails at
         // startup rather than on the first write.
         self.postgres.resolve_url()?;
+
+        // An empty host would produce a `:port` bind addr that fails to parse.
+        if self.host.trim().is_empty() {
+            return Err(ConfigError::EmptyHost);
+        }
 
         // Zero-valued timers/sizes are caught here so a misconfig fails fast at
         // load rather than panicking a background task later:
@@ -283,10 +318,60 @@ mod tests {
     #[test]
     fn test_defaults() {
         let cfg = Config::default();
+        assert_eq!(cfg.host, "0.0.0.0");
         assert_eq!(cfg.port, 8091);
         assert_eq!(cfg.postgres.pool_size, 10);
         assert_eq!(cfg.postgres.projection_interval_ms, 500);
         assert!(cfg.postgres.url.is_none());
+    }
+
+    #[test]
+    fn test_host_parses_from_file() {
+        let cfg = from_toml(r#"host = "127.0.0.1""#).unwrap();
+        assert_eq!(cfg.host, "127.0.0.1");
+    }
+
+    #[test]
+    fn test_validate_rejects_empty_host() {
+        let mut c = Config {
+            postgres: PostgresConfig {
+                url: Some("postgres://u:p@db/lineage".into()),
+                ..PostgresConfig::default()
+            },
+            ..Config::default()
+        };
+        c.host = "  ".into();
+        assert!(matches!(c.validate(), Err(ConfigError::EmptyHost)));
+    }
+
+    #[test]
+    fn test_bind_addr() {
+        let c = Config {
+            host: "127.0.0.1".into(),
+            port: 9000,
+            ..Config::default()
+        };
+        assert_eq!(c.bind_addr(), "127.0.0.1:9000");
+    }
+
+    #[test]
+    fn test_health_url_maps_wildcard_to_loopback() {
+        // 0.0.0.0 -> 127.0.0.1, :: -> [::1], a real host stays verbatim, and the
+        // UI base path is folded in.
+        let mut c = Config::default();
+        assert_eq!(c.health_url(), "http://127.0.0.1:8091/health");
+
+        c.host = "::".into();
+        assert_eq!(c.health_url(), "http://[::1]:8091/health");
+
+        c.host = "myhost".into();
+        c.port = 9000;
+        assert_eq!(c.health_url(), "http://myhost:9000/health");
+
+        c.host = "0.0.0.0".into();
+        c.port = 8091;
+        c.ui.base_path = "/lineage".into();
+        assert_eq!(c.health_url(), "http://127.0.0.1:8091/lineage/health");
     }
 
     #[test]
