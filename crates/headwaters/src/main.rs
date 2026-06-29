@@ -13,6 +13,11 @@ use headwaters::writer::buffered::{BufferedWriter, BufferedWriterConfig};
 use headwaters::writer::postgres::PostgresSink;
 use headwaters::writer::sink::EventSink;
 
+/// Upper bound on the graceful-shutdown drain of the buffered writer. The drain
+/// retries a failing sink, so without a cap a dead Postgres would hang process
+/// exit; this keeps termination within a typical orchestrator grace period.
+const WRITER_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -73,9 +78,11 @@ async fn main() -> anyhow::Result<()> {
 
     // The server has stopped accepting requests and dropped its handler state
     // (and the writer handle inside it), so the channel can now close. Drain
-    // buffered events, then stop the projector after a final fold.
+    // buffered events, then stop the projector after a final fold. The drain
+    // retries a failing sink, so bound it: a dead Postgres must not wedge exit
+    // past the orchestrator's termination grace period.
     tracing::info!("draining buffered writer");
-    writer.shutdown().await;
+    writer.shutdown(WRITER_DRAIN_TIMEOUT).await;
     tracing::info!("stopping projection worker");
     projector.shutdown().await;
     pool.close().await;
@@ -87,6 +94,9 @@ fn writer_config(cfg: &WriterConfig) -> BufferedWriterConfig {
         buffer_size: cfg.buffer_size,
         flush_interval: Duration::from_millis(cfg.flush_interval_ms),
         channel_capacity: cfg.channel_capacity,
+        // Flush retry/backoff use the built-in defaults; not yet exposed as
+        // config knobs.
+        ..BufferedWriterConfig::default()
     }
 }
 
