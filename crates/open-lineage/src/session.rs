@@ -8,8 +8,12 @@
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
+use datafusion::common::Result as DataFusionResult;
+use datafusion::dataframe::DataFrame;
 use datafusion::execution::SessionStateBuilder;
-use datafusion::execution::context::SessionState;
+use datafusion::execution::context::{SessionContext, SessionState};
+use datafusion::logical_expr::{DdlStatement, LogicalPlan};
 
 use openlineage_client::{ClientError, LineageContext, OpenLineageClient, Transport};
 
@@ -142,7 +146,16 @@ impl OpenLineageBuilder {
             config,
             Vec::new(),
         ));
+        // Also stash the planner as a typed `SessionConfig` extension so the
+        // `SessionContext`-level DDL path ([`OpenLineageSqlExt::sql_with_lineage`])
+        // can recover it: the `QueryPlanner` trait isn't `Any`, so `query_planner()`
+        // can't be downcast, but a config extension is keyed by type and retrieved
+        // with `get_extension::<OpenLineageQueryPlanner>()`. One `Arc`, two roles —
+        // the registered query planner and the extension are the same instance.
+        let mut session_config = state.config().clone();
+        session_config.set_extension(planner.clone());
         SessionStateBuilder::from(state)
+            .with_config(session_config)
             .with_query_planner(planner)
             .build()
     }
@@ -177,4 +190,94 @@ pub fn instrument_session_state_simple(
         .client(client)
         .config(config)
         .instrument(state)
+}
+
+/// `SessionContext` ergonomics for OpenLineage instrumentation.
+///
+/// Two conveniences over [`OpenLineageBuilder`]:
+///
+/// - [`with_lineage`](Self::with_lineage) installs the instrumentation on a
+///   context in one consume-and-return call, mirroring DataFusion's own
+///   `SessionContext::enable_url_table(self) -> Self`. It saves the host the
+///   `SessionContext::new_with_state(builder.instrument(ctx.state()))` dance. It
+///   takes `impl Into<Option<OpenLineageBuilder>>`, so `ctx.with_lineage(None)`
+///   uses defaults (a no-op client, default config) and
+///   `ctx.with_lineage(OpenLineage::builder()…)` supplies a configured one.
+/// - [`sql_with_lineage`](Self::sql_with_lineage) runs SQL *with* lineage for
+///   statements DataFusion executes outside the query-planner hook — `CREATE TABLE
+///   … AS SELECT` and `CREATE VIEW … AS SELECT`. `SessionContext::sql` dispatches
+///   these DDL statements straight to the catalog before the instrumented
+///   `QueryPlanner` ever sees the full plan, so the created dataset is silently
+///   dropped from lineage (and a `CREATE VIEW` emits nothing at all). For every
+///   other statement this is exactly `SessionContext::sql(...).await` and the
+///   normal planner path produces the lineage.
+#[async_trait]
+pub trait OpenLineageSqlExt: Sized {
+    /// Instrument this context with OpenLineage and return it (consume-and-return,
+    /// like `SessionContext::enable_url_table`).
+    ///
+    /// Pass a configured [`OpenLineageBuilder`] to control the transport/client,
+    /// context provider, and config — or `None` for defaults (a no-op client and
+    /// [`OpenLineageConfig::for_datafusion`]). Because the argument is
+    /// `impl Into<Option<OpenLineageBuilder>>`, both `ctx.with_lineage(None)` and
+    /// `ctx.with_lineage(OpenLineage::builder()…)` are valid call sites. For the
+    /// standard-environment path use [`try_with_lineage_from_env`](Self::try_with_lineage_from_env)
+    /// (it is fallible, so it can't fold into this signature).
+    fn with_lineage(self, builder: impl Into<Option<OpenLineageBuilder>>) -> Self;
+
+    /// Instrument this context with OpenLineage, deriving everything from the
+    /// environment (see [`OpenLineageBuilder::from_env`]).
+    ///
+    /// # Errors
+    /// Returns [`ClientError`] if the client cannot be built (e.g. a malformed
+    /// `OPENLINEAGE_URL`, or called outside a Tokio runtime).
+    fn try_with_lineage_from_env(self) -> Result<Self, ClientError>;
+
+    /// Run `sql`, emitting OpenLineage events even for the CTAS / `CREATE VIEW`
+    /// statements DataFusion executes outside the query-planner hook. Equivalent to
+    /// [`SessionContext::sql`] for every other statement.
+    async fn sql_with_lineage(&self, sql: &str) -> DataFusionResult<DataFrame>;
+}
+
+#[async_trait]
+impl OpenLineageSqlExt for SessionContext {
+    fn with_lineage(self, builder: impl Into<Option<OpenLineageBuilder>>) -> Self {
+        // Mirror `enable_url_table`: consume the context, instrument its state, and
+        // rebuild. `instrument` both registers the query planner and stashes the
+        // planner as a config extension, so `sql_with_lineage` can recover it. A
+        // `None` builder is the empty default builder (no-op client, default cfg).
+        let builder = builder.into().unwrap_or_default();
+        SessionContext::new_with_state(builder.instrument(self.state()))
+    }
+
+    fn try_with_lineage_from_env(self) -> Result<Self, ClientError> {
+        Ok(self.with_lineage(OpenLineage::builder().from_env()?))
+    }
+
+    async fn sql_with_lineage(&self, sql: &str) -> DataFusionResult<DataFrame> {
+        let plan = self.state().create_logical_plan(sql).await?;
+
+        // Only DDL that carries a SELECT body (CTAS / CREATE VIEW) is stolen from
+        // the planner; for everything else the planner path already produces
+        // lineage, so delegate to the normal execution path verbatim.
+        let is_ddl_with_input = matches!(
+            plan,
+            LogicalPlan::Ddl(DdlStatement::CreateMemoryTable(_) | DdlStatement::CreateView(_))
+        );
+        if !is_ddl_with_input {
+            return self.execute_logical_plan(plan).await;
+        }
+
+        // An instrumented session carries the planner as a config extension; an
+        // uninstrumented one does not, so this transparently degrades to plain
+        // execution (no events) there.
+        match self
+            .state()
+            .config()
+            .get_extension::<OpenLineageQueryPlanner>()
+        {
+            Some(planner) => planner.execute_ddl_with_lineage(self, plan, sql).await,
+            None => self.execute_logical_plan(plan).await,
+        }
+    }
 }

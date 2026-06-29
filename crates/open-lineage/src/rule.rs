@@ -30,7 +30,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::common::{DFSchemaRef, Result};
-use datafusion::execution::context::{QueryPlanner, SessionState};
+use datafusion::dataframe::DataFrame;
+use datafusion::execution::context::{QueryPlanner, SessionContext, SessionState};
 use datafusion::logical_expr::{
     Expr, Extension, InvariantLevel, LogicalPlan, UserDefinedLogicalNode,
     UserDefinedLogicalNodeCore,
@@ -42,10 +43,10 @@ use uuid::Uuid;
 use crate::builder::{complete_event, fail_event, start_event};
 use crate::client::OpenLineageClient;
 use crate::config::OpenLineageConfig;
-use crate::context::LineageContextProvider;
+use crate::context::{LineageContext, LineageContextProvider};
 use crate::event::RunEvent;
 use crate::exec::OpenLineageExec;
-use crate::extract::extract;
+use crate::extract::{QueryLineage, extract};
 
 // ---------------------------------------------------------------------------
 // The plan-carried marker.
@@ -210,6 +211,99 @@ impl OpenLineageQueryPlanner {
             physical: Arc::new(DefaultPhysicalPlanner::with_extension_planners(planners)),
         }
     }
+
+    /// Planning-time lineage work shared by the `QueryPlanner` path and the
+    /// `SessionContext`-level DDL path (see [`crate::session::OpenLineageSqlExt`]):
+    /// extract lineage from `plan`, resolve the async context, and — unless the
+    /// query touches no datasets — mint a `run_id` and emit START.
+    ///
+    /// Returns the per-query payload needed to emit the terminal event under the
+    /// same `run_id`, or `None` when lineage is suppressed (no inputs and no
+    /// outputs — `information_schema` introspection, `SET`/`SHOW`, metadata
+    /// probes), in which case no START fired and the caller must emit nothing.
+    async fn begin_lineage(
+        &self,
+        plan: &LogicalPlan,
+        session_state: &SessionState,
+    ) -> Option<(Uuid, QueryLineage, LineageContext)> {
+        let mut lineage = extract(plan, &self.config);
+        let cx = self.context.context(session_state).await;
+        // The SQL text isn't recoverable from the plan; take it from the
+        // host-supplied context (absent on non-SQL paths, e.g. ingest).
+        lineage.sql = cx.sql.clone();
+
+        // Suppress lineage for queries that touch no datasets — information_schema
+        // introspection, `SET`/`SHOW`, metadata-RPC probes. They carry no input or
+        // output, so a START/COMPLETE pair only adds a dangling job node to the
+        // graph.
+        if lineage.inputs.is_empty() && lineage.outputs.is_empty() {
+            return None;
+        }
+
+        let run_id = cx.run_id.unwrap_or_else(Uuid::now_v7);
+        self.client
+            .emit(start_event(run_id, &lineage, &cx, &self.config));
+        Some((run_id, lineage, cx))
+    }
+
+    /// Execute a DDL-with-input statement (CTAS / CREATE VIEW) that DataFusion
+    /// runs *outside* the `QueryPlanner` hook, emitting lineage around it.
+    ///
+    /// `SessionContext::execute_logical_plan` dispatches these DDL variants to its
+    /// own `create_memory_table` / `create_view` before any `QueryPlanner` sees the
+    /// wrapper (it only ever plans the stripped SELECT body), so the planner path
+    /// captures the inputs but never the created table as an output. This runs
+    /// [`extract`] on the *full* DDL plan (so the output dataset, its schema, and
+    /// column lineage are captured), emits START, delegates the actual creation to
+    /// `execute_logical_plan` — reusing DataFusion's registration logic, including
+    /// every `if_not_exists` / `or_replace` branch — then emits COMPLETE on success
+    /// or FAIL on error, under the same `run_id`.
+    ///
+    /// `raw_sql` is folded into the lineage when the context provider didn't supply
+    /// SQL text, since this path *does* have the original statement in hand.
+    ///
+    /// COMPLETE here does not carry an `outputStatistics.rowCount`: DataFusion
+    /// materializes the CTAS body internally and hands back an empty result, so
+    /// there is no stream for an `OpenLineageExec` to count. The output edge,
+    /// schema, lifecycle, and column lineage are all present; runtime row stats for
+    /// this path are a documented follow-up.
+    pub(crate) async fn execute_ddl_with_lineage(
+        &self,
+        ctx: &SessionContext,
+        plan: LogicalPlan,
+        raw_sql: &str,
+    ) -> Result<DataFrame> {
+        let Some((run_id, mut lineage, cx)) = self.begin_lineage(&plan, &ctx.state()).await else {
+            // No datasets touched — nothing to report; just run it.
+            return ctx.execute_logical_plan(plan).await;
+        };
+        // This path has the SQL in hand even when the context provider omitted it.
+        if lineage.sql.is_none() {
+            lineage.sql = Some(raw_sql.to_string());
+        }
+
+        match ctx.execute_logical_plan(plan).await {
+            Ok(df) => {
+                let mut event = complete_event(run_id, &lineage, &cx, &self.config);
+                // The template's `eventTime` was set above; refresh it to when the
+                // statement actually finished so run duration is meaningful (mirrors
+                // `OpenLineageExec::emit_terminal`).
+                event.event_time = chrono::Utc::now().to_rfc3339();
+                self.client.emit(event);
+                Ok(df)
+            }
+            Err(err) => {
+                self.client.emit(fail_event(
+                    run_id,
+                    &lineage,
+                    &cx,
+                    &self.config,
+                    &err.to_string(),
+                ));
+                Err(err)
+            }
+        }
+    }
 }
 
 impl fmt::Debug for OpenLineageQueryPlanner {
@@ -227,26 +321,16 @@ impl QueryPlanner for OpenLineageQueryPlanner {
         logical_plan: &LogicalPlan,
         session_state: &SessionState,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        let mut lineage = extract(logical_plan, &self.config);
-        let cx = self.context.context(session_state).await;
-        // The SQL text isn't recoverable from the plan; take it from the
-        // host-supplied context (absent on non-SQL paths, e.g. ingest).
-        lineage.sql = cx.sql.clone();
-
-        // Suppress lineage for queries that touch no datasets — information_schema
-        // introspection, `SET`/`SHOW`, metadata-RPC probes. They carry no input or
-        // output, so a START/COMPLETE pair only adds a dangling job node to the
-        // graph. Plan straight through without a marker so no events fire.
-        if lineage.inputs.is_empty() && lineage.outputs.is_empty() {
+        // Extract lineage, resolve context, and emit START — or, when the query
+        // touches no datasets, plan straight through without a marker so no events
+        // fire.
+        let Some((run_id, lineage, cx)) = self.begin_lineage(logical_plan, session_state).await
+        else {
             return self
                 .physical
                 .create_physical_plan(logical_plan, session_state)
                 .await;
-        }
-
-        let run_id = cx.run_id.unwrap_or_else(Uuid::now_v7);
-        self.client
-            .emit(start_event(run_id, &lineage, &cx, &self.config));
+        };
 
         // Carry the COMPLETE template into the physical phase via the plan itself;
         // the extension planner lowers it into an OpenLineageExec at the root that
