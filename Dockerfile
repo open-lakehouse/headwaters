@@ -98,6 +98,13 @@ EXPOSE 8091
 # reads the same config/env the server does, so it targets the right port.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["/usr/local/bin/app", "healthcheck"]
-# `serve` is baked in so a CMD-less `docker run` still starts the server; a probe
-# (`docker run … healthcheck`) overrides it with the full arg vector.
-ENTRYPOINT ["/usr/local/bin/app", "serve"]
+# ENTRYPOINT is just the binary; CMD supplies the default subcommand. Split this
+# way so a CMD-less `docker run` still starts the server (`serve`) while
+# `docker run … migrate` / `… healthcheck` — or a Compose `command:` — *replaces*
+# CMD and picks the subcommand, rather than being appended after a baked-in
+# `serve` (which clap would reject as an unexpected argument). `serve` does NOT
+# apply migrations and refuses to start against a schema that is behind — run
+# `migrate` once before the first `serve` against a new database (see
+# examples/compose/docker-compose.yml).
+ENTRYPOINT ["/usr/local/bin/app"]
+CMD ["serve"]

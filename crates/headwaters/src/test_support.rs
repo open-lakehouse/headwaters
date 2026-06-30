@@ -36,8 +36,11 @@ pub(crate) struct Db {
     pub(crate) pool: PgPool,
 }
 
-/// Boot a throwaway Postgres (testcontainers), connect, and run the migrations.
-pub(crate) async fn start_postgres() -> Db {
+/// Boot a throwaway Postgres (testcontainers) and connect, *without* migrating —
+/// the schema is empty. Callers that want a ready-to-use schema use
+/// [`start_postgres`]; the schema-check tests use this to exercise the
+/// un-migrated state.
+pub(crate) async fn start_postgres_unmigrated() -> Db {
     let container = GenericImage::new("postgres", POSTGRES_TAG)
         .with_wait_for(WaitFor::message_on_stderr(
             "database system is ready to accept connections",
@@ -57,11 +60,22 @@ pub(crate) async fn start_postgres() -> Db {
         .connect(&url)
         .await
         .expect("connect postgres");
-    sqlx::migrate!().run(&pool).await.expect("run migrations");
     Db {
         _container: container,
         pool,
     }
+}
+
+/// Boot a throwaway Postgres (testcontainers), connect, and run the migrations.
+pub(crate) async fn start_postgres() -> Db {
+    let db = start_postgres_unmigrated().await;
+    // Reuse the one embedded migrator the server uses, so tests exercise exactly
+    // the migration set `migrate`/`serve` see.
+    crate::run::MIGRATOR
+        .run(&db.pool)
+        .await
+        .expect("run migrations");
+    db
 }
 
 /// Ingest one OpenLineage JSON document the way the HTTP handler does, then fold

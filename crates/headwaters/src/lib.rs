@@ -23,7 +23,7 @@ pub mod read;
 mod run;
 pub mod writer;
 
-pub use run::run;
+pub use run::{migrate, run};
 
 // Shared Postgres/testcontainers scaffolding for the integration tests. Lives in
 // `src/` (not `tests/common/`) so inline `#[cfg(test)]` modules — notably the

@@ -1,9 +1,15 @@
 //! CLI surface for the `headwaters` server binary.
 //!
-//! Two subcommands:
+//! Three subcommands:
 //!   - `serve` — run the service (see [`crate::run`]). Flags overlay the layered
 //!     config (`--host`/`--port`/`--log-level`/`--config`), with CLI flags taking
 //!     precedence over `HEADWATERS__*` env vars, the config file, and defaults.
+//!     `serve` does not apply migrations; it refuses to start against a schema
+//!     that is behind, directing the operator to run `migrate` first.
+//!   - `migrate` — apply any pending database migrations, then exit (see
+//!     [`crate::migrate`]). Run this once before/at deploy time; it is the only
+//!     path that mutates the schema, keeping migrations out of the `serve` hot
+//!     path so concurrent instances don't race to migrate.
 //!   - `healthcheck` — probe the configured `/health` endpoint and exit 0 (healthy)
 //!     or non-zero (unhealthy). This is the probe the distroless image's Docker
 //!     `HEALTHCHECK` runs, since distroless has no shell/`curl` for the usual form.
@@ -26,8 +32,20 @@ pub struct Cli {
 pub enum Command {
     /// Run the server.
     Serve(ServeArgs),
+    /// Apply any pending database migrations, then exit.
+    Migrate(MigrateArgs),
     /// Probe the configured `/health` endpoint; exit 0 if healthy, non-zero otherwise.
     Healthcheck(HealthcheckArgs),
+}
+
+/// Arguments for `migrate`. Migrations need only the database DSN, which
+/// [`Config::load`] resolves from `postgres.url` / `DATABASE_URL`; host, port,
+/// and UI settings are irrelevant here, so the only flag is the config path.
+#[derive(Debug, Default, Clone, Args)]
+pub struct MigrateArgs {
+    /// Config file path (TOML/YAML/JSON). Also read from `HEADWATERS_CONFIG`.
+    #[arg(short, long, env = "HEADWATERS_CONFIG", value_name = "PATH")]
+    pub config: Option<String>,
 }
 
 /// Arguments for `serve`. Every flag is optional and, when present, overlays the
@@ -221,6 +239,24 @@ mod tests {
         let cli = Cli::try_parse_from(["headwaters", "serve", "-c", "x.toml"]).unwrap();
         let Command::Serve(args) = cli.command else {
             panic!("expected serve");
+        };
+        assert_eq!(args.config.as_deref(), Some("x.toml"));
+    }
+
+    #[test]
+    fn migrate_parses() {
+        let cli = Cli::try_parse_from(["headwaters", "migrate"]).unwrap();
+        let Command::Migrate(args) = cli.command else {
+            panic!("expected migrate");
+        };
+        assert!(args.config.is_none());
+    }
+
+    #[test]
+    fn migrate_short_config_flag() {
+        let cli = Cli::try_parse_from(["headwaters", "migrate", "-c", "x.toml"]).unwrap();
+        let Command::Migrate(args) = cli.command else {
+            panic!("expected migrate");
         };
         assert_eq!(args.config.as_deref(), Some("x.toml"));
     }

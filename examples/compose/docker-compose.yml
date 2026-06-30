@@ -1,12 +1,16 @@
-# A minimal, runnable Headwaters stack: Postgres + the service, each with a
-# healthcheck, wired so the service only starts once Postgres is ready.
+# A minimal, runnable Headwaters stack: Postgres, a one-shot migration job, and
+# the service — each with a healthcheck, wired so the migration runs once
+# Postgres is ready and the service starts only once migrations have completed.
 #
 #   docker compose up
 #   curl localhost:8091/health        # -> OK
 #
-# The image's own `HEALTHCHECK` (and the `healthcheck:` block below) run the
-# binary's `healthcheck` subcommand — the distroless image has no shell/curl, so
-# this self-probe is how Docker/Compose learn the service is up.
+# `serve` does not apply migrations (and refuses to start against a schema that
+# is behind), so the `headwaters-migrate` one-shot below applies them first; the
+# server then `depends_on` its successful completion. The image's own
+# `HEALTHCHECK` (and the `healthcheck:` block below) run the binary's
+# `healthcheck` subcommand — the distroless image has no shell/curl, so this
+# self-probe is how Docker/Compose learn the service is up.
 services:
   postgres:
     image: postgres:16
@@ -20,12 +24,24 @@ services:
       timeout: 5s
       retries: 10
 
+  # One-shot: apply pending migrations, then exit. The server waits on this.
+  headwaters-migrate:
+    image: ghcr.io/open-lakehouse/headwaters:latest
+    command: ["migrate"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://headwaters:headwaters@postgres:5432/lineage
+      RUST_LOG: info
+
   headwaters:
     # Use a published tag, or build from the repo root: `build: { context: ../.. }`.
     image: ghcr.io/open-lakehouse/headwaters:latest
     depends_on:
-      postgres:
-        condition: service_healthy
+      headwaters-migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgres://headwaters:headwaters@postgres:5432/lineage
       RUST_LOG: info
