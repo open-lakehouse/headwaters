@@ -51,6 +51,26 @@ against vendored JSON Schemas — no external services required. Live-integratio
 tests are `#[ignore]`d; the Marquez reference-backend acceptance test is gated
 behind the `marquez-it` feature (`just marquez-it`, needs Docker).
 
+## Running the server
+
+The `headwaters` binary takes a subcommand and resolves its Postgres DSN from
+`postgres.url` (config file) or the `DATABASE_URL` env var:
+
+```sh
+headwaters migrate      # apply pending database migrations, then exit
+headwaters serve        # run the service (HTTP + read API) on :8091
+headwaters healthcheck  # probe /health; exit 0 if healthy (used by Docker)
+```
+
+`serve` does **not** apply migrations: it refuses to start against a schema that
+is behind and tells you to run `migrate` first. This keeps schema changes an
+explicit, one-shot step (run `migrate` once before/at deploy time) and out of
+the startup path, so several instances booting at once don't race to migrate.
+
+A complete, runnable stack — Postgres, a one-shot `migrate` job, then the server
+— is in [`examples/compose/docker-compose.yml`](examples/compose/docker-compose.yml)
+(`docker compose up`).
+
 ## Protobuf
 
 Two protobuf packages define the service surface:

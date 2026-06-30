@@ -99,5 +99,8 @@ EXPOSE 8091
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD ["/usr/local/bin/app", "healthcheck"]
 # `serve` is baked in so a CMD-less `docker run` still starts the server; a probe
-# (`docker run … healthcheck`) overrides it with the full arg vector.
+# (`docker run … healthcheck`) or a migration (`docker run … migrate`) overrides
+# it with the full arg vector. `serve` does NOT apply migrations and refuses to
+# start against a schema that is behind — run `migrate` once before the first
+# `serve` against a new database (see examples/compose/docker-compose.yml).
 ENTRYPOINT ["/usr/local/bin/app", "serve"]
