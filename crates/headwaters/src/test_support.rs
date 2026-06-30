@@ -57,7 +57,12 @@ pub(crate) async fn start_postgres() -> Db {
         .connect(&url)
         .await
         .expect("connect postgres");
-    sqlx::migrate!().run(&pool).await.expect("run migrations");
+    // Reuse the one embedded migrator the server uses, so tests exercise exactly
+    // the migration set `migrate`/`serve` see.
+    crate::run::MIGRATOR
+        .run(&pool)
+        .await
+        .expect("run migrations");
     Db {
         _container: container,
         pool,

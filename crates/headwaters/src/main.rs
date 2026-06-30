@@ -2,7 +2,7 @@ use anyhow::Context;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
-use headwaters::cli::{Cli, Command, ServeArgs, run_healthcheck};
+use headwaters::cli::{Cli, Command, MigrateArgs, ServeArgs, run_healthcheck};
 use headwaters::config::Config;
 
 fn main() -> anyhow::Result<()> {
@@ -18,6 +18,7 @@ fn main() -> anyhow::Result<()> {
             }
         }),
         Command::Serve(args) => serve(args),
+        Command::Migrate(args) => migrate(args),
     }
 }
 
@@ -38,9 +39,7 @@ async fn serve(args: ServeArgs) -> anyhow::Result<()> {
         unsafe { std::env::set_var("RUST_LOG", level) };
     }
 
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+    init_tracing();
 
     let mut cfg = Config::load(args.config.as_ref()).context("invalid configuration")?;
     args.overlay(&mut cfg);
@@ -49,4 +48,23 @@ async fn serve(args: ServeArgs) -> anyhow::Result<()> {
     cfg.validate().context("invalid configuration")?;
 
     headwaters::run(cfg).await
+}
+
+/// Resolve config and apply any pending database migrations, then exit. Like
+/// `serve`, this needs a tokio runtime (sqlx is async). It does not overlay
+/// host/port — `MigrateArgs` only carries the config path, since migrations
+/// need only the DSN that `Config::load` resolves.
+#[tokio::main]
+async fn migrate(args: MigrateArgs) -> anyhow::Result<()> {
+    init_tracing();
+    let cfg = Config::load(args.config.as_ref()).context("invalid configuration")?;
+    headwaters::migrate(cfg).await
+}
+
+/// Install the tracing subscriber from `RUST_LOG`. Lives in the binary (not the
+/// library) so an embedder can install its own subscriber instead.
+fn init_tracing() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
 }
