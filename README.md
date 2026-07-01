@@ -126,9 +126,13 @@ base_path = "/lineage"
 
 The value is normalized to a single leading slash and no trailing slash
 (`lineage`, `/lineage`, and `/lineage/` are equivalent); empty means "serve at
-root". With a prefix set, the **entire** surface — UI, the REST read API
-(`/api/v1`), the OpenLineage ingest endpoints, and the ConnectRPC service — moves
-under it, e.g. `https://platform.example.com/lineage/`.
+root". With a prefix set, the UI, the REST read API (`/api/v1`), the OpenLineage
+ingest endpoints, and the ConnectRPC service all move under it, e.g.
+`https://platform.example.com/lineage/`.
+
+The operational endpoints `/health` and `/version` are the exception: they always
+stay at the service root, regardless of the base path, so container/orchestrator
+liveness probes (and the `healthcheck` subcommand) don't need to know the prefix.
 
 **Gateway contract: forward the full prefixed path; do not strip the prefix.**
 Headwaters mounts every route under the prefix and serves an `index.html` that

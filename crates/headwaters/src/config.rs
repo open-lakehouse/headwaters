@@ -254,8 +254,9 @@ impl Config {
     /// targets, so they map to the corresponding loopback address; any other
     /// host is used verbatim. A literal IPv6 host is wrapped in brackets so the
     /// authority parses (`http://[2001:db8::1]:8091/...`, per RFC 3986). The UI
-    /// base path (empty by default) is included so the probe works when the whole
-    /// surface is mounted under a prefix.
+    /// base path is deliberately *not* applied: `/health` is mounted at the bind
+    /// root regardless of `ui.base_path` (see `http::operational_router`), so the
+    /// probe stays independent of gateway routing.
     pub fn health_url(&self) -> String {
         let host = match self.host.as_str() {
             "0.0.0.0" => "127.0.0.1".to_string(),
@@ -265,7 +266,7 @@ impl Config {
             h if h.contains(':') && !h.starts_with('[') => format!("[{h}]"),
             h => h.to_string(),
         };
-        format!("http://{host}:{}{}/health", self.port, self.ui.base_path)
+        format!("http://{host}:{}/health", self.port)
     }
 
     /// Validate cross-cutting invariants that serde can't express on its own.
@@ -397,10 +398,12 @@ mod tests {
         c.port = 9000;
         assert_eq!(c.health_url(), "http://myhost:9000/health");
 
+        // A configured base path does NOT move the probe: `/health` lives at the
+        // bind root regardless, so liveness is independent of gateway routing.
         c.host = "0.0.0.0".into();
         c.port = 8091;
         c.ui.base_path = "/lineage".into();
-        assert_eq!(c.health_url(), "http://127.0.0.1:8091/lineage/health");
+        assert_eq!(c.health_url(), "http://127.0.0.1:8091/health");
 
         // A literal (non-wildcard) IPv6 host must be bracketed, and one that is
         // already bracketed is left as-is.

@@ -62,9 +62,12 @@ const UI_DIR: &str = "web";
 /// never shadowed. When [`UI_DIR`] has no bundle (local API-only runs), those
 /// paths 404.
 ///
-/// When `base_path` is non-empty (e.g. `/lineage`) the *entire* surface — UI,
-/// REST API, and ConnectRPC — is mounted under that prefix, so the service can
-/// sit behind a gateway at a sub-path. See [`mount_under_base`]. The bundle's
+/// When `base_path` is non-empty (e.g. `/lineage`) the UI, REST API, and
+/// ConnectRPC are mounted under that prefix, so the service can sit behind a
+/// gateway at a sub-path. See [`mount_under_base`]. The operational endpoints
+/// (`/health`, `/version`) are the exception: they stay at the bind root
+/// regardless of `base_path` (see [`operational_router`]), so liveness probes
+/// are independent of gateway routing. The bundle's
 /// asset URLs are relative (Vite `base: "./"`) and the served `index.html` is
 /// rewritten to carry the prefix (see [`serve_index`]), so one image works at
 /// any prefix without a rebuild.
@@ -97,11 +100,6 @@ fn router_in(state: AppState, ui_dir: impl AsRef<Path>, base_path: &str, serve_u
         ReadServiceExt::register(Arc::new(state.store.clone()), connectrpc::Router::new());
 
     let ingest_routes = Router::new()
-        .route("/health", get(|| async { "OK" }))
-        // The crate version, which release-plz bumps and which the Docker image
-        // is tagged with — so this is the single way to confirm, against a
-        // running service, exactly which release (binary + bundled UI) is live.
-        .route("/version", get(version))
         .route("/api/v1/lineage", post(ingest_event))
         .route("/api/v1/lineage/batch", post(ingest_batch))
         .with_state(state);
@@ -129,11 +127,35 @@ fn router_in(state: AppState, ui_dir: impl AsRef<Path>, base_path: &str, serve_u
         app
     };
 
-    mount_under_base(app, &base_path)
+    let app = mount_under_base(app, &base_path);
+
+    // Operational endpoints are merged at the ROOT, *outside* the base-path
+    // wrapper, so `/health` and `/version` are always reachable at the address the
+    // server binds — regardless of `base_path`. This is what the `healthcheck`
+    // subcommand and the Docker `HEALTHCHECK` probe (both target root `/health`
+    // via `Config::health_url`), and it keeps liveness independent of gateway
+    // routing (k8s/LB probes hit a fixed root path, not the app sub-path). Merged
+    // last so nothing — including the SPA fallback — can shadow them.
+    operational_router()
+        .merge(app)
         // Per-request tracing (method, path, status, latency) for operability;
         // verbosity is controlled by the `RUST_LOG`/`tower_http` env filter.
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
+}
+
+/// The operational endpoints — `/health` and `/version` — mounted at the bind
+/// root, independent of any configured base path. Kept separate from the app
+/// router so [`router_in`] can merge them outside [`mount_under_base`]: liveness
+/// probes and version checks must not move when the surface is mounted under a
+/// gateway sub-path.
+fn operational_router() -> Router {
+    Router::new()
+        .route("/health", get(|| async { "OK" }))
+        // The crate version, which release-plz bumps and which the Docker image
+        // is tagged with — so this is the single way to confirm, against a
+        // running service, exactly which release (binary + bundled UI) is live.
+        .route("/version", get(version))
 }
 
 /// Layer the bundled single-page app onto `app`: the templated entry at `/` and
@@ -574,29 +596,59 @@ mod serve_ui_tests {
         );
     }
 
-    // Base-path mounting: with a prefix configured, the whole surface lives under
+    // Base-path mounting: with a prefix configured, the UI/API surface lives under
     // it. Root paths 404, prefixed paths behave as the unprefixed ones did, and
-    // the served index.html carries the prefix.
+    // the served index.html carries the prefix. The operational endpoints
+    // (`/health`, `/version`) are the exception — they stay at the bind root.
     const PREFIX: &str = "/lineage";
 
     #[tokio::test]
-    async fn prefixed_health_works_and_unprefixed_404s() {
+    async fn health_stays_at_root_regardless_of_prefix() {
         let dir = write_bundle();
         let app = router_in(test_state(), dir.path(), PREFIX, true);
+
+        // Even with a prefix set, `/health` is reachable at the bind root, so the
+        // healthcheck probe and k8s/LB liveness checks are unaffected by routing.
         let ok = app
             .clone()
-            .oneshot(Request::get("/lineage/health").body(Body::empty()).unwrap())
+            .oneshot(Request::get("/health").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(ok.status(), StatusCode::OK);
         assert_eq!(body_string(ok).await, "OK");
 
-        // The root path no longer exists when a prefix is set.
-        let gone = app
-            .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+        // And it is NOT moved under the prefix — the operational router is mounted
+        // outside `mount_under_base`, so `/{prefix}/health` is not the health
+        // endpoint. (With the SPA on, that path resolves to the deep-link index
+        // fallback, so assert on the body rather than the status: it must never be
+        // the plain-text health response.)
+        let under_prefix = app
+            .oneshot(Request::get("/lineage/health").body(Body::empty()).unwrap())
             .await
             .unwrap();
-        assert_eq!(gone.status(), StatusCode::NOT_FOUND);
+        assert_ne!(
+            body_string(under_prefix).await,
+            "OK",
+            "/{{prefix}}/health must not be the operational health endpoint",
+        );
+    }
+
+    #[tokio::test]
+    async fn version_stays_at_root_regardless_of_prefix() {
+        let dir = write_bundle();
+        let app = router_in(test_state(), dir.path(), PREFIX, true);
+
+        // `/version` shares the operational router with `/health`, so it too stays
+        // at the bind root when a base path is configured.
+        let resp = app
+            .oneshot(Request::get("/version").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            body_string(resp).await,
+            format!(r#"{{"version":"{}"}}"#, env!("CARGO_PKG_VERSION"))
+        );
     }
 
     #[tokio::test]
@@ -739,15 +791,23 @@ mod serve_ui_tests {
     #[tokio::test]
     async fn ui_disabled_under_a_base_path_serves_api_only() {
         // With both a prefix and the UI off, the API lives under the prefix and
-        // the SPA is absent: prefixed `/health` works, prefixed deep links 404.
+        // the SPA is absent: a prefixed API route is reachable, prefixed deep
+        // links 404. (Health/version stay at root, so they can't stand in for the
+        // API here — probe the ingest endpoint instead.)
         let dir = write_bundle();
         let app = router_in(test_state(), dir.path(), PREFIX, false);
-        let ok = app
+        let reached = app
             .clone()
-            .oneshot(Request::get("/lineage/health").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::post("/lineage/api/v1/lineage")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
-        assert_eq!(ok.status(), StatusCode::OK);
+        // The route exists under the prefix (an empty body is a 4xx from the
+        // handler, not a routing 404).
+        assert_ne!(reached.status(), StatusCode::NOT_FOUND);
 
         let gone = app
             .oneshot(
