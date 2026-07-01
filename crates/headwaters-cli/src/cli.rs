@@ -45,11 +45,28 @@ pub enum Command {
     #[command(subcommand)]
     Dataset(DatasetCommand),
 
+    /// Inspect jobs.
+    #[command(subcommand)]
+    Job(JobCommand),
+
+    /// Find jobs and datasets by name (resolves a fuzzy name to a nodeId).
+    Search(SearchArgs),
+
     /// Show the lineage graph around a node.
     Lineage(LineageArgs),
 
     /// Trace provenance (upstream) or consumption (downstream) of a node.
     Trace(TraceArgs),
+
+    /// Show how a dataset's columns derive from upstream columns.
+    #[command(name = "column-lineage")]
+    ColumnLineage(ColumnLineageArgs),
+
+    /// List the tag catalog (the sensitivity labels in use).
+    Tags,
+
+    /// Where does a tag's data end up? Every downstream field it reaches.
+    Exposure(ExposureArgs),
 
     /// Print the agent JSON schema + a glossary of the data model (no server call).
     Schema,
@@ -57,6 +74,9 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum DatasetCommand {
+    /// List datasets, optionally scoped to one namespace.
+    List(ListArgs),
+
     /// Get one dataset by namespace and name.
     Get {
         /// Namespace.
@@ -64,6 +84,68 @@ pub enum DatasetCommand {
         /// Dataset name.
         name: String,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum JobCommand {
+    /// List jobs, optionally scoped to one namespace.
+    List(ListArgs),
+
+    /// Get one job by namespace and name.
+    Get {
+        /// Namespace.
+        namespace: String,
+        /// Job name.
+        name: String,
+    },
+}
+
+/// Shared paging args for the `list` subcommands.
+#[derive(Debug, Args)]
+pub struct ListArgs {
+    /// Scope to this namespace; omit to list across all namespaces.
+    pub namespace: Option<String>,
+    /// Maximum results to return (0 = server default page size).
+    #[arg(long, default_value_t = 0)]
+    pub limit: i32,
+    /// Skip this many results (page by advancing until `total` is reached).
+    #[arg(long, default_value_t = 0)]
+    pub offset: i32,
+}
+
+#[derive(Debug, Args)]
+pub struct SearchArgs {
+    /// Case-insensitive substring matched against job and dataset names.
+    pub query: String,
+    /// Restrict to one entity kind.
+    #[arg(long, value_enum)]
+    pub kind: Option<SearchKind>,
+    /// Restrict to one namespace.
+    #[arg(long)]
+    pub namespace: Option<String>,
+    /// Maximum results to return (0 = server default).
+    #[arg(long, default_value_t = 0)]
+    pub limit: i32,
+}
+
+/// Which entity kind to restrict a search to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum SearchKind {
+    Job,
+    Dataset,
+}
+
+#[derive(Debug, Args)]
+pub struct ColumnLineageArgs {
+    /// A `dataset:<ns>/<name>` (all fields) or `datasetField:<ns>/<name>/<field>`
+    /// target (nodeId or shorthand).
+    pub target: String,
+}
+
+#[derive(Debug, Args)]
+pub struct ExposureArgs {
+    /// The tag whose downstream reach to compute (e.g. `pii`).
+    pub tag: String,
 }
 
 #[derive(Debug, Args)]
