@@ -1,12 +1,47 @@
-//! `hw dataset get <ns> <name>` — one dataset, with its schema and facets.
+//! `hw dataset list` / `hw dataset get <ns> <name>` — inspect datasets.
 
 use std::io::Write;
 
-use headwaters_client::{Dataset, dataset_node_id, struct_to_json};
+use headwaters_client::{Dataset, ListDatasetsResponse, dataset_node_id, struct_to_json};
 use serde_json::{Value, json};
 
 use crate::render::facets::{self, Column, columns_from_fields};
 use crate::render::{Render, RenderCtx, table};
+
+/// Renderable wrapper over a paged dataset list.
+pub struct DatasetList(pub ListDatasetsResponse);
+
+impl Render for DatasetList {
+    fn table(&self, w: &mut dyn Write, _ctx: RenderCtx) -> std::io::Result<()> {
+        let mut t = table::new(&["NAMESPACE", "NAME", "TAGS"]);
+        for d in &self.0.datasets {
+            t.add_row([&d.namespace, &d.name, &d.tags.join(", ")]);
+        }
+        writeln!(w, "{t}")?;
+        writeln!(
+            w,
+            "{} of {} datasets",
+            self.0.datasets.len(),
+            self.0.total_count
+        )
+    }
+
+    fn json(&self) -> Value {
+        serde_json::to_value(&self.0).unwrap_or(Value::Null)
+    }
+
+    fn agent(&self, _ctx: RenderCtx) -> Value {
+        json!({
+            "datasets": self.0.datasets.iter().map(|d| json!({
+                "id": dataset_node_id(&d.namespace, &d.name),
+                "ref": format!("{}/{}", d.namespace, d.name),
+                "tags": d.tags,
+            })).collect::<Vec<_>>(),
+            "count": self.0.datasets.len(),
+            "total": self.0.total_count,
+        })
+    }
+}
 
 /// Renderable wrapper over a dataset.
 pub struct DatasetView(pub Dataset);
@@ -118,14 +153,14 @@ impl Render for DatasetView {
                 map.insert("other_facets".into(), json!(others));
             }
         }
+        // Emit canonical `dataset:<ns>:<name>` nodeIds so URI namespaces (which
+        // contain `/` and `:`) round-trip unambiguously.
+        let id = dataset_node_id(&d.namespace, &d.name);
         map.insert(
             "_next".into(),
             json!([
-                format!(
-                    "hw lineage dataset:{}/{} --direction down",
-                    d.namespace, d.name
-                ),
-                format!("hw column-lineage dataset:{}/{}", d.namespace, d.name),
+                format!("hw lineage {id} --direction down"),
+                format!("hw column-lineage {id}"),
             ]),
         );
         out
