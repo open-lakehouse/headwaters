@@ -45,6 +45,7 @@ pub struct OpenLineageBuilder {
     transport: Option<Arc<dyn Transport>>,
     context: Option<Arc<dyn LineageContextProvider>>,
     config: Option<OpenLineageConfig>,
+    nest_over_existing_planner: bool,
 }
 
 impl std::fmt::Debug for OpenLineageBuilder {
@@ -54,6 +55,10 @@ impl std::fmt::Debug for OpenLineageBuilder {
             .field("has_transport", &self.transport.is_some())
             .field("has_context", &self.context.is_some())
             .field("config", &self.config)
+            .field(
+                "nest_over_existing_planner",
+                &self.nest_over_existing_planner,
+            )
             .finish()
     }
 }
@@ -115,6 +120,22 @@ impl OpenLineageBuilder {
         self
     }
 
+    /// Nest the lineage planner *over* the session's existing `QueryPlanner`
+    /// rather than replacing its physical phase with a standalone one.
+    ///
+    /// With this set, [`Self::instrument`] delegates physical planning of the real
+    /// query to whatever planner is already on the session (e.g. a policy gate, a
+    /// Unity DDL planner) and wraps the result in the terminal
+    /// [`OpenLineageExec`](crate::OpenLineageExec) — so lineage composes *outside*
+    /// that planner: it emits START before the inner planner runs and FAIL if the
+    /// inner planner errors (e.g. a denied query still produces a START+FAIL run).
+    /// Off by default (the standalone behavior, where the lineage planner owns the
+    /// terminal physical phase via its own default planner).
+    pub fn nest_over_existing_planner(mut self, nest: bool) -> Self {
+        self.nest_over_existing_planner = nest;
+        self
+    }
+
     /// Install the instrumentation on `state`, returning the wired
     /// `SessionState`.
     ///
@@ -140,12 +161,23 @@ impl OpenLineageBuilder {
             .config
             .unwrap_or_else(OpenLineageConfig::for_datafusion);
 
-        let planner = Arc::new(OpenLineageQueryPlanner::new(
-            client,
-            context,
-            config,
-            Vec::new(),
-        ));
+        let planner = if self.nest_over_existing_planner {
+            // Nest over the session's current planner: delegate the real query to
+            // it and wrap the result in the terminal node (see `with_inner`).
+            Arc::new(OpenLineageQueryPlanner::with_inner(
+                client,
+                context,
+                config,
+                state.query_planner().clone(),
+            ))
+        } else {
+            Arc::new(OpenLineageQueryPlanner::new(
+                client,
+                context,
+                config,
+                Vec::new(),
+            ))
+        };
         // Also stash the planner as a typed `SessionConfig` extension so the
         // `SessionContext`-level DDL path ([`OpenLineageSqlExt::sql_with_lineage`])
         // can recover it: the `QueryPlanner` trait isn't `Any`, so `query_planner()`

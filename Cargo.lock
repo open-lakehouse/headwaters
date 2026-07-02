@@ -3666,9 +3666,7 @@ dependencies = [
 
 [[package]]
 name = "olai-http"
-version = "0.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f762b45b8389845c66dd39cc63c2e590052e16d3ac2b179eae5df241ceb2566"
+version = "0.0.5"
 dependencies = [
  "async-trait",
  "base64",

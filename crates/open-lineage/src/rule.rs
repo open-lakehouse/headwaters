@@ -205,13 +205,24 @@ pub struct OpenLineageQueryPlanner {
     context: Arc<dyn LineageContextProvider>,
     config: OpenLineageConfig,
     /// Physical planner that knows how to lower [`LineageMarker`]; composes any
-    /// extension planners the host already had.
+    /// extension planners the host already had. Used on the standalone path
+    /// (`inner` is `None`), where this planner owns the terminal physical phase.
     physical: Arc<DefaultPhysicalPlanner>,
+    /// When set, physical planning of the real query is delegated to this inner
+    /// [`QueryPlanner`] (so this planner can *nest* outside another planner-
+    /// wrapping extension, e.g. a policy gate), and the terminal
+    /// [`OpenLineageExec`] is wrapped around the inner planner's physical plan
+    /// directly — the marker / [`LineageExtensionPlanner`] path is not used.
+    inner: Option<Arc<dyn QueryPlanner + Send + Sync>>,
 }
 
 impl OpenLineageQueryPlanner {
     /// Build a planner whose physical planning lowers our marker plus
     /// `extra_extension_planners` (any the host session already registered).
+    ///
+    /// This is the standalone form: the planner owns the terminal physical phase
+    /// via its own [`DefaultPhysicalPlanner`]. To nest this planner *outside*
+    /// another query-planner-wrapping extension, use [`Self::with_inner`].
     pub fn new(
         client: OpenLineageClient,
         context: Arc<dyn LineageContextProvider>,
@@ -226,6 +237,35 @@ impl OpenLineageQueryPlanner {
             context,
             config,
             physical: Arc::new(DefaultPhysicalPlanner::with_extension_planners(planners)),
+            inner: None,
+        }
+    }
+
+    /// Build a planner that delegates physical planning of the real query to
+    /// `inner`, wrapping the result in the terminal [`OpenLineageExec`].
+    ///
+    /// Use this to compose OpenLineage *outside* another query-planner-wrapping
+    /// extension (e.g. a Cedar policy gate): this planner still does the
+    /// planning-time lineage work (extract, resolve context, emit START, emit
+    /// FAIL on a planning error) and installs the terminal node that emits
+    /// COMPLETE/FAIL at end of execution, but the query itself is planned by
+    /// `inner` — so `inner`'s own logic (gating, further nesting, extension
+    /// lowering) runs unchanged. Because the terminal node is wrapped directly,
+    /// the inner planner need not know about [`LineageMarker`].
+    pub fn with_inner(
+        client: OpenLineageClient,
+        context: Arc<dyn LineageContextProvider>,
+        config: OpenLineageConfig,
+        inner: Arc<dyn QueryPlanner + Send + Sync>,
+    ) -> Self {
+        Self {
+            client,
+            context,
+            config,
+            physical: Arc::new(DefaultPhysicalPlanner::with_extension_planners(vec![
+                Arc::new(LineageExtensionPlanner),
+            ])),
+            inner: Some(inner),
         }
     }
 
@@ -358,17 +398,47 @@ impl QueryPlanner for OpenLineageQueryPlanner {
         let Some((run_id, lineage, cx)) = self.begin_lineage(logical_plan, session_state).await
         else {
             return self
-                .physical
-                .create_physical_plan(logical_plan, session_state)
+                .plan_inner_or_default(logical_plan, session_state)
                 .await;
         };
 
-        // Carry the COMPLETE template into the physical phase via the plan itself;
-        // the extension planner lowers it into an OpenLineageExec at the root that
-        // emits COMPLETE/FAIL at end of execution, under this same run id.
+        let complete = complete_event(run_id, &lineage, &cx, &self.config);
+
+        // Nested form: delegate the real query to the inner planner (its gating /
+        // extension lowering runs unchanged), then wrap the result in the terminal
+        // node directly — the inner planner needn't know about `LineageMarker`.
+        if let Some(inner) = &self.inner {
+            return match inner
+                .create_physical_plan(logical_plan, session_state)
+                .await
+            {
+                Ok(plan) => Ok(OpenLineageExec::new(
+                    plan,
+                    self.client.clone(),
+                    complete,
+                    self.config.producer.clone(),
+                )),
+                Err(err) => {
+                    // Inner planning failed (e.g. a policy gate denied the query) —
+                    // no execution to observe, so emit FAIL now under this run id.
+                    self.client.emit(fail_event(
+                        run_id,
+                        &lineage,
+                        &cx,
+                        &self.config,
+                        &err.to_string(),
+                    ));
+                    Err(err)
+                }
+            };
+        }
+
+        // Standalone form: carry the COMPLETE template into the physical phase via
+        // the plan itself; the extension planner lowers it into an OpenLineageExec
+        // at the root that emits COMPLETE/FAIL at end of execution, under this run id.
         let marker = LineageMarker {
             input: logical_plan.clone(),
-            complete: complete_event(run_id, &lineage, &cx, &self.config),
+            complete,
             client: self.client.clone(),
             producer: self.config.producer.clone(),
         };
@@ -392,6 +462,29 @@ impl QueryPlanner for OpenLineageQueryPlanner {
                     &err.to_string(),
                 ));
                 Err(err)
+            }
+        }
+    }
+}
+
+impl OpenLineageQueryPlanner {
+    /// Plan `logical_plan` when no lineage is emitted: through the inner planner
+    /// when nesting, else through the standalone physical planner.
+    async fn plan_inner_or_default(
+        &self,
+        logical_plan: &LogicalPlan,
+        session_state: &SessionState,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        match &self.inner {
+            Some(inner) => {
+                inner
+                    .create_physical_plan(logical_plan, session_state)
+                    .await
+            }
+            None => {
+                self.physical
+                    .create_physical_plan(logical_plan, session_state)
+                    .await
             }
         }
     }
@@ -478,6 +571,82 @@ mod tests {
         assert_eq!(
             a.partial_cmp(&c),
             a.complete.run.run_id.partial_cmp(&c.complete.run.run_id)
+        );
+    }
+
+    // --- nested form (`with_inner`) ---------------------------------------
+
+    use datafusion::error::DataFusionError;
+    use datafusion::execution::context::SessionContext;
+    use datafusion::physical_plan::displayable;
+
+    use crate::context::StaticContextProvider;
+
+    /// An inner `QueryPlanner` that always fails — stands in for a policy gate
+    /// denying a query, so we can assert the nested planner propagates the error.
+    #[derive(Debug)]
+    struct FailingInnerPlanner;
+
+    #[async_trait]
+    impl QueryPlanner for FailingInnerPlanner {
+        async fn create_physical_plan(
+            &self,
+            _logical_plan: &LogicalPlan,
+            _session_state: &SessionState,
+        ) -> Result<Arc<dyn ExecutionPlan>> {
+            Err(DataFusionError::Execution("inner denied".into()))
+        }
+    }
+
+    fn nested_planner(inner: Arc<dyn QueryPlanner + Send + Sync>) -> OpenLineageQueryPlanner {
+        OpenLineageQueryPlanner::with_inner(
+            OpenLineageClient::new(Arc::new(NoopTransport)),
+            Arc::new(StaticContextProvider::default()),
+            OpenLineageConfig::default(),
+            inner,
+        )
+    }
+
+    /// A `SELECT` over a one-row table so `begin_lineage` sees an input dataset
+    /// and takes the emitting path (rather than planning straight through).
+    async fn select_plan() -> (SessionState, LogicalPlan) {
+        let ctx = SessionContext::new();
+        ctx.sql("CREATE TABLE t AS VALUES (1)").await.unwrap();
+        let logical = ctx
+            .state()
+            .create_logical_plan("SELECT * FROM t")
+            .await
+            .unwrap();
+        (ctx.state(), logical)
+    }
+
+    #[tokio::test]
+    async fn nested_form_propagates_inner_planning_error() {
+        let (state, logical) = select_plan().await;
+        let planner = nested_planner(Arc::new(FailingInnerPlanner));
+        // The inner planner denies; the nested lineage planner surfaces that error
+        // (and, in production, emits a FAIL event under the run's id).
+        let err = planner
+            .create_physical_plan(&logical, &state)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("inner denied"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn nested_form_wraps_inner_plan_in_terminal_exec() {
+        let (state, logical) = select_plan().await;
+        // Delegate to the session's real (default) planner via a thin adapter,
+        // then assert the terminal `OpenLineageExec` sits at the physical root.
+        let planner = nested_planner(state.query_planner().clone());
+        let physical = planner
+            .create_physical_plan(&logical, &state)
+            .await
+            .unwrap();
+        let root = displayable(physical.as_ref()).one_line().to_string();
+        assert!(
+            root.contains("OpenLineageExec"),
+            "expected OpenLineageExec at the root, got: {root}"
         );
     }
 }
