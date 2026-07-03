@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.7...headwaters-v0.0.8) - 2026-07-03
+
+### Fixed
+
+- *(server)* keep /health and /version at root under a base path (#57)
+
 ## [0.0.7](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.6...headwaters-v0.0.7) - 2026-06-30
 
 ### Added
