@@ -59,7 +59,9 @@ pub use config::DataFusionConfig;
 pub use context::{LineageContextProvider, StaticContextProvider};
 pub use exec::OpenLineageExec;
 pub use extract::{QueryLineage, extract};
-pub use rule::{LineageExtensionPlanner, LineageMarker, OpenLineageQueryPlanner};
+pub use rule::{
+    LineageExtensionPlanner, LineageHandle, LineageMarker, OpenLineageQueryPlanner, begin_lineage,
+};
 pub use session::{
     OpenLineage, OpenLineageBuilder, OpenLineageSqlExt, instrument_session_state,
     instrument_session_state_simple,

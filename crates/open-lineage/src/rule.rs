@@ -84,6 +84,26 @@ pub struct LineageMarker {
     producer: String,
 }
 
+impl LineageMarker {
+    /// Wrap `input`, carrying the COMPLETE template the terminal
+    /// [`OpenLineageExec`] emits at end of execution. Usually built for you by
+    /// [`LineageHandle::into_marker`]; public so a host can construct the marker
+    /// when composing lineage into its own planner.
+    pub fn new(
+        input: LogicalPlan,
+        complete: RunEvent,
+        client: OpenLineageClient,
+        producer: String,
+    ) -> Self {
+        Self {
+            input,
+            complete,
+            client,
+            producer,
+        }
+    }
+}
+
 impl fmt::Debug for LineageMarker {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LineageMarker").finish_non_exhaustive()
@@ -189,6 +209,132 @@ impl ExtensionPlanner for LineageExtensionPlanner {
 }
 
 // ---------------------------------------------------------------------------
+// The reusable planning-time lineage step.
+// ---------------------------------------------------------------------------
+
+/// The per-query lineage payload produced by [`begin_lineage`], carried under one
+/// `run_id` from the planning-time step to the terminal event.
+///
+/// A host composing lineage with another concern (e.g. running lineage's START
+/// step *after* a policy gate, from its own single [`QueryPlanner`]) holds this
+/// between [`begin_lineage`] and [`Self::into_marker`] / the `emit_*` methods.
+pub struct LineageHandle {
+    run_id: Uuid,
+    lineage: QueryLineage,
+    context: LineageContext,
+}
+
+impl LineageHandle {
+    /// The run id START was emitted under; COMPLETE/FAIL must share it.
+    pub fn run_id(&self) -> Uuid {
+        self.run_id
+    }
+
+    /// Wrap `plan` in a [`LineageMarker`] carrying the COMPLETE template, so a
+    /// registered [`LineageExtensionPlanner`] lowers it into the terminal
+    /// [`OpenLineageExec`] at the physical root (the composable path).
+    ///
+    /// Borrows so the handle stays available for [`Self::emit_fail`] if the
+    /// subsequent physical planning errors.
+    pub fn to_marker(
+        &self,
+        plan: LogicalPlan,
+        client: OpenLineageClient,
+        config: &OpenLineageConfig,
+    ) -> LogicalPlan {
+        let complete = complete_event(self.run_id, &self.lineage, &self.context, config);
+        LogicalPlan::Extension(Extension {
+            node: Arc::new(LineageMarker::new(
+                plan,
+                complete,
+                client,
+                config.producer.clone(),
+            )),
+        })
+    }
+
+    /// Emit FAIL for a planning error that occurs *after* START, before any
+    /// [`OpenLineageExec`] exists to observe execution. Under the same `run_id`.
+    pub fn emit_fail(&self, client: &OpenLineageClient, config: &OpenLineageConfig, err: &str) {
+        client.emit(fail_event(
+            self.run_id,
+            &self.lineage,
+            &self.context,
+            config,
+            err,
+        ));
+    }
+
+    /// Emit COMPLETE directly, under the same `run_id`, with `eventTime` refreshed
+    /// to now (so run duration is meaningful). For paths that run the query
+    /// *outside* a physical plan — there is no [`OpenLineageExec`] to emit the
+    /// terminal event, so the caller emits it (e.g. the CTAS / `CREATE VIEW` DDL
+    /// path, which materializes internally and hands back an empty result).
+    pub fn emit_complete(&self, client: &OpenLineageClient, config: &OpenLineageConfig) {
+        let mut event = complete_event(self.run_id, &self.lineage, &self.context, config);
+        event.event_time = chrono::Utc::now().to_rfc3339();
+        client.emit(event);
+    }
+
+    /// Fold SQL text into the lineage when the context provider didn't supply it
+    /// (a path that has the raw statement in hand — e.g. the DDL path).
+    pub fn set_sql_if_absent(&mut self, sql: &str) {
+        if self.lineage.sql.is_none() {
+            self.lineage.sql = Some(sql.to_string());
+        }
+    }
+}
+
+/// Planning-time lineage work, decoupled from the [`QueryPlanner`] trait: extract
+/// lineage from `plan`, resolve the async [`LineageContextProvider`], and — unless
+/// the query touches no datasets — mint a `run_id` and emit START.
+///
+/// Returns a [`LineageHandle`] to carry the run under one id to the terminal event
+/// (via [`LineageHandle::into_marker`]), or `None` when lineage is suppressed (no
+/// inputs and no outputs — `information_schema` introspection, `SET`/`SHOW`,
+/// metadata probes; or a nested DDL body), in which case no START fired and the
+/// caller must emit nothing.
+///
+/// This is the reusable step for hosts that sequence lineage into their own
+/// single `QueryPlanner` (e.g. after a policy gate) rather than installing
+/// [`OpenLineageQueryPlanner`] as the session planner.
+pub async fn begin_lineage(
+    client: &OpenLineageClient,
+    context: &dyn LineageContextProvider,
+    config: &OpenLineageConfig,
+    plan: &LogicalPlan,
+    session_state: &SessionState,
+) -> Option<LineageHandle> {
+    // A `create_physical_plan` nested inside `execute_ddl_with_lineage` is the
+    // DDL body (e.g. the CTAS SELECT that `create_memory_table` collects); the
+    // enclosing DDL run already reports it, so emit nothing here.
+    if nested_lineage_suppressed() {
+        return None;
+    }
+
+    let mut lineage = extract(plan, config);
+    let cx = context.context(session_state).await;
+    // The SQL text isn't recoverable from the plan; take it from the
+    // host-supplied context (absent on non-SQL paths, e.g. ingest).
+    lineage.sql = cx.sql.clone();
+
+    // Suppress lineage for queries that touch no datasets — information_schema
+    // introspection, `SET`/`SHOW`, metadata-RPC probes. They carry no input or
+    // output, so a START/COMPLETE pair only adds a dangling job node to the graph.
+    if lineage.inputs.is_empty() && lineage.outputs.is_empty() {
+        return None;
+    }
+
+    let run_id = cx.run_id.unwrap_or_else(Uuid::now_v7);
+    client.emit(start_event(run_id, &lineage, &cx, config));
+    Some(LineageHandle {
+        run_id,
+        lineage,
+        context: cx,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // The query planner: extract + START + inject the marker.
 // ---------------------------------------------------------------------------
 
@@ -231,43 +377,20 @@ impl OpenLineageQueryPlanner {
 
     /// Planning-time lineage work shared by the `QueryPlanner` path and the
     /// `SessionContext`-level DDL path (see [`crate::session::OpenLineageSqlExt`]):
-    /// extract lineage from `plan`, resolve the async context, and — unless the
-    /// query touches no datasets — mint a `run_id` and emit START.
-    ///
-    /// Returns the per-query payload needed to emit the terminal event under the
-    /// same `run_id`, or `None` when lineage is suppressed (no inputs and no
-    /// outputs — `information_schema` introspection, `SET`/`SHOW`, metadata
-    /// probes), in which case no START fired and the caller must emit nothing.
+    /// see the free [`begin_lineage`] function this delegates to.
     async fn begin_lineage(
         &self,
         plan: &LogicalPlan,
         session_state: &SessionState,
-    ) -> Option<(Uuid, QueryLineage, LineageContext)> {
-        // A `create_physical_plan` nested inside `execute_ddl_with_lineage` is the
-        // DDL body (e.g. the CTAS SELECT that `create_memory_table` collects); the
-        // enclosing DDL run already reports it, so emit nothing here.
-        if nested_lineage_suppressed() {
-            return None;
-        }
-
-        let mut lineage = extract(plan, &self.config);
-        let cx = self.context.context(session_state).await;
-        // The SQL text isn't recoverable from the plan; take it from the
-        // host-supplied context (absent on non-SQL paths, e.g. ingest).
-        lineage.sql = cx.sql.clone();
-
-        // Suppress lineage for queries that touch no datasets — information_schema
-        // introspection, `SET`/`SHOW`, metadata-RPC probes. They carry no input or
-        // output, so a START/COMPLETE pair only adds a dangling job node to the
-        // graph.
-        if lineage.inputs.is_empty() && lineage.outputs.is_empty() {
-            return None;
-        }
-
-        let run_id = cx.run_id.unwrap_or_else(Uuid::now_v7);
-        self.client
-            .emit(start_event(run_id, &lineage, &cx, &self.config));
-        Some((run_id, lineage, cx))
+    ) -> Option<LineageHandle> {
+        begin_lineage(
+            &self.client,
+            self.context.as_ref(),
+            &self.config,
+            plan,
+            session_state,
+        )
+        .await
     }
 
     /// Execute a DDL-with-input statement (CTAS / CREATE VIEW) that DataFusion
@@ -297,14 +420,12 @@ impl OpenLineageQueryPlanner {
         plan: LogicalPlan,
         raw_sql: &str,
     ) -> Result<DataFrame> {
-        let Some((run_id, mut lineage, cx)) = self.begin_lineage(&plan, &ctx.state()).await else {
+        let Some(mut handle) = self.begin_lineage(&plan, &ctx.state()).await else {
             // No datasets touched — nothing to report; just run it.
             return ctx.execute_logical_plan(plan).await;
         };
         // This path has the SQL in hand even when the context provider omitted it.
-        if lineage.sql.is_none() {
-            lineage.sql = Some(raw_sql.to_string());
-        }
+        handle.set_sql_if_absent(raw_sql);
 
         // Run the DDL with nested-lineage suppression set: `execute_logical_plan`
         // dispatches CTAS/CREATE VIEW to `create_memory_table`/`create_view`, which
@@ -315,22 +436,13 @@ impl OpenLineageQueryPlanner {
             .await;
         match result {
             Ok(df) => {
-                let mut event = complete_event(run_id, &lineage, &cx, &self.config);
-                // The template's `eventTime` was set above; refresh it to when the
-                // statement actually finished so run duration is meaningful (mirrors
-                // `OpenLineageExec::emit_terminal`).
-                event.event_time = chrono::Utc::now().to_rfc3339();
-                self.client.emit(event);
+                // No `OpenLineageExec` on this path (DataFusion materializes the CTAS
+                // body internally), so emit COMPLETE directly under the run id.
+                handle.emit_complete(&self.client, &self.config);
                 Ok(df)
             }
             Err(err) => {
-                self.client.emit(fail_event(
-                    run_id,
-                    &lineage,
-                    &cx,
-                    &self.config,
-                    &err.to_string(),
-                ));
+                handle.emit_fail(&self.client, &self.config, &err.to_string());
                 Err(err)
             }
         }
@@ -355,8 +467,7 @@ impl QueryPlanner for OpenLineageQueryPlanner {
         // Extract lineage, resolve context, and emit START — or, when the query
         // touches no datasets, plan straight through without a marker so no events
         // fire.
-        let Some((run_id, lineage, cx)) = self.begin_lineage(logical_plan, session_state).await
-        else {
+        let Some(handle) = self.begin_lineage(logical_plan, session_state).await else {
             return self
                 .physical
                 .create_physical_plan(logical_plan, session_state)
@@ -366,15 +477,7 @@ impl QueryPlanner for OpenLineageQueryPlanner {
         // Carry the COMPLETE template into the physical phase via the plan itself;
         // the extension planner lowers it into an OpenLineageExec at the root that
         // emits COMPLETE/FAIL at end of execution, under this same run id.
-        let marker = LineageMarker {
-            input: logical_plan.clone(),
-            complete: complete_event(run_id, &lineage, &cx, &self.config),
-            client: self.client.clone(),
-            producer: self.config.producer.clone(),
-        };
-        let wrapped = LogicalPlan::Extension(Extension {
-            node: Arc::new(marker),
-        });
+        let wrapped = handle.to_marker(logical_plan.clone(), self.client.clone(), &self.config);
 
         match self
             .physical
@@ -384,13 +487,7 @@ impl QueryPlanner for OpenLineageQueryPlanner {
             Ok(plan) => Ok(plan),
             Err(err) => {
                 // Planning failed outright — no execution to observe, emit FAIL now.
-                self.client.emit(fail_event(
-                    run_id,
-                    &lineage,
-                    &cx,
-                    &self.config,
-                    &err.to_string(),
-                ));
+                handle.emit_fail(&self.client, &self.config, &err.to_string());
                 Err(err)
             }
         }
@@ -478,6 +575,90 @@ mod tests {
         assert_eq!(
             a.partial_cmp(&c),
             a.complete.run.run_id.partial_cmp(&c.complete.run.run_id)
+        );
+    }
+
+    // --- the reusable `begin_lineage` step (for hosts sequencing it themselves) ---
+
+    use std::sync::Mutex;
+
+    use datafusion::execution::context::SessionContext;
+
+    use crate::context::StaticContextProvider;
+    use crate::event::{RunEvent, RunEventType};
+    use crate::transport::{Transport, TransportError};
+
+    /// Records emitted events for assertions.
+    #[derive(Clone, Default, Debug)]
+    struct Recording {
+        events: std::sync::Arc<Mutex<Vec<RunEvent>>>,
+    }
+    #[async_trait]
+    impl Transport for Recording {
+        async fn emit(&self, event: &RunEvent) -> std::result::Result<(), TransportError> {
+            self.events.lock().unwrap().push(event.clone());
+            Ok(())
+        }
+    }
+
+    async fn table_select() -> (SessionState, LogicalPlan) {
+        let ctx = SessionContext::new();
+        ctx.sql("CREATE TABLE t AS VALUES (1)").await.unwrap();
+        let plan = ctx
+            .state()
+            .create_logical_plan("SELECT * FROM t")
+            .await
+            .unwrap();
+        (ctx.state(), plan)
+    }
+
+    #[tokio::test]
+    async fn begin_lineage_emits_start_and_yields_a_marker() {
+        let (state, plan) = table_select().await;
+        let rec = Recording::default();
+        let client = OpenLineageClient::new(std::sync::Arc::new(rec.clone()));
+        let config = OpenLineageConfig::default();
+        let ctx = StaticContextProvider::default();
+
+        let handle = begin_lineage(&client, &ctx, &config, &plan, &state)
+            .await
+            .expect("query touches a dataset -> a run begins");
+
+        // START was emitted under the handle's run id.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let events = rec.events.lock().unwrap();
+        let start = events
+            .iter()
+            .find(|e| e.event_type == RunEventType::Start)
+            .expect("START emitted");
+        assert_eq!(start.run.run_id, handle.run_id());
+
+        // The handle wraps a plan in a LineageMarker for the extension planner.
+        let wrapped = handle.to_marker(plan.clone(), client.clone(), &config);
+        assert!(matches!(&wrapped, LogicalPlan::Extension(e) if e.node.name() == "LineageMarker"));
+    }
+
+    #[tokio::test]
+    async fn begin_lineage_returns_none_for_no_dataset_query() {
+        // A metadata-only statement touches no datasets -> no run, no START.
+        let ctx_df = SessionContext::new();
+        let plan = ctx_df
+            .state()
+            .create_logical_plan("SET a = 1")
+            .await
+            .unwrap();
+        let rec = Recording::default();
+        let client = OpenLineageClient::new(std::sync::Arc::new(rec.clone()));
+        let config = OpenLineageConfig::default();
+        let ctx = StaticContextProvider::default();
+
+        let handle = begin_lineage(&client, &ctx, &config, &plan, &ctx_df.state()).await;
+        assert!(handle.is_none(), "no datasets -> no run begins");
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(
+            rec.events.lock().unwrap().is_empty(),
+            "no events for a no-dataset query"
         );
     }
 }
