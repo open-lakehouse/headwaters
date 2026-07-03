@@ -1,6 +1,6 @@
 [package]
 name = "headwaters-client"
-version = "0.0.3"
+version = "0.0.4"
 description = "Async Rust client for the Headwaters read API (lineage browse, graph, search, tags, stats)"
 edition.workspace = true
 license.workspace = true

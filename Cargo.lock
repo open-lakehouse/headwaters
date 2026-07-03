@@ -1835,7 +1835,7 @@ dependencies = [
 
 [[package]]
 name = "datafusion-openlineage"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2628,7 +2628,7 @@ dependencies = [
 
 [[package]]
 name = "headwaters"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2673,7 +2673,7 @@ dependencies = [
 
 [[package]]
 name = "headwaters-client"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "buffa-types",
  "connectrpc",
@@ -3667,6 +3667,8 @@ dependencies = [
 [[package]]
 name = "olai-http"
 version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c757e4a21ee84d8f2cc97699b6df5683aeeedddf3149f7ec31c04b2a03d00b86"
 dependencies = [
  "async-trait",
  "base64",
@@ -3707,7 +3709,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "openlineage-client"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "async-trait",
  "olai-http",
