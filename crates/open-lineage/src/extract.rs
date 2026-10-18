@@ -8,11 +8,11 @@
 //! Column-level lineage is resolved separately by [`crate::column`] (a
 //! positional bottom-up walk) and attached to the output datasets here.
 
+use datafusion::common::TableReference;
 use datafusion::common::tree_node::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use datafusion::error::Result;
 use datafusion::logical_expr::dml::InsertOp;
 use datafusion::logical_expr::{DdlStatement, LogicalPlan, WriteOp};
-use datafusion::sql::TableReference;
 
 use crate::column::{ResolvedColumns, resolve_output_columns};
 use crate::config::OpenLineageConfig;
@@ -116,6 +116,8 @@ fn lifecycle_for(op: &WriteOp) -> Option<&'static str> {
         WriteOp::Insert(InsertOp::Overwrite | InsertOp::Replace) => Some("OVERWRITE"),
         WriteOp::Insert(InsertOp::Append) | WriteOp::Update | WriteOp::Delete => None,
         WriteOp::Truncate => Some("TRUNCATE"),
+        // `WriteOp` is `#[non_exhaustive]`
+        _ => None,
     }
 }
 
@@ -201,7 +203,7 @@ impl TreeNodeVisitor<'_> for LineageVisitor<'_> {
                         lifecycle: lifecycle_for(&dml.op),
                     });
                 }
-                WriteOp::Truncate => {}
+                WriteOp::Truncate | _ => {}
             },
             LogicalPlan::Ddl(ddl) => match ddl {
                 DdlStatement::CreateExternalTable(cmd) => {

@@ -1072,6 +1072,16 @@ impl datafusion::physical_plan::ExecutionPlan for ExecErrorExec {
     fn children(&self) -> Vec<&Arc<dyn datafusion::physical_plan::ExecutionPlan>> {
         vec![]
     }
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(
+            &Arc<dyn datafusion::physical_expr::PhysicalExpr>,
+        ) -> datafusion::error::Result<
+            datafusion::common::tree_node::TreeNodeRecursion,
+        >,
+    ) -> datafusion::error::Result<datafusion::common::tree_node::TreeNodeRecursion> {
+        Ok(datafusion::common::tree_node::TreeNodeRecursion::Continue)
+    }
     fn with_new_children(
         self: Arc<Self>,
         _children: Vec<Arc<dyn datafusion::physical_plan::ExecutionPlan>>,
@@ -1134,6 +1144,16 @@ impl datafusion::physical_plan::ExecutionPlan for OkExec {
     }
     fn children(&self) -> Vec<&Arc<dyn datafusion::physical_plan::ExecutionPlan>> {
         vec![]
+    }
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(
+            &Arc<dyn datafusion::physical_expr::PhysicalExpr>,
+        ) -> datafusion::error::Result<
+            datafusion::common::tree_node::TreeNodeRecursion,
+        >,
+    ) -> datafusion::error::Result<datafusion::common::tree_node::TreeNodeRecursion> {
+        Ok(datafusion::common::tree_node::TreeNodeRecursion::Continue)
     }
     fn with_new_children(
         self: Arc<Self>,
@@ -1200,7 +1220,9 @@ async fn execute_error_emits_fail_exactly_once() {
 
 #[tokio::test]
 async fn partition_count_change_emits_one_terminal() {
-    use datafusion::physical_plan::ExecutionPlan;
+    use datafusion::physical_plan::{
+        ChildrenPropertiesMode, ExecutionPlan, ReplaceChildrenOptions,
+    };
     use datafusion_openlineage::OpenLineageExec;
     use datafusion_openlineage::builder::complete_event;
 
@@ -1216,12 +1238,15 @@ async fn partition_count_change_emits_one_terminal() {
     );
 
     // Wrap a 1-partition plan, then rewrite the child to a 3-partition plan via
-    // `with_new_children`. The terminal-event counter must follow the node that
+    // `replace_children`. The terminal-event counter must follow the node that
     // actually executes (3 partitions), emitting exactly one COMPLETE.
     let inner: Arc<dyn ExecutionPlan> = Arc::new(OkExec::new(1));
     let exec = OpenLineageExec::new(inner, client, complete, cfg.producer.clone());
     let rewritten = Arc::clone(&exec)
-        .with_new_children(vec![Arc::new(OkExec::new(3))])
+        .replace_children(
+            vec![Arc::new(OkExec::new(3))],
+            ReplaceChildrenOptions::new(ChildrenPropertiesMode::Recompute),
+        )
         .unwrap();
     assert_eq!(
         rewritten.output_partitioning().partition_count(),
