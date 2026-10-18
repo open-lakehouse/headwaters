@@ -24,8 +24,10 @@ use std::task::{Context, Poll};
 use chrono::Utc;
 use datafusion::arrow::array::RecordBatch;
 use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::common::tree_node::TreeNodeRecursion;
 use datafusion::error::Result;
 use datafusion::execution::{RecordBatchStream, SendableRecordBatchStream, TaskContext};
+use datafusion::physical_expr::PhysicalExpr;
 use datafusion::physical_plan::metrics::MetricsSet;
 use datafusion::physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties};
 use futures::Stream;
@@ -356,12 +358,17 @@ impl ExecutionPlan for OpenLineageExec {
         "OpenLineageExec"
     }
 
-    // No `as_any` override: as of DataFusion 54 it is no longer an
-    // `ExecutionPlan` method — the trait now requires `Any`, so downcasting
-    // goes through `Any::downcast_ref` on `&dyn ExecutionPlan`, which resolves
-    // to *this* wrapper (not the inner plan). That is exactly the behavior the
-    // former override existed to guarantee: visitors can't downcast past the
-    // wrapper to the inner type and silently drop this lineage node.
+    // Deliberately no `as_any`-style delegation to `inner`. `ExecutionPlan`
+    // requires `Any`, so `Any::downcast_ref` on `&dyn ExecutionPlan` resolves
+    // to *this* wrapper. A visitor that downcasts past the
+    // wrapper to the inner plan silently drops this lineage node.
+
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> Result<TreeNodeRecursion>,
+    ) -> Result<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
+    }
 
     fn properties(&self) -> &Arc<PlanProperties> {
         self.inner.properties()

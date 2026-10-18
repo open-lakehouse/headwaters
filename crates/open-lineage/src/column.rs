@@ -173,7 +173,7 @@ pub(crate) fn resolve_output_columns(
                 Some(keyed_by(resolved, |i| target.field(i).name().clone()))
             }
             // No column values are written.
-            WriteOp::Delete | WriteOp::Truncate => None,
+            WriteOp::Delete | WriteOp::Truncate | _ => None,
         },
         // `CREATE TABLE ... AS SELECT` lowers to CreateMemoryTable; the new
         // table's fields are exactly the query's output fields. `CREATE VIEW`

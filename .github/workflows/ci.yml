@@ -178,7 +178,7 @@ jobs:
       # Cargo.toml's `rust-version` so this job tests exactly what we promise.
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
-          toolchain: "1.91"
+          toolchain: "1.94"
 
       - name: Install protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
@@ -385,8 +385,9 @@ jobs:
           tool: cargo-llvm-cov,cargo-nextest
 
       # Collect coverage from both nextest tests and doctests into one report.
-      # Doctest coverage needs nightly (unstable `--persist-doctests`); the
-      # nextest run stays on the pinned stable toolchain.
+      #
+      # Every step runs on nightly since `.profraw` is LLVM-versioned, so
+      # splitting this across stable + nightly breaks once their LLVMs diverge.
       #
       # `--ignore-filename-regex` drops code we never want counted from the report
       # itself, so `codecov.json` never carries it:
@@ -399,7 +400,7 @@ jobs:
       # keeps the uploaded artifact honest too. Keep the two in sync.
       - name: Collect coverage
         run: |
-          cargo llvm-cov --no-report nextest --workspace --all-features
+          cargo +nightly llvm-cov --no-report nextest --workspace --all-features
           cargo +nightly llvm-cov --no-report --doc --workspace --all-features
           cargo +nightly llvm-cov report --doctests --codecov --output-path codecov.json \
             --ignore-filename-regex 'headwaters/src/(proto/[^/]+\.v1\.rs|connect_gen/|main\.rs|projection/applier\.rs)'

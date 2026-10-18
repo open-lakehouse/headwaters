@@ -29,9 +29,11 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::common::{DFSchemaRef, Result};
+use datafusion::catalog::Session;
+use datafusion::common::{DFSchemaRef, Result, internal_datafusion_err};
 use datafusion::dataframe::DataFrame;
 use datafusion::execution::context::{QueryPlanner, SessionContext, SessionState};
+use datafusion::logical_expr::physical_planning_context::PhysicalPlanningContext;
 use datafusion::logical_expr::{
     Expr, Extension, InvariantLevel, LogicalPlan, UserDefinedLogicalNode,
     UserDefinedLogicalNodeCore,
@@ -87,7 +89,7 @@ pub struct LineageMarker {
 impl LineageMarker {
     /// Wrap `input`, carrying the COMPLETE template the terminal
     /// [`OpenLineageExec`] emits at end of execution. Usually built for you by
-    /// [`LineageHandle::into_marker`]; public so a host can construct the marker
+    /// [`LineageHandle::to_marker`]; public so a host can construct the marker
     /// when composing lineage into its own planner.
     pub fn new(
         input: LogicalPlan,
@@ -189,7 +191,8 @@ impl ExtensionPlanner for LineageExtensionPlanner {
         node: &dyn UserDefinedLogicalNode,
         _logical_inputs: &[&LogicalPlan],
         physical_inputs: &[Arc<dyn ExecutionPlan>],
-        _session_state: &SessionState,
+        _session_state: &dyn Session,
+        _planning_ctx: &PhysicalPlanningContext,
     ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
         // Not our node: let another extension planner handle it.
         let Some(marker) = node.as_any().downcast_ref::<LineageMarker>() else {
@@ -217,7 +220,7 @@ impl ExtensionPlanner for LineageExtensionPlanner {
 ///
 /// A host composing lineage with another concern (e.g. running lineage's START
 /// step *after* a policy gate, from its own single [`QueryPlanner`]) holds this
-/// between [`begin_lineage`] and [`Self::into_marker`] / the `emit_*` methods.
+/// between [`begin_lineage`] and [`Self::to_marker`] / the `emit_*` methods.
 pub struct LineageHandle {
     run_id: Uuid,
     lineage: QueryLineage,
@@ -290,7 +293,7 @@ impl LineageHandle {
 /// the query touches no datasets — mint a `run_id` and emit START.
 ///
 /// Returns a [`LineageHandle`] to carry the run under one id to the terminal event
-/// (via [`LineageHandle::into_marker`]), or `None` when lineage is suppressed (no
+/// (via [`LineageHandle::to_marker`]), or `None` when lineage is suppressed (no
 /// inputs and no outputs — `information_schema` introspection, `SET`/`SHOW`,
 /// metadata probes; or a nested DDL body), in which case no START fired and the
 /// caller must emit nothing.
@@ -462,8 +465,15 @@ impl QueryPlanner for OpenLineageQueryPlanner {
     async fn create_physical_plan(
         &self,
         logical_plan: &LogicalPlan,
-        session_state: &SessionState,
+        session: &dyn Session,
     ) -> Result<Arc<dyn ExecutionPlan>> {
+        let session_state = session
+            .as_any()
+            .downcast_ref::<SessionState>()
+            .ok_or_else(|| {
+                internal_datafusion_err!("OpenLineageQueryPlanner requires SessionState")
+            })?;
+
         // Extract lineage, resolve context, and emit START — or, when the query
         // touches no datasets, plan straight through without a marker so no events
         // fire.

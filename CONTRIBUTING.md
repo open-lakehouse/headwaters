@@ -6,7 +6,7 @@ the conventions CI enforces.
 ## Prerequisites
 
 - A Rust toolchain matching the workspace MSRV (`rust-version` in the root
-  `Cargo.toml`; currently 1.91). Newer stable is fine for day-to-day work — the
+  `Cargo.toml`; currently 1.94). Newer stable is fine for day-to-day work — the
   `msrv` CI job verifies the floor still builds.
 - [`just`](https://just.systems) for the common recipes (`just --list`).
 - Docker, for the integration tests and the local dev environment.
