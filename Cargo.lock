@@ -1848,7 +1848,7 @@ dependencies = [
 
 [[package]]
 name = "datafusion-openlineage"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3741,7 +3741,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "openlineage-client"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "async-trait",
  "olai-http",
