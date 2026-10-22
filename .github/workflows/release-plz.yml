@@ -52,19 +52,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # --- Tag + GitHub Release + cargo publish, after the Release PR is merged ---
-  # datafusion-openlineage publishes to crates.io; headwaters is
-  # `publish = false` + `git_only = true` in release-plz.toml, so it is only
-  # tagged + GitHub-released — its Docker image is built by the `docker` job
-  # below.
-  #
-  # NOTE: release-plz does NOT include `git_only` packages in the `releases`
-  # JSON its `release` command emits — so we cannot key the Docker trigger off
-  # that array (doing so silently skips headwaters forever). Instead the
-  # `service` step below derives the version from crates/headwaters/Cargo.toml
-  # (which the merged Release PR already bumped) and, if no matching
-  # `headwaters-v<version>` tag exists yet, creates it + a GitHub Release. The
-  # presence of a freshly-created tag is what fires the Docker job.
   release-plz-release:
     name: Release
     if: ${{ github.repository == 'open-lakehouse/headwaters' }}
@@ -92,8 +79,6 @@ jobs:
         with:
           version: "31.1"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      # No CARGO_REGISTRY_TOKEN: crates.io publish authenticates via OIDC
-      # (`id-token: write`).
       - name: Run release-plz (release)
         id: release
         uses: release-plz/action@e8792575c7f2366cf6ff3ccc33ead9ace5b691c7 # v0.5.130
