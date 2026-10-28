@@ -54,8 +54,9 @@ flowchart LR
    (`src/writer/row.rs`) and bulk-inserted into the append-only `events` table, the source of
    truth. The write goes through a pluggable `EventSink` trait (`src/writer/sink.rs`); Postgres
    is the only sink today.
-5. **Project** (`src/projection/`) — an async `Projector` tails the `events` log by `seq` and
-   folds each event into the normalized read tables (`namespaces`, `jobs`, `runs`, `datasets`,
+5. **Project** (`src/projection/`) — an async `Projector` tails the `events` log in `(xid, seq)`
+   order below the visibility watermark, so writers committing out of order are never skipped
+   ([ADR 0016](../../docs/adr/0016-projection-liveness-and-topology-on-neon.md)), and folds each event into the normalized read tables (`namespaces`, `jobs`, `runs`, `datasets`,
    `lineage_edges`). Every fold is an idempotent, event-time-guarded upsert, so replaying the
    log reproduces the read tables (`rebuild` = truncate + reset cursor + re-fold). Facet
    processing runs through a backend-agnostic Mutation IR — see
