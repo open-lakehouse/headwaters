@@ -5,7 +5,12 @@
 > `src/facets.rs` / `src/builder.rs` (facet emission), and
 > `crates/headwaters/src/read/queries.rs` (the `/api/v1/column-lineage`
 > read view). Refines the "Column lineage" section of
-> [`docs/open-lineage-design.md`](../open-lineage-design.md).
+> the OpenLineage-on-DataFusion design doc (removed along with the crates).
+>
+> **Moved:** the `datafusion-openlineage` / `openlineage-client` code this ADR
+> describes now lives in [datafusion-contrib/datafusion-openlineage](https://github.com/datafusion-contrib/datafusion-openlineage);
+> `crates/open-lineage` / `crates/openlineage-client` paths in this ADR refer
+> to that repository.
 
 ## Context
 

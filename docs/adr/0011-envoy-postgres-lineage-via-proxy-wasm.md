@@ -8,6 +8,10 @@
 > metadata) and [ADR 0004](0004-column-level-lineage-positional-resolution.md)
 > (column-lineage soundness) to a non-DataFusion source; feeds the pipeline of
 > [ADR 0006](0006-hybrid-cqrs-postgres-storage.md).
+>
+> **Moved:** `crates/open-lineage` now lives in
+> [datafusion-contrib/datafusion-openlineage](https://github.com/datafusion-contrib/datafusion-openlineage); the crate extraction
+> proposed here would happen there.
 
 ## Context
 
