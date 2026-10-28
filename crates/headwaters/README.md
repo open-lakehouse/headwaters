@@ -152,6 +152,8 @@ port = 8091                 # HTTP listen port
 # url = "postgres://user:pass@host:5432/lineage"   # prefer DATABASE_URL for the credential
 pool_size = 10                 # connection pool size
 projection_interval_ms = 500   # how often the projector polls the event log
+projection_mode = "background" # or "on_demand": no polling; fold via settle / the trigger route
+# projection_trigger_secret = "…"  # mounts POST /internal/projection/run (Bearer auth)
 
 [writer]
 buffer_size = 100           # flush once this many events are buffered
@@ -168,6 +170,13 @@ components so you can build your own front-end against the read API. Set
 `ui.serve = false` (or pass `--no-ui`) to run the service API-only — the SPA
 routes are not mounted and any bundle on disk is ignored, leaving only the
 ingest + read API, `/health`, and `/version`.
+
+With `projection_mode = "on_demand"` nothing folds the event log until asked. Set
+`projection_trigger_secret` and have a scheduler call
+`POST /internal/projection/run?budget_ms=30000` with `Authorization: Bearer <secret>`. The call
+waits for buffered events to be written, folds for up to the budget, and answers
+`{"applied": N, "caught_up": bool}`. Embedding hosts can call `embed::Service::settler()` instead
+([ADR 0016](../../docs/adr/0016-projection-liveness-and-topology-on-neon.md)).
 
 `RUST_LOG` controls tracing verbosity (e.g. `RUST_LOG=headwaters=info`).
 
