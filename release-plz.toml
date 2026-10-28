@@ -99,8 +99,13 @@ changelog_path = "crates/open-lineage/CHANGELOG.md"
 [[package]]
 name = "headwaters-neon"
 # A deployment artifact (the `.node` inside the Neon Function zip, built by
-# `just neon-build`), not a library: no version bumps, tags, or releases.
+# `just neon-build`), not a library: no version bumps, tags, or releases, and
+# not published to crates.io while its design settles. `release = false` alone
+# is not enough: release-plz still checks the [workspace] default
+# `publish = true` against Cargo.toml's `publish = false` and aborts the whole
+# run, so `publish = false` is pinned here too.
 release = false
+publish = false
 
 # ---------------------------------------------------------------------------
 # Changelog rendering (git-cliff, embedded). Conventional-commit grouping.
