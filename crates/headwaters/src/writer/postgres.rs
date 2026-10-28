@@ -31,8 +31,9 @@ impl EventSink for PostgresSink {
         if rows.is_empty() {
             return Ok(());
         }
-        // Multi-row INSERT in one round-trip. `seq` is BIGSERIAL — assigned by
-        // the DB in insertion order, which is the projection cursor.
+        // Multi-row INSERT in one round-trip. `seq` (BIGSERIAL) and `xid` (the
+        // inserting transaction) are filled by the DB; together they are the
+        // projection cursor (ADR 0016).
         let mut qb: QueryBuilder<sqlx::Postgres> = QueryBuilder::new(
             "INSERT INTO events (\
                 event_kind, event_type, event_time, producer, schema_url, \

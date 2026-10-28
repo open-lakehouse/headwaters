@@ -1,7 +1,8 @@
 //! Asynchronous projection worker.
 //!
 //! The ingest path only appends raw events to `events` (the source of truth).
-//! This worker tails that log by `seq` and folds each event into the normalized
+//! This worker tails that log in `(xid, seq)` order, below the visibility
+//! watermark (see `project_once`), and folds each event into the normalized
 //! read tables (`namespaces`, `jobs`, `runs`, `datasets`, `lineage_edges`) that
 //! the Marquez-compatible read API queries. Reads therefore lag ingestion by at
 //! most one poll interval — eventual consistency, which a lineage browse UI
@@ -138,6 +139,12 @@ enum OnContention {
 /// The cursor row is locked for the whole transaction, so concurrent projectors
 /// (one per replica or Neon isolate) fold disjoint batches instead of each
 /// re-folding the same one, and a slower projector can't move the cursor back.
+///
+/// Only rows below the snapshot's xmin are read, in `(xid, seq)` order, and the
+/// cursor is that pair. `seq` is assigned at insert, not at commit, so a
+/// `seq` cursor could pass a row whose writer hadn't committed yet and skip it
+/// for good (ADR 0016). Every transaction below xmin has finished, so nothing
+/// new can appear behind the cursor.
 async fn project_once(
     pool: &PgPool,
     registry: &ProcessorRegistry,
@@ -148,12 +155,16 @@ async fn project_once(
     let mut tx = pool.begin().await?;
 
     let lock_sql = match on_contention {
-        OnContention::Wait => "SELECT last_seq FROM projection_state WHERE name = $1 FOR UPDATE",
+        OnContention::Wait => {
+            "SELECT last_xid::text::bigint, last_seq FROM projection_state \
+             WHERE name = $1 FOR UPDATE"
+        }
         OnContention::Skip => {
-            "SELECT last_seq FROM projection_state WHERE name = $1 FOR UPDATE SKIP LOCKED"
+            "SELECT last_xid::text::bigint, last_seq FROM projection_state \
+             WHERE name = $1 FOR UPDATE SKIP LOCKED"
         }
     };
-    let Some(last_seq): Option<i64> = sqlx::query_scalar(lock_sql)
+    let Some((last_xid, last_seq)): Option<(i64, i64)> = sqlx::query_as(lock_sql)
         .bind(CURSOR)
         .fetch_optional(&mut *tx)
         .await?
@@ -163,12 +174,16 @@ async fn project_once(
         return Ok(0);
     };
 
-    let rows = sqlx::query_as::<_, RawEvent>(
-        "SELECT seq, event_kind, event_type, event_time, run_id, \
+    let rows = sqlx::query_as::<_, LogRow>(
+        "SELECT xid::text::bigint AS xid, seq, event_kind, event_type, event_time, run_id, \
                 job_namespace, job_name, dataset_namespace, dataset_name, \
                 raw, inputs, outputs, column_lineage \
-         FROM events WHERE seq > $1 ORDER BY seq ASC LIMIT $2",
+         FROM events \
+         WHERE (xid, seq) > ($1::bigint::text::xid8, $2) \
+           AND xid < pg_snapshot_xmin(pg_current_snapshot()) \
+         ORDER BY xid, seq LIMIT $3",
     )
+    .bind(last_xid)
     .bind(last_seq)
     .bind(BATCH)
     .fetch_all(&mut *tx)
@@ -178,26 +193,32 @@ async fn project_once(
         return Ok(0);
     }
 
-    let mut max_seq = last_seq;
+    let mut cursor = (last_xid, last_seq);
     let n = rows.len();
-    for ev in rows {
-        max_seq = max_seq.max(ev.seq);
+    for LogRow { xid, ev } in rows {
+        // Rows arrive in `(xid, seq)` order, so the last one is the new cursor.
+        cursor = (xid, ev.seq);
         // Parse (backend-agnostic) then apply (backend-specific) — the seam.
         for m in registry.process(&ev) {
             applier.apply(&mut tx, &m).await?;
         }
     }
 
-    sqlx::query("UPDATE projection_state SET last_seq = $1 WHERE name = $2")
-        .bind(max_seq)
-        .bind(CURSOR)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE projection_state SET last_xid = $1::bigint::text::xid8, last_seq = $2 \
+         WHERE name = $3",
+    )
+    .bind(cursor.0)
+    .bind(cursor.1)
+    .bind(CURSOR)
+    .execute(&mut *tx)
+    .await?;
 
     tx.commit().await?;
     tracing::debug!(
         events = n,
-        cursor = max_seq,
+        cursor_xid = cursor.0,
+        cursor_seq = cursor.1,
         elapsed_ms = started.elapsed().as_millis() as u64,
         "projected batch"
     );
@@ -205,7 +226,8 @@ async fn project_once(
 }
 
 /// Synchronously fold every event currently after the cursor into the read
-/// tables, returning the total number applied. Drives the same per-batch fold
+/// tables, returning the total number applied. Events from writers still in
+/// flight wait for a later call (they are above the watermark). Drives the same per-batch fold
 /// the background task uses; handy for tests and one-shot replays where waiting
 /// on the poll interval is undesirable.
 pub async fn project_all(pool: &PgPool) -> Result<usize, sqlx::Error> {
@@ -232,7 +254,7 @@ pub async fn rebuild(pool: &PgPool) -> Result<(), sqlx::Error> {
     )
     .execute(&mut *tx)
     .await?;
-    sqlx::query("UPDATE projection_state SET last_seq = 0 WHERE name = $1")
+    sqlx::query("UPDATE projection_state SET last_xid = '0', last_seq = 0 WHERE name = $1")
         .bind(CURSOR)
         .execute(&mut *tx)
         .await?;
@@ -240,6 +262,16 @@ pub async fn rebuild(pool: &PgPool) -> Result<(), sqlx::Error> {
 
     while project_once(pool, &registry, OnContention::Wait).await? > 0 {}
     Ok(())
+}
+
+/// A [`RawEvent`] plus the xid of the transaction that inserted it, the first
+/// half of the projection cursor. Kept out of `RawEvent`, since processors
+/// have no use for it.
+#[derive(sqlx::FromRow)]
+struct LogRow {
+    xid: i64,
+    #[sqlx(flatten)]
+    ev: RawEvent,
 }
 
 /// One row of the projection's source query — the promoted columns plus the
@@ -309,6 +341,76 @@ mod cursor_lock_tests {
             .await
             .expect("lock cursor");
         tx
+    }
+
+    /// Insert run event `i` (job `job_{i}`) through `conn`, with an explicit
+    /// `seq` when given. Lets a test hold a writer's transaction open, or
+    /// order `seq` against xid by hand.
+    async fn insert_event(conn: &mut sqlx::PgConnection, i: usize, seq: Option<i64>) {
+        sqlx::query(
+            "INSERT INTO events (seq, event_kind, event_type, event_time, run_id, \
+                                 job_namespace, job_name) \
+             VALUES (COALESCE($1, nextval('events_seq_seq')), 'run', 'COMPLETE', \
+                     '2023-11-14T22:13:20Z', $2, 'etl', $3)",
+        )
+        .bind(seq)
+        .bind(format!("run-{i}"))
+        .bind(format!("job_{i}"))
+        .execute(conn)
+        .await
+        .expect("insert event");
+    }
+
+    async fn job_names(pool: &PgPool) -> Vec<String> {
+        sqlx::query_scalar("SELECT name FROM jobs ORDER BY name")
+            .fetch_all(pool)
+            .await
+            .unwrap()
+    }
+
+    /// #69: a writer that takes a lower `seq` but commits after a higher one
+    /// must still have its event folded.
+    #[tokio::test]
+    async fn late_committing_writer_is_not_skipped() {
+        let db = start_postgres().await;
+
+        let mut slow = db.pool.begin().await.unwrap();
+        insert_event(&mut slow, 0, None).await; // seq 1, uncommitted
+        let mut fast = db.pool.acquire().await.unwrap();
+        insert_event(&mut fast, 1, None).await; // seq 2, committed
+        drop(fast);
+
+        project_all(&db.pool).await.expect("project");
+        slow.commit().await.unwrap();
+        project_all(&db.pool).await.expect("project");
+
+        assert_eq!(job_names(&db.pool).await, ["job_0", "job_1"]);
+    }
+
+    /// `seq` and xid order can disagree: `nextval` runs before the inserting
+    /// transaction takes its xid. A `seq` cursor would pass the lower-`seq`
+    /// row even below the watermark; the `(xid, seq)` cursor must not.
+    #[tokio::test]
+    async fn lower_seq_with_higher_xid_is_not_skipped() {
+        let db = start_postgres().await;
+        let reserved: i64 = sqlx::query_scalar("SELECT nextval('events_seq_seq')")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+
+        // Higher seq, lower xid, committed first.
+        let mut early = db.pool.acquire().await.unwrap();
+        insert_event(&mut early, 0, None).await;
+        drop(early);
+        // Lower (reserved) seq, higher xid, still in flight.
+        let mut late = db.pool.begin().await.unwrap();
+        insert_event(&mut late, 1, Some(reserved)).await;
+
+        project_all(&db.pool).await.expect("project");
+        late.commit().await.unwrap();
+        project_all(&db.pool).await.expect("project");
+
+        assert_eq!(job_names(&db.pool).await, ["job_0", "job_1"]);
     }
 
     #[tokio::test]
