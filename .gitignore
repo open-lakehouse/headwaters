@@ -70,3 +70,5 @@ storybook-static/
 node/desktop/src-tauri/binaries/
 
 WALKTHROUGH.md
+
+.isaac/
