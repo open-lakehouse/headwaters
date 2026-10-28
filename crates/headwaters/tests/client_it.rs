@@ -78,6 +78,7 @@ async fn serve(pool: PgPool) -> String {
         AppState {
             writer: writer.handle(),
             store: LineageStore::new(pool),
+            projection_trigger: None,
         },
         "",
         true,

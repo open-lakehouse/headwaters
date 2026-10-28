@@ -11,20 +11,22 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
-use axum::extract::State;
-use axum::http::StatusCode;
+use axum::extract::{Query, State};
 use axum::http::header;
-use axum::response::{Html, IntoResponse, Json};
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{Html, IntoResponse, Json, Response};
 use axum::routing::{get, post};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
 use crate::connect_gen::headwaters::read::v1::ReadServiceExt;
 use crate::ingest::{convert_batch, convert_event};
+use crate::projection::ProjectionHandle;
 use crate::read::{self, LineageStore};
 use crate::writer::buffered::BufferedWriterHandle;
 
@@ -35,6 +37,24 @@ pub struct AppState {
     pub writer: BufferedWriterHandle,
     /// Read-only handle onto the events table for the Marquez-compatible API.
     pub store: LineageStore,
+    /// Mounts [`PROJECTION_TRIGGER_PATH`] when set.
+    pub projection_trigger: Option<ProjectionTrigger>,
+}
+
+/// Folds the event log on request, e.g. from an external cron when
+/// projection runs on demand (ADR 0016). Mounted at the root, next to
+/// `/health`, and only when a [`ProjectionTrigger`] is configured.
+pub const PROJECTION_TRIGGER_PATH: &str = "/internal/projection/run";
+
+/// How long a triggered run may fold when the caller doesn't pass `budget_ms`.
+const DEFAULT_TRIGGER_BUDGET: Duration = Duration::from_secs(30);
+
+/// What [`PROJECTION_TRIGGER_PATH`] drives, and the secret that guards it.
+#[derive(Clone)]
+pub struct ProjectionTrigger {
+    pub projection: ProjectionHandle,
+    /// Callers must send `Authorization: Bearer <secret>`.
+    pub secret: Arc<str>,
 }
 
 /// The ConnectRPC service path prefix. Every generated RPC method POSTs to
@@ -99,6 +119,15 @@ fn router_in(state: AppState, ui_dir: impl AsRef<Path>, base_path: &str, serve_u
     let connect_router =
         ReadServiceExt::register(Arc::new(state.store.clone()), connectrpc::Router::new());
 
+    // Like `/health`, the trigger is merged at the root, outside the base path:
+    // it is for schedulers, not for the UI's gateway route.
+    let trigger_routes = match &state.projection_trigger {
+        Some(_) => Router::new()
+            .route(PROJECTION_TRIGGER_PATH, post(run_projection))
+            .with_state(state.clone()),
+        None => Router::new(),
+    };
+
     let ingest_routes = Router::new()
         .route("/api/v1/lineage", post(ingest_event))
         .route("/api/v1/lineage/batch", post(ingest_batch))
@@ -137,6 +166,7 @@ fn router_in(state: AppState, ui_dir: impl AsRef<Path>, base_path: &str, serve_u
     // routing (k8s/LB probes hit a fixed root path, not the app sub-path). Merged
     // last so nothing — including the SPA fallback — can shadow them.
     operational_router()
+        .merge(trigger_routes)
         .merge(app)
         // Per-request tracing (method, path, status, latency) for operability;
         // verbosity is controlled by the `RUST_LOG`/`tower_http` env filter.
@@ -352,6 +382,48 @@ struct AcceptedBody {
     status: &'static str,
 }
 
+#[derive(Deserialize)]
+struct TriggerParams {
+    /// Fold for at most this long (checked between batches).
+    budget_ms: Option<u64>,
+}
+
+/// `POST /internal/projection/run[?budget_ms=N]`: wait for buffered events to
+/// be written, then fold for up to the budget. Answers with the
+/// [`ProjectionRun`](crate::projection::ProjectionRun).
+async fn run_projection(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<TriggerParams>,
+) -> Response {
+    let Some(trigger) = &state.projection_trigger else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let presented = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+    if !presented.is_some_and(|p| constant_time_eq(p.as_bytes(), trigger.secret.as_bytes())) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    let budget = params
+        .budget_ms
+        .map_or(DEFAULT_TRIGGER_BUDGET, Duration::from_millis);
+    match trigger.projection.settle(&state.writer, budget).await {
+        Ok(run) => Json(run).into_response(),
+        Err(e) => {
+            tracing::error!("triggered projection failed: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, "projection failed").into_response()
+        }
+    }
+}
+
+/// Compare without an early exit, so response timing doesn't reveal how much
+/// of the secret a guess got right.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
 /// `POST /api/v1/lineage` — one OpenLineage event.
 async fn ingest_event(State(state): State<AppState>, body: axum::body::Bytes) -> impl IntoResponse {
     let event = match convert_event(&body) {
@@ -465,6 +537,7 @@ mod serve_ui_tests {
         AppState {
             writer: writer.handle(),
             store: LineageStore::new(pool),
+            projection_trigger: None,
         }
     }
 
@@ -500,6 +573,20 @@ mod serve_ui_tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(body_string(resp).await, "OK");
+    }
+
+    #[tokio::test]
+    async fn projection_trigger_is_not_mounted_without_a_secret() {
+        let app = router_in(test_state(), "/nonexistent", "", false);
+        let resp = app
+            .oneshot(
+                Request::post(PROJECTION_TRIGGER_PATH)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

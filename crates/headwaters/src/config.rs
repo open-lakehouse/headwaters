@@ -45,6 +45,21 @@ fn default_projection_interval_ms() -> u64 {
     500
 }
 
+/// How the projection that folds `events` into the read tables is hosted.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectionMode {
+    /// A background task polls the log every `projection_interval_ms`. Right
+    /// for the standalone server and other long-lived processes.
+    #[default]
+    Background,
+    /// No background task. Events are folded only when the host asks: after
+    /// ingest (`embed::Service::settle`) or through the trigger route (see
+    /// `projection_trigger_secret`). For runtimes that don't keep background
+    /// work alive between requests, such as Neon Functions (ADR 0016).
+    OnDemand,
+}
+
 /// Postgres connection + projection settings.
 ///
 /// The DSN is read from `postgres.url` or, preferentially, the `DATABASE_URL`
@@ -60,6 +75,13 @@ pub struct PostgresConfig {
     pub pool_size: u32,
     /// How often the projection worker polls the event log for new rows.
     pub projection_interval_ms: u64,
+    /// Whether projection runs as a background loop or on demand.
+    pub projection_mode: ProjectionMode,
+    /// Shared secret for `POST /internal/projection/run`, which folds the log
+    /// on request (e.g. from an external cron). The route is mounted only when
+    /// this is set and not empty, and callers must send
+    /// `Authorization: Bearer <secret>`.
+    pub projection_trigger_secret: Option<String>,
     /// Optional separate DSN for the startup schema check. That check holds a
     /// session-level advisory lock, which a transaction-mode pooler (PgBouncer)
     /// can't keep pinned to one backend; point this at a direct connection when
@@ -73,6 +95,8 @@ impl Default for PostgresConfig {
             url: None,
             pool_size: default_pool_size(),
             projection_interval_ms: default_projection_interval_ms(),
+            projection_mode: ProjectionMode::default(),
+            projection_trigger_secret: None,
             schema_check_url: None,
         }
     }
@@ -513,6 +537,28 @@ mod tests {
         )
         .unwrap();
         assert_eq!(cfg.writer.buffer_size, 250);
+    }
+
+    #[test]
+    fn test_projection_mode_parses_from_file() {
+        assert_eq!(
+            Config::default().postgres.projection_mode,
+            ProjectionMode::Background
+        );
+        let cfg = from_toml(
+            r#"
+            [postgres]
+            projection_mode = "on_demand"
+            projection_trigger_secret = "s3cret"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(cfg.postgres.projection_mode, ProjectionMode::OnDemand);
+        assert_eq!(
+            cfg.postgres.projection_trigger_secret.as_deref(),
+            Some("s3cret")
+        );
+        assert!(from_toml("[postgres]\nprojection_mode = \"sometimes\"").is_err());
     }
 
     #[test]

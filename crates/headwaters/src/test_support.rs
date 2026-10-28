@@ -34,6 +34,8 @@ pub(crate) const POSTGRES_TAG: &str = "16-alpine";
 pub(crate) struct Db {
     _container: ContainerAsync<GenericImage>,
     pub(crate) pool: PgPool,
+    /// The DSN `pool` connects with, for tests that start a full service.
+    pub(crate) url: String,
 }
 
 /// Boot a throwaway Postgres (testcontainers) and connect, *without* migrating —
@@ -63,6 +65,7 @@ pub(crate) async fn start_postgres_unmigrated() -> Db {
     Db {
         _container: container,
         pool,
+        url,
     }
 }
 

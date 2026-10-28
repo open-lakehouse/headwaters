@@ -28,11 +28,12 @@ pub(crate) mod processors;
 pub mod registry;
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use sqlx::PgPool;
 use tokio::task::JoinHandle;
 
+use crate::writer::buffered::BufferedWriterHandle;
 use backend::postgres::PgApplier;
 use registry::ProcessorRegistry;
 
@@ -42,10 +43,12 @@ const CURSOR: &str = "marquez";
 /// How many events to fold per poll iteration before committing the cursor.
 const BATCH: i64 = 500;
 
-/// Owns the background projection task.
+/// Owns the projection: a background polling task, or none when projection is
+/// driven on demand through [`ProjectionHandle`]s.
 pub struct Projector {
-    task: JoinHandle<()>,
-    shutdown: tokio::sync::watch::Sender<bool>,
+    handle: ProjectionHandle,
+    /// The polling task and its stop signal; `None` for [`on_demand`](Self::on_demand).
+    task: Option<(JoinHandle<()>, tokio::sync::watch::Sender<bool>)>,
 }
 
 impl Projector {
@@ -62,26 +65,122 @@ impl Projector {
         interval: Duration,
         extra: Vec<Box<dyn processor::FacetProcessor>>,
     ) -> Self {
+        let handle = ProjectionHandle::new(pool, extra);
+        let (shutdown, rx) = tokio::sync::watch::channel(false);
+        let task = tokio::spawn(run(handle.clone(), interval, rx));
+        Self {
+            handle,
+            task: Some((task, shutdown)),
+        }
+    }
+
+    /// A projector with no background task: events are folded only when a
+    /// host calls [`ProjectionHandle::run_for`] or
+    /// [`settle`](ProjectionHandle::settle). For runtimes that don't keep
+    /// background work alive between requests, such as Neon Functions
+    /// (ADR 0016).
+    pub fn on_demand(pool: PgPool, extra: Vec<Box<dyn processor::FacetProcessor>>) -> Self {
+        Self {
+            handle: ProjectionHandle::new(pool, extra),
+            task: None,
+        }
+    }
+
+    /// A handle that folds on demand, alongside or instead of the task.
+    pub fn handle(&self) -> ProjectionHandle {
+        self.handle.clone()
+    }
+
+    /// Stop the task, if any, and await a final drain.
+    pub async fn shutdown(self) {
+        match self.task {
+            Some((task, shutdown)) => {
+                let _ = shutdown.send(true);
+                let _ = task.await;
+            }
+            None => {
+                let _ = self.handle.run_for(Duration::MAX).await;
+            }
+        }
+    }
+}
+
+/// What a [`ProjectionHandle::run_for`] call did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct ProjectionRun {
+    /// Events folded by this run.
+    pub applied: usize,
+    /// `true` when nothing was left to fold: the log is caught up below the
+    /// watermark, or another projector holds the cursor and is folding it.
+    /// `false` when the budget ran out first.
+    pub caught_up: bool,
+}
+
+/// Folds the event log on demand. Cheap to clone; every clone shares the pool
+/// and the processor registry.
+#[derive(Clone)]
+pub struct ProjectionHandle {
+    pool: PgPool,
+    registry: Arc<ProcessorRegistry>,
+}
+
+impl ProjectionHandle {
+    fn new(pool: PgPool, extra: Vec<Box<dyn processor::FacetProcessor>>) -> Self {
         let mut registry = ProcessorRegistry::with_well_known();
         for p in extra {
             registry.register(p);
         }
-        let (shutdown, rx) = tokio::sync::watch::channel(false);
-        let task = tokio::spawn(run(pool, interval, Arc::new(registry), rx));
-        Self { task, shutdown }
+        Self {
+            pool,
+            registry: Arc::new(registry),
+        }
     }
 
-    /// Signal the task to stop and await a final drain.
-    pub async fn shutdown(self) {
-        let _ = self.shutdown.send(true);
-        let _ = self.task.await;
+    /// Fold batches until nothing is left or `budget` runs out. The budget is
+    /// checked between batches, so at least one batch runs and the last one
+    /// may overrun it. A projector already holding the cursor counts as
+    /// nothing left: it is folding these events, so this doesn't queue behind
+    /// it.
+    pub async fn run_for(&self, budget: Duration) -> Result<ProjectionRun, sqlx::Error> {
+        let deadline = Instant::now().checked_add(budget);
+        let mut applied = 0;
+        loop {
+            let n = project_once(&self.pool, &self.registry, OnContention::Skip).await?;
+            applied += n;
+            if n == 0 {
+                return Ok(ProjectionRun {
+                    applied,
+                    caught_up: true,
+                });
+            }
+            if deadline.is_some_and(|d| Instant::now() >= d) {
+                return Ok(ProjectionRun {
+                    applied,
+                    caught_up: false,
+                });
+            }
+        }
+    }
+
+    /// Wait for `writer` to flush what it has buffered, then
+    /// [`run_for`](Self::run_for) the rest of `budget`. Use this after
+    /// ingest, so the events just accepted are folded too and not only the
+    /// ones already in the log. If the flush doesn't finish within the budget,
+    /// it still folds what has been written.
+    pub async fn settle(
+        &self,
+        writer: &BufferedWriterHandle,
+        budget: Duration,
+    ) -> Result<ProjectionRun, sqlx::Error> {
+        let started = Instant::now();
+        let _ = tokio::time::timeout(budget, writer.flushed()).await;
+        self.run_for(budget.saturating_sub(started.elapsed())).await
     }
 }
 
 async fn run(
-    pool: PgPool,
+    handle: ProjectionHandle,
     interval: Duration,
-    registry: Arc<ProcessorRegistry>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
     let mut tick = tokio::time::interval(interval);
@@ -90,27 +189,14 @@ async fn run(
         tokio::select! {
             _ = tick.tick() => {
                 // Drain everything currently available, then go back to sleep.
-                // Another projector holding the cursor reads as "nothing to do":
-                // it is already folding these events, so don't queue behind it.
-                loop {
-                    match project_once(&pool, &registry, OnContention::Skip).await {
-                        Ok(0) => break,
-                        Ok(_) => continue,
-                        Err(e) => {
-                            tracing::error!("projection batch failed: {e}");
-                            break;
-                        }
-                    }
+                if let Err(e) = handle.run_for(Duration::MAX).await {
+                    tracing::error!("projection batch failed: {e}");
                 }
             }
             _ = shutdown.changed() => {
                 if *shutdown.borrow() {
                     // Final drain before exit.
-                    while let Ok(n) = project_once(&pool, &registry, OnContention::Skip).await {
-                        if n == 0 {
-                            break;
-                        }
-                    }
+                    let _ = handle.run_for(Duration::MAX).await;
                     return;
                 }
             }
@@ -126,8 +212,8 @@ enum OnContention {
     /// [`rebuild`]).
     Wait,
     /// Return 0 right away: the holder is already folding these events. For
-    /// the background loop, so idle replicas don't each pin a pooled
-    /// connection queueing on the lock.
+    /// the background loop and on-demand runs, so idle replicas don't each pin
+    /// a pooled connection queueing on the lock.
     Skip,
 }
 

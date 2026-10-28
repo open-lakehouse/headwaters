@@ -19,7 +19,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 
@@ -61,6 +61,8 @@ impl Default for BufferedWriterConfig {
 #[derive(Clone)]
 pub struct BufferedWriterHandle {
     tx: mpsc::Sender<OwnedEvent>,
+    /// Events enqueued but not yet durably written, shared with the task.
+    pending: Arc<watch::Sender<usize>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -71,7 +73,22 @@ impl BufferedWriterHandle {
     /// Enqueue one event, awaiting a free slot when the channel is full
     /// (backpressure). Errors only when the writer task has stopped.
     pub async fn enqueue(&self, event: OwnedEvent) -> Result<(), EnqueueError> {
-        self.tx.send(event).await.map_err(|_| EnqueueError)
+        // Count before sending, so the task can never flush (and uncount) it first.
+        self.pending.send_modify(|n| *n += 1);
+        self.tx.send(event).await.map_err(|_| {
+            self.pending.send_modify(|n| *n -= 1);
+            EnqueueError
+        })
+    }
+
+    /// Resolve once no enqueued event is waiting to be written: everything
+    /// enqueued through any handle so far has reached the sinks. Under
+    /// continuous ingest, or while a sink is failing, this may not happen, so
+    /// callers bound it with a timeout.
+    pub async fn flushed(&self) {
+        let mut rx = self.pending.subscribe();
+        // The sender lives in `self`, so `wait_for` can't see it closed.
+        let _ = rx.wait_for(|n| *n == 0).await;
     }
 }
 
@@ -95,9 +112,10 @@ impl BufferedWriter {
             "multiple sinks need per-sink retry tracking to avoid double-inserts; see flush()"
         );
         let (tx, rx) = mpsc::channel(cfg.channel_capacity);
-        let task = tokio::spawn(run(rx, sinks, cfg));
+        let pending = Arc::new(watch::Sender::new(0));
+        let task = tokio::spawn(run(rx, sinks, cfg, pending.clone()));
         Self {
-            handle: BufferedWriterHandle { tx },
+            handle: BufferedWriterHandle { tx, pending },
             task,
         }
     }
@@ -147,6 +165,7 @@ async fn run(
     mut rx: mpsc::Receiver<OwnedEvent>,
     sinks: Vec<Arc<dyn EventSink>>,
     cfg: BufferedWriterConfig,
+    pending: Arc<watch::Sender<usize>>,
 ) {
     let mut interval = tokio::time::interval(cfg.flush_interval);
     // If a flush takes longer than the interval, don't fire a burst of catch-up
@@ -168,7 +187,7 @@ async fn run(
                         // the buffer. On a failed flush the batch is retained, so
                         // resetting would push the interval-tick retry a full
                         // interval out and starve it while events keep arriving.
-                        if flush(&sinks, &mut buf, &cfg).await {
+                        if flush(&sinks, &mut buf, &cfg, &pending).await {
                             interval.reset();
                         }
                     }
@@ -179,14 +198,14 @@ async fn run(
                 // dead sink, so the caller (`shutdown`) bounds this with a
                 // timeout. Retry until the buffer drains or we're cancelled.
                 None => {
-                    while !flush(&sinks, &mut buf, &cfg).await {
+                    while !flush(&sinks, &mut buf, &cfg, &pending).await {
                         tokio::time::sleep(cfg.flush_retry_backoff).await;
                     }
                     return;
                 }
             },
             _ = interval.tick() => {
-                flush(&sinks, &mut buf, &cfg).await;
+                flush(&sinks, &mut buf, &cfg, &pending).await;
             }
         }
     }
@@ -199,8 +218,8 @@ async fn run(
 /// trigger re-attempts them — we are the terminal source-of-truth writer, so a
 /// transient outage must not silently drop events ("backpressure, not drop").
 ///
-/// Returns `true` if the batch was written and the buffer cleared, `false` if it
-/// was retained for retry.
+/// Returns `true` if the batch was written and the buffer cleared (and its
+/// events uncounted from `pending`), `false` if it was retained for retry.
 ///
 /// NOTE: with the single configured sink this re-sends the whole batch on retry,
 /// which is safe. If a second sink is ever added, per-sink success tracking must
@@ -210,6 +229,7 @@ async fn flush(
     sinks: &[Arc<dyn EventSink>],
     buf: &mut Vec<OwnedEvent>,
     cfg: &BufferedWriterConfig,
+    pending: &watch::Sender<usize>,
 ) -> bool {
     if buf.is_empty() {
         return true;
@@ -226,6 +246,7 @@ async fn flush(
     // Nothing to persist (all views empty) — clearing is correct, no data lost.
     if rows.is_empty() {
         buf.clear();
+        pending.send_modify(|n| *n -= count);
         return true;
     }
 
@@ -233,6 +254,7 @@ async fn flush(
     for attempt in 0..=cfg.flush_max_retries {
         if append_all(sinks, &rows).await {
             buf.clear();
+            pending.send_modify(|n| *n -= count);
             return true;
         }
         // Don't sleep after the final attempt.
@@ -410,6 +432,31 @@ mod tests {
         // final drain flush.
         writer.shutdown(TEST_DRAIN).await;
         assert_eq!(sink.rows.load(Ordering::SeqCst), 2);
+    }
+
+    /// `flushed` resolves only after every enqueued event reached the sink,
+    /// and immediately when nothing is pending.
+    #[tokio::test]
+    async fn flushed_waits_for_enqueued_events_to_be_written() {
+        let (sink, sinks) = counting();
+        let writer = BufferedWriter::spawn(
+            sinks,
+            test_cfg(|c| c.flush_interval = Duration::from_millis(50)),
+        );
+        let h = writer.handle();
+        tokio::time::timeout(Duration::from_millis(10), h.flushed())
+            .await
+            .expect("nothing pending resolves at once");
+
+        h.enqueue(event("r0")).await.unwrap();
+        h.enqueue(event("r1")).await.unwrap();
+        assert_eq!(sink.rows.load(Ordering::SeqCst), 0);
+        tokio::time::timeout(TEST_DRAIN, h.flushed())
+            .await
+            .expect("the interval flush writes both");
+        assert_eq!(sink.rows.load(Ordering::SeqCst), 2);
+        drop(h);
+        writer.shutdown(TEST_DRAIN).await;
     }
 
     /// A transient sink failure must NOT drop events: the interval flush fails,
