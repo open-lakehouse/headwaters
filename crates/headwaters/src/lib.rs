@@ -16,6 +16,7 @@ pub(crate) mod proto {
 
 pub mod cli;
 pub mod config;
+pub mod embed;
 pub mod http;
 pub mod ingest;
 pub mod projection;
