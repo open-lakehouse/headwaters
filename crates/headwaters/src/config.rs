@@ -60,6 +60,11 @@ pub struct PostgresConfig {
     pub pool_size: u32,
     /// How often the projection worker polls the event log for new rows.
     pub projection_interval_ms: u64,
+    /// Optional separate DSN for the startup schema check. That check holds a
+    /// session-level advisory lock, which a transaction-mode pooler (PgBouncer)
+    /// can't keep pinned to one backend; point this at a direct connection when
+    /// [`url`](Self::url) goes through such a pooler. Defaults to `url`.
+    pub schema_check_url: Option<String>,
 }
 
 impl Default for PostgresConfig {
@@ -68,6 +73,7 @@ impl Default for PostgresConfig {
             url: None,
             pool_size: default_pool_size(),
             projection_interval_ms: default_projection_interval_ms(),
+            schema_check_url: None,
         }
     }
 }

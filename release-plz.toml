@@ -96,6 +96,12 @@ name = "datafusion-openlineage"
 # renamed), so pin the changelog path explicitly.
 changelog_path = "crates/open-lineage/CHANGELOG.md"
 
+[[package]]
+name = "headwaters-neon"
+# A deployment artifact (the `.node` inside the Neon Function zip, built by
+# `just neon-build`), not a library: no version bumps, tags, or releases.
+release = false
+
 # ---------------------------------------------------------------------------
 # Changelog rendering (git-cliff, embedded). Conventional-commit grouping.
 # Because commits use crate scopes (feat(client): ...), each crate's changelog
@@ -120,5 +126,5 @@ commit_parsers = [
 # Strip the redundant "(scope)" from each rendered line — each crate's changelog
 # is already crate-scoped.
 commit_preprocessors = [
-  { pattern = '\((openlineage-client|client|datafusion-openlineage|open-lineage|headwaters|headwaters-proto|proto|headwaters-client|read-client|headwaters-cli|read-cli|cli)\)', replace = "" },
+  { pattern = '\((openlineage-client|client|datafusion-openlineage|open-lineage|headwaters|headwaters-proto|proto|headwaters-client|read-client|headwaters-cli|read-cli|cli|headwaters-neon|neon)\)', replace = "" },
 ]

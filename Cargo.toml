@@ -46,3 +46,13 @@ url = { version = "2.5.2", features = [
 ], default-features = false }
 uuid = { version = "1", features = ["v4", "v5"] }
 
+
+# Build of the `headwaters-neon` addon. Neon Functions cap the deploy zip at
+# 10 MiB; fat LTO + one codegen unit + strip keep it at ~3.6 MiB while staying
+# at opt-level 3 (`opt-level = "z"` gets ~2.7 MiB if ever needed — see
+# docs/adr/0015). A separate profile so the Docker `release` build is untouched.
+[profile.release-neon]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

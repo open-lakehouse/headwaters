@@ -12,7 +12,6 @@
 //! (the `migrate` CLI subcommand). This keeps schema mutation out of the startup
 //! hot path so that multiple instances booting at once don't all race to migrate.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -20,12 +19,8 @@ use sqlx::migrate::Migrate;
 use sqlx::postgres::PgPoolOptions;
 
 use crate::config::{Config, WriterConfig};
-use crate::http::{self, AppState};
-use crate::projection::Projector;
-use crate::read::LineageStore;
-use crate::writer::buffered::{BufferedWriter, BufferedWriterConfig};
-use crate::writer::postgres::PostgresSink;
-use crate::writer::sink::EventSink;
+use crate::embed::Service;
+use crate::writer::buffered::BufferedWriterConfig;
 
 /// Upper bound on the graceful-shutdown drain of the buffered writer. The drain
 /// retries a failing sink, so without a cap a dead Postgres would hang process
@@ -40,13 +35,18 @@ const WRITER_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!();
 
 /// Connect a Postgres pool sized per [`Config`]. Shared by [`run`] and [`migrate`].
-async fn connect_pool(cfg: &Config) -> anyhow::Result<sqlx::PgPool> {
+pub(crate) async fn connect_pool(cfg: &Config) -> anyhow::Result<sqlx::PgPool> {
     let url = cfg
         .postgres
         .resolve_url()
         .context("invalid configuration")?;
+    connect_url(url, cfg.postgres.pool_size).await
+}
+
+/// Connect a pool of at most `max_connections` to `url`.
+pub(crate) async fn connect_url(url: &str, max_connections: u32) -> anyhow::Result<sqlx::PgPool> {
     PgPoolOptions::new()
-        .max_connections(cfg.postgres.pool_size)
+        .max_connections(max_connections)
         .connect(url)
         .await
         .context("failed to connect to Postgres")
@@ -87,7 +87,7 @@ pub async fn migrate(cfg: Config) -> anyhow::Result<()> {
 /// half-applied state mid-`migrate`, and releases it before returning. It does
 /// not create the `_sqlx_migrations` table: an absent table simply means every
 /// migration is pending, so the check works against a read-only connection too.
-async fn ensure_schema_current(pool: &sqlx::PgPool) -> anyhow::Result<()> {
+pub(crate) async fn ensure_schema_current(pool: &sqlx::PgPool) -> anyhow::Result<()> {
     let mut conn = pool.acquire().await?;
 
     // No `_sqlx_migrations` table means a brand-new database: nothing applied, so
@@ -189,33 +189,7 @@ async fn check_applied(conn: &mut impl Migrate) -> anyhow::Result<()> {
 ///
 /// The caller is responsible for initializing tracing before calling this.
 pub async fn run(cfg: Config) -> anyhow::Result<()> {
-    // One pool shared by the sink, the projector, and the read store.
-    let pool = connect_pool(&cfg).await?;
-
-    // Verify (don't apply) the schema: migrations are an explicit `migrate` step.
-    ensure_schema_current(&pool)
-        .await
-        .context("database schema check failed")?;
-
-    // Write path: buffered ingest -> Postgres `events` (append-only).
-    let sinks: Vec<Arc<dyn EventSink>> = vec![Arc::new(PostgresSink::new(pool.clone()))];
-    let writer = BufferedWriter::spawn(sinks, writer_config(&cfg.writer));
-
-    // Async projection: fold `events` into the read tables.
-    let projector = Projector::spawn(
-        pool.clone(),
-        Duration::from_millis(cfg.postgres.projection_interval_ms),
-    );
-
-    let store = LineageStore::new(pool.clone());
-    let app = http::router(
-        AppState {
-            writer: writer.handle(),
-            store,
-        },
-        &cfg.ui.base_path,
-        cfg.ui.serve,
-    );
+    let service = Service::start(&cfg).await?;
 
     let addr = cfg.bind_addr();
     tracing::info!("headwaters listening on {}", addr);
@@ -223,7 +197,7 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .with_context(|| format!("failed to bind {addr}"))?;
-    axum::serve(listener, app)
+    axum::serve(listener, service.router())
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("server error")?;
@@ -233,15 +207,11 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
     // buffered events, then stop the projector after a final fold. The drain
     // retries a failing sink, so bound it: a dead Postgres must not wedge exit
     // past the orchestrator's termination grace period.
-    tracing::info!("draining buffered writer");
-    writer.shutdown(WRITER_DRAIN_TIMEOUT).await;
-    tracing::info!("stopping projection worker");
-    projector.shutdown().await;
-    pool.close().await;
+    service.shutdown(WRITER_DRAIN_TIMEOUT).await;
     Ok(())
 }
 
-fn writer_config(cfg: &WriterConfig) -> BufferedWriterConfig {
+pub(crate) fn writer_config(cfg: &WriterConfig) -> BufferedWriterConfig {
     BufferedWriterConfig {
         buffer_size: cfg.buffer_size,
         flush_interval: Duration::from_millis(cfg.flush_interval_ms),
