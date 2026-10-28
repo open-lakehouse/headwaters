@@ -107,9 +107,8 @@ These make the chosen design cheap and shape its constraints:
   404ing gracefully when absent (`http.rs`, `const UI_DIR = "web"`); the Dockerfile
   copies `node/app/dist` → `./web`. Nothing UI-related lives in the crate dir, so
   publishing the crate naturally excludes it.
-- **The sibling published crates set the metadata template.** `openlineage-client`,
-  `datafusion-openlineage`, `headwaters-proto`, `headwaters-client` already publish
-  with `keywords` / `categories` / `documentation = "https://docs.rs/<crate>"`.
+- **The sibling published crates set the metadata template.** `headwaters-proto`
+  and `headwaters-client` already publish with `keywords` / `categories` / `documentation = "https://docs.rs/<crate>"`.
 
 ## Implementation plan (for the executing session)
 

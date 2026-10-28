@@ -5,9 +5,14 @@
 > not part of this repo); the spec-correct facet structs live in
 > `crates/open-lineage/src/facets.rs` and the read-side surfacing in
 > `crates/headwaters/src/read/queries.rs`. Refines
-> [`docs/open-lineage-design.md`](../open-lineage-design.md); builds on
+> the OpenLineage-on-DataFusion design doc (removed along with the crates); builds on
 > [ADR 0001](0001-per-statement-run-id-correlation.md) (run identity) and an
 > upstream per-query agent-governance-context decision.
+>
+> **Moved:** the `datafusion-openlineage` / `openlineage-client` code this ADR
+> describes now lives in [datafusion-contrib/datafusion-openlineage](https://github.com/datafusion-contrib/datafusion-openlineage);
+> `crates/open-lineage` / `crates/openlineage-client` paths in this ADR refer
+> to that repository.
 
 ## Context
 

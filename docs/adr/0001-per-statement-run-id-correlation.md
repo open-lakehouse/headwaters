@@ -5,9 +5,14 @@
 > statement-store wiring described here is implemented in the host Flight SQL
 > service that embeds the integration (an upstream open-lakehouse service, not
 > part of this repo). Refines
-> [`docs/open-lineage-design.md`](../open-lineage-design.md); the per-session /
+> the OpenLineage-on-DataFusion design doc (removed along with the crates); the per-session /
 > statement-lifecycle work it builds on is designed upstream and not yet
 > reproduced here.
+>
+> **Moved:** the `datafusion-openlineage` / `openlineage-client` code this ADR
+> describes now lives in [datafusion-contrib/datafusion-openlineage](https://github.com/datafusion-contrib/datafusion-openlineage);
+> `crates/open-lineage` / `crates/openlineage-client` paths in this ADR refer
+> to that repository.
 
 ## Context
 

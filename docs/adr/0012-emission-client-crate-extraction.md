@@ -5,6 +5,11 @@
 > (no engine dependency). `datafusion-openlineage` depends on it, re-exports its
 > surface, and adds the DataFusion glue. Builds on the planner design in ADR
 > [0005](0005-openlineage-planner-vs-rule.md).
+>
+> **Moved:** the `datafusion-openlineage` / `openlineage-client` code this ADR
+> describes now lives in [datafusion-contrib/datafusion-openlineage](https://github.com/datafusion-contrib/datafusion-openlineage);
+> `crates/open-lineage` / `crates/openlineage-client` paths in this ADR refer
+> to that repository.
 
 ## Context
 

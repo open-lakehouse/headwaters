@@ -4,9 +4,14 @@
 > (the `LineageMarker` node, `LineageExtensionPlanner`, and
 > `OpenLineageQueryPlanner`), wired by `src/session.rs`
 > (`instrument_session_state`). Refines the "Critical decision 1 — Where to hook"
-> section of [`docs/open-lineage-design.md`](../open-lineage-design.md) and
+> section of the OpenLineage-on-DataFusion design (`docs/open-lineage-design.md`, removed with the crates) and
 > complements ADR [0001](0001-per-statement-run-id-correlation.md) (per-statement
 > `run_id` correlation).
+>
+> **Moved:** the `datafusion-openlineage` / `openlineage-client` code this ADR
+> describes now lives in [datafusion-contrib/datafusion-openlineage](https://github.com/datafusion-contrib/datafusion-openlineage);
+> `crates/open-lineage` / `crates/openlineage-client` paths in this ADR refer
+> to that repository.
 
 ## Context
 

@@ -67,8 +67,8 @@ no socket, no port, and no second process.
 ### Size
 
 The zip limit was the main risk. It turned out not to bind. The heavy
-dependencies (DataFusion, arrow) live only in `datafusion-openlineage`, which
-the service doesn't link.
+dependencies (DataFusion, arrow) lived only in `datafusion-openlineage` (since
+moved out of this repo), which the service never linked.
 
 | `[profile.release-neon]` (fat LTO, 1 CGU, strip) | `.node` | zip -9 |
 |---|---:|---:|

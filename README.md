@@ -23,16 +23,16 @@
 > and does not aim to be a drop-in Marquez replacement.
 
 Headwaters is a set of Rust building blocks for [OpenLineage](https://openlineage.io)
-on the open lakehouse stack. It emits column-level data lineage from
-[Apache DataFusion](https://datafusion.apache.org) sessions at planning time, and
-ingests OpenLineage events into a queryable lineage store that serves a
-read API for visualization, inspired by [Marquez](https://marquezproject.ai).
+on the open lakehouse stack. It ingests OpenLineage events into a queryable
+lineage store that serves a read API for visualization, inspired by
+[Marquez](https://marquezproject.ai). To emit column-level lineage from
+[Apache DataFusion](https://datafusion.apache.org) sessions, use
+[datafusion-openlineage](https://github.com/datafusion-contrib/datafusion-openlineage).
 
 ## Crates
 
 | Crate | Package | What it does |
 |---|---|---|
-| [`crates/open-lineage`](crates/open-lineage) | `datafusion-openlineage` | OpenLineage integration for DataFusion sessions — emits run events (START/COMPLETE/FAIL) with input/output datasets and column-level lineage, extracted at planning time. |
 | [`crates/headwaters`](crates/headwaters) | `headwaters` | An HTTP service that ingests OpenLineage events into an append-only Postgres event log, projects them asynchronously into normalized read tables, and serves a read API for visualization (inspired by [Marquez](https://marquezproject.ai)). |
 
 ## Build & test
@@ -45,11 +45,9 @@ just build       # cargo build --workspace --all-features
 just test        # cargo nextest run --workspace --all-features
 ```
 
-The always-on test suite includes an offline OpenLineage spec-conformance check
-(`crates/open-lineage/tests/conformance.rs`) that validates emitted events
-against vendored JSON Schemas — no external services required. Live-integration
-tests are `#[ignore]`d; the Marquez reference-backend acceptance test is gated
-behind the `marquez-it` feature (`just marquez-it`, needs Docker).
+The default test suite needs no external services; live-integration tests are
+`#[ignore]`d, and the Docker-backed suites are gated behind features (see
+[CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## Running the server
 

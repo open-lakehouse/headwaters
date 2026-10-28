@@ -6,12 +6,16 @@
 > ships with it; it exists to pick an architecture and decide whether to build.
 > The decision summary lives in
 > [ADR 0011](adr/0011-envoy-postgres-lineage-via-proxy-wasm.md).
+>
+> **Moved:** `crates/open-lineage` now lives in
+> [datafusion-contrib/datafusion-openlineage](https://github.com/datafusion-contrib/datafusion-openlineage);
+> `crates/open-lineage*` paths below refer to that repository.
 
 ## Why
 
 Headwaters today produces **rich, column-level OpenLineage** from Apache
-DataFusion query plans (the `datafusion-openlineage` crate; see
-[`open-lineage-design.md`](open-lineage-design.md)) and ingests / serves it
+DataFusion query plans (the `datafusion-openlineage` crate, now in
+[datafusion-contrib/datafusion-openlineage](https://github.com/datafusion-contrib/datafusion-openlineage)) and ingests / serves it
 through a CQRS HTTP service (`headwaters`; see
 [ADR 0006](adr/0006-hybrid-cqrs-postgres-storage.md)). That signal is
 *plan-derived*: positional column lineage, full Arrow schemas, SQL text,
@@ -279,7 +283,7 @@ in any deployment:
 
 ## Related
 
-- [`open-lineage-design.md`](open-lineage-design.md) — the DataFusion path this
+- [datafusion-openlineage](https://github.com/datafusion-contrib/datafusion-openlineage) — the DataFusion path this
   complements.
 - [ADR 0001](adr/0001-per-statement-run-id-correlation.md) — run identity.
 - [ADR 0003](adr/0003-client-forwarded-lineage-metadata.md) — client-forwarded

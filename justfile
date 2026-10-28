@@ -28,9 +28,7 @@ _default:
 build:
     cargo build --workspace --all-features
 
-# run the test suite (the always-on OpenLineage conformance suite needs no
-# services; live-integration tests are #[ignore]d and the Marquez acceptance
-# test is gated behind the `marquez-it` feature)
+# run the test suite (needs no services; live-integration tests are #[ignore]d)
 test:
     cargo nextest run --workspace --all-features
 
@@ -51,22 +49,12 @@ lineage *args:
 seed *files:
     examples/seed/ingest.sh {{ files }}
 
-# run the live end-to-end DataFusion demo against a running headwaters instance: it
-# instruments a real DataFusion session, runs a bronze→silver→gold pipeline, and
-# emits the resulting lineage to the service (exercises the full instrumentation
-# path, unlike the static `seed`). Target a non-default host with OPENLINEAGE_URL=…
-# (defaults to http://localhost:8091/api/v1/lineage), or OPENLINEAGE_URL=console
-# for a service-free dry run. Start the server first (`just dev`), then `just ui-dev`.
-demo:
-    cargo run -p datafusion-open-lineage --example e2e_pipeline
-
 # run the black-box DuckDB lineage journey against a running headwaters: installs
 # the published duck_lineage community extension into DuckDB, runs the same
 # bronze→silver→gold pipeline through it, then asserts headwaters reconstructed the
 # graph via the read API. Validates the live wire path for an external engine we
-# don't control (unlike the in-process `demo`). Start the server first (`just dev`);
-# then `just ui-dev` to see the `duckdb` graph next to the DataFusion `datafusion`
-# one. Run via `uv` — deps are declared inline in each script (PEP 723), so no venv
+# don't control. Start the server first (`just dev`), then `just ui-dev` to see
+# the `duckdb` graph. Run via `uv` — deps are declared inline in each script (PEP 723), so no venv
 # to manage. Needs `uv` (https://docs.astral.sh/uv/).
 duck-journey:
     #!/usr/bin/env bash
@@ -194,11 +182,6 @@ postgres-it:
 # Needs Docker. On colima/Docker Desktop, point DOCKER_HOST at the right socket.
 conformance-it:
     cargo nextest run -p headwaters --features conformance-it --test conformance_test
-
-# the live Marquez reference-backend acceptance test (needs Docker; pulls
-# marquezproject/marquez + postgres via testcontainers)
-marquez-it:
-    cargo test -p datafusion-open-lineage --features marquez-it --test marquez_acceptance -- --ignored --nocapture
 
 # the same coverage CI publishes to Codecov: nextest + doctests, all features, the
 # committed codegen / entry points filtered out (keep the regex in sync with the
