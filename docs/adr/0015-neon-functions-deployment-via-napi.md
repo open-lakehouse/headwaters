@@ -106,6 +106,10 @@ The artifact links only libc, libm, libpthread and libdl, and needs at most
   row lock on the `projection_state` cursor, so each batch is folded once. The
   background loop uses `SKIP LOCKED`: while another isolate is folding, the
   rest go back to sleep instead of each holding a pooled connection.
+  [0016](0016-projection-liveness-and-topology-on-neon.md) replaces the
+  per-isolate loop on Neon with on-demand projection: a settle after each
+  ingest plus a cron trigger. It also fixes skipped events when several isolates
+  write at once (#69).
 - Buffered events are lost if an isolate is killed without SIGINT. This
   matches the existing 202 semantics.
 - The bundled UI is not served (`ui.serve = false`). Neon Functions don't host
