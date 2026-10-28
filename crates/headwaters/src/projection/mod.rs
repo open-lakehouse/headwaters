@@ -89,8 +89,10 @@ async fn run(
         tokio::select! {
             _ = tick.tick() => {
                 // Drain everything currently available, then go back to sleep.
+                // Another projector holding the cursor reads as "nothing to do":
+                // it is already folding these events, so don't queue behind it.
                 loop {
-                    match project_once(&pool, &registry).await {
+                    match project_once(&pool, &registry, OnContention::Skip).await {
                         Ok(0) => break,
                         Ok(_) => continue,
                         Err(e) => {
@@ -103,7 +105,7 @@ async fn run(
             _ = shutdown.changed() => {
                 if *shutdown.borrow() {
                     // Final drain before exit.
-                    while let Ok(n) = project_once(&pool, &registry).await {
+                    while let Ok(n) = project_once(&pool, &registry, OnContention::Skip).await {
                         if n == 0 {
                             break;
                         }
@@ -115,18 +117,51 @@ async fn run(
     }
 }
 
+/// What [`project_once`] does when another projector holds the cursor.
+#[derive(Clone, Copy)]
+enum OnContention {
+    /// Block until the other projector commits, then fold from its cursor.
+    /// For callers whose contract is "caught up on return" ([`project_all`],
+    /// [`rebuild`]).
+    Wait,
+    /// Return 0 right away: the holder is already folding these events. For
+    /// the background loop, so idle replicas don't each pin a pooled
+    /// connection queueing on the lock.
+    Skip,
+}
+
 /// Fold one batch of up to [`BATCH`] events after the cursor into the read
 /// tables, in a single transaction, advancing the cursor. Returns the number of
-/// events applied (0 when the log has caught up).
-async fn project_once(pool: &PgPool, registry: &ProcessorRegistry) -> Result<usize, sqlx::Error> {
+/// events applied (0 when the log has caught up, or when `on_contention` is
+/// [`Skip`](OnContention::Skip) and another projector holds the cursor).
+///
+/// The cursor row is locked for the whole transaction, so concurrent projectors
+/// (one per replica or Neon isolate) fold disjoint batches instead of each
+/// re-folding the same one, and a slower projector can't move the cursor back.
+async fn project_once(
+    pool: &PgPool,
+    registry: &ProcessorRegistry,
+    on_contention: OnContention,
+) -> Result<usize, sqlx::Error> {
     let started = std::time::Instant::now();
     let applier = PgApplier;
     let mut tx = pool.begin().await?;
 
-    let last_seq: i64 = sqlx::query_scalar("SELECT last_seq FROM projection_state WHERE name = $1")
+    let lock_sql = match on_contention {
+        OnContention::Wait => "SELECT last_seq FROM projection_state WHERE name = $1 FOR UPDATE",
+        OnContention::Skip => {
+            "SELECT last_seq FROM projection_state WHERE name = $1 FOR UPDATE SKIP LOCKED"
+        }
+    };
+    let Some(last_seq): Option<i64> = sqlx::query_scalar(lock_sql)
         .bind(CURSOR)
-        .fetch_one(&mut *tx)
-        .await?;
+        .fetch_optional(&mut *tx)
+        .await?
+    else {
+        // Only `SKIP LOCKED` yields no row: the cursor row always exists
+        // (seeded by the initial migration).
+        return Ok(0);
+    };
 
     let rows = sqlx::query_as::<_, RawEvent>(
         "SELECT seq, event_kind, event_type, event_time, run_id, \
@@ -177,7 +212,7 @@ pub async fn project_all(pool: &PgPool) -> Result<usize, sqlx::Error> {
     let registry = ProcessorRegistry::with_well_known();
     let mut total = 0;
     loop {
-        let n = project_once(pool, &registry).await?;
+        let n = project_once(pool, &registry, OnContention::Wait).await?;
         if n == 0 {
             return Ok(total);
         }
@@ -203,7 +238,7 @@ pub async fn rebuild(pool: &PgPool) -> Result<(), sqlx::Error> {
         .await?;
     tx.commit().await?;
 
-    while project_once(pool, &registry).await? > 0 {}
+    while project_once(pool, &registry, OnContention::Wait).await? > 0 {}
     Ok(())
 }
 
@@ -228,4 +263,119 @@ pub struct RawEvent {
     /// (`{inputs:[...], outputs:[...]}`); consumed by the column-lineage
     /// processor.
     pub column_lineage: Option<serde_json::Value>,
+}
+
+#[cfg(all(test, feature = "postgres-it"))]
+mod cursor_lock_tests {
+    //! Concurrent projectors must fold disjoint batches. Needs Docker; gated
+    //! behind `postgres-it`. Run with:
+    //!   cargo test -p headwaters --features postgres-it cursor_lock
+    use super::*;
+    use crate::ingest::convert_event;
+    use crate::test_support::start_postgres;
+    use crate::writer::postgres::PostgresSink;
+    use crate::writer::row::event_to_row;
+    use crate::writer::sink::EventSink;
+
+    /// Append `n` distinct run events to the log without projecting them.
+    async fn append_events(pool: &PgPool, n: usize) {
+        let sink = PostgresSink::new(pool.clone());
+        for i in 0..n {
+            let json = format!(
+                r#"{{"eventType":"COMPLETE","eventTime":"2023-11-14T22:13:20Z",
+                    "producer":"test-producer","run":{{"runId":"run-{i}"}},
+                    "job":{{"namespace":"etl","name":"job_{i}"}}}}"#
+            );
+            let event = convert_event(json.as_bytes()).expect("convert event");
+            let row = event_to_row(event.reborrow()).expect("event row");
+            sink.append(&[row]).await.expect("append");
+        }
+    }
+
+    async fn cursor(pool: &PgPool) -> i64 {
+        sqlx::query_scalar("SELECT last_seq FROM projection_state WHERE name = $1")
+            .bind(CURSOR)
+            .fetch_one(pool)
+            .await
+            .expect("read cursor")
+    }
+
+    /// Hold the cursor row lock the way a projector mid-batch does.
+    async fn hold_cursor(pool: &PgPool) -> sqlx::Transaction<'static, sqlx::Postgres> {
+        let mut tx = pool.begin().await.expect("begin");
+        sqlx::query("SELECT 1 FROM projection_state WHERE name = $1 FOR UPDATE")
+            .bind(CURSOR)
+            .execute(&mut *tx)
+            .await
+            .expect("lock cursor");
+        tx
+    }
+
+    #[tokio::test]
+    async fn concurrent_projectors_fold_each_event_once() {
+        let db = start_postgres().await;
+        append_events(&db.pool, 20).await;
+
+        // Before the lock, each of these read the same cursor and re-folded
+        // the same batch, so the applied counts summed past 20.
+        let projectors: Vec<_> = (0..4)
+            .map(|_| {
+                let pool = db.pool.clone();
+                tokio::spawn(async move { project_all(&pool).await })
+            })
+            .collect();
+        let mut total = 0;
+        for p in projectors {
+            total += p.await.unwrap().expect("project");
+        }
+
+        assert_eq!(total, 20, "every event must be folded exactly once");
+        let jobs: i64 = sqlx::query_scalar("SELECT count(*) FROM jobs")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(jobs, 20);
+    }
+
+    #[tokio::test]
+    async fn skip_returns_immediately_while_another_projector_holds_the_cursor() {
+        let db = start_postgres().await;
+        append_events(&db.pool, 3).await;
+        let registry = ProcessorRegistry::with_well_known();
+
+        let held = hold_cursor(&db.pool).await;
+        let n = tokio::time::timeout(
+            Duration::from_secs(5),
+            project_once(&db.pool, &registry, OnContention::Skip),
+        )
+        .await
+        .expect("Skip must not block on the lock")
+        .expect("project");
+        assert_eq!(n, 0, "a held cursor reads as nothing to do");
+        assert_eq!(cursor(&db.pool).await, 0);
+
+        held.rollback().await.unwrap();
+        let n = project_once(&db.pool, &registry, OnContention::Skip)
+            .await
+            .expect("project");
+        assert_eq!(n, 3, "once released, the next tick folds the backlog");
+    }
+
+    #[tokio::test]
+    async fn wait_blocks_until_the_holder_commits_then_catches_up() {
+        let db = start_postgres().await;
+        append_events(&db.pool, 3).await;
+
+        let held = hold_cursor(&db.pool).await;
+        let pool = db.pool.clone();
+        let waiting = tokio::spawn(async move { project_all(&pool).await });
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(!waiting.is_finished(), "Wait must queue behind the holder");
+
+        held.commit().await.unwrap();
+        let n = waiting.await.unwrap().expect("project");
+        assert_eq!(n, 3);
+        assert_eq!(cursor(&db.pool).await, 3);
+    }
 }
