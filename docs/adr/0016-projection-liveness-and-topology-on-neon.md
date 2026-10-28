@@ -85,11 +85,35 @@ On Neon, the function runs in `on_demand` mode:
 - After each accepted ingest, the handler starts a settle and registers it
   with `waitUntil`, so the isolate is not idle until the fold finishes.
   Concurrent ingests share one settle.
-- A **cron trigger every minute** POSTs to the same path as a safety net, so
-  events are folded even after an isolate was evicted. Trigger deliveries
+- A **cron trigger** POSTs to the same path as a safety net, so events are
+  folded even after an isolate was evicted. Its cadence is an operational
+  choice, not a constant (see below). Trigger deliveries
   can't carry a custom secret. The handler instead accepts them by the
   `X-Neon-Trigger-Invocation-Id` header, which Neon strips from client
   requests, and settles through the addon directly.
+
+Cadence and freshness are configured per deployment, because the right
+trade-off depends on how fresh reads must be and what idle compute may cost:
+
+- **The cron schedule** is a `just neon-trigger` parameter. It defaults to
+  every 10 minutes. Neon allows at most one run a minute.
+- **`HEADWATERS_NEON_SETTLE_ON_INGEST`** (default `true`). When `false`,
+  ingest only waits for the writer flush (still under `waitUntil`, so buffered
+  events don't depend on the SIGINT drain), and the cron is the only fold.
+  Reads then lag by up to one interval.
+- **`HEADWATERS_NEON_TRIGGER_BUDGET_MS`** (default 50 s, at most 14 min). A
+  trigger answers only once its settle is done, and Neon cuts off handlers
+  that don't respond within 15 min.
+
+The default cadence is 10 minutes, not 1, because of Neon's scale-to-zero:
+the branch compute suspends after 5 minutes without activity, and every
+trigger run queries it. A cadence under that window keeps the compute awake
+around the clock, even with no traffic. With settle-on-ingest on, the cron
+only catches events left by evicted isolates, so the slower cadence costs
+little freshness.
+
+Long-lived hosts that use the Bearer-guarded route choose their own cadence
+and pass `?budget_ms=`.
 
 ### 3. One function for now; a dedicated projector function is a deploy choice
 
@@ -134,9 +158,10 @@ environment and the cron trigger pointed at it. We are not splitting yet.
   stalls projection** until it ends. Reads go stale but are never wrong.
   `rebuild`, migrations and ad-hoc analytics sessions should stay short, or run
   where they don't overlap ingest.
-- In `on_demand` mode on Neon, events are usually folded right after their
-  flush. In the worst case, when the isolate is evicted mid-fold, they wait up
-  to one cron interval (about a minute). A long-lived host in `on_demand`
+- In `on_demand` mode on Neon with settle-on-ingest, events are usually
+  folded right after their flush. In the worst case, when the isolate is
+  evicted mid-fold, they wait up to one cron interval (10 minutes by default).
+  With settle-on-ingest off, every event waits for the next cron run. A long-lived host in `on_demand`
   mode folds only when settled, so it needs a scheduler on the trigger route.
 - **Scale-out path, not taken now:** the fold is idempotent and doesn't depend
   on order (0006), so if fold throughput is ever measured to be the bottleneck,
@@ -147,6 +172,8 @@ environment and the cron trigger pointed at it. We are not splitting yet.
 
 - Neon Functions: neon.com/docs/compute/functions/{overview,
   triggers/overview, triggers/schedule, reference/runtime-limits}
+- Neon scale to zero: neon.com/docs/introduction/scale-to-zero (default
+  5 minute suspend; fixed on the Free plan)
 - Neon Realtime: neon.com/blog/neon-now-has-realtime,
   neon.com/docs/realtime/{guides/subscribing, sdks/typescript}
 - PostgreSQL: `pg_current_xact_id`, `pg_current_snapshot`, `pg_snapshot_xmin`
