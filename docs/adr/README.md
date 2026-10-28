@@ -25,6 +25,7 @@ those are referenced inline as prose rather than as numbered ADRs here.
 | [0012](0012-emission-client-crate-extraction.md) | Engine-agnostic emission client crate (`openlineage-client`) | Accepted |
 | [0013](0013-read-api-typed-enums-and-client-prep.md) | Read-API enums, additive `Search` filters, consumer-focused docs | Accepted |
 | [0014](0014-agent-facing-cli-question-verbs.md) | Agent-facing CLI as task-shaped question-verbs (not scenario- or endpoint-commands) | Accepted |
+| [0015](0015-neon-functions-deployment-via-napi.md) | Deploy to Neon Functions as a Node-API addon (napi-rs) wrapping the in-process router | Accepted |
 
 See also [`docs/marquez-compatibility.md`](../marquez-compatibility.md) — a
 living reference for where the service matches, diverges from, and goes beyond
