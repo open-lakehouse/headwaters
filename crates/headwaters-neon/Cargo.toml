@@ -1,0 +1,33 @@
+[package]
+name = "headwaters-neon"
+version = "0.0.0"
+description = "headwaters as a Node-API addon, for deployment as a Neon Function"
+edition = "2024"
+rust-version.workspace = true
+license = "Apache-2.0"
+repository = "https://github.com/open-lakehouse/headwaters"
+# Deployment artifact (a `.node` shipped inside a Neon Function zip), not a
+# library: never published, never released.
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+# The `napi_*` symbols resolve only once Node loads the addon, so a Rust test
+# executable can't link on Linux. Tested end-to-end instead: `just neon-test`.
+test = false
+doctest = false
+
+[dependencies]
+headwaters = { path = "../headwaters" }
+axum = "0.7"
+http-body-util = "0.1"
+# `async` runs `#[napi] async fn`s on napi's own tokio runtime, which is also
+# where the writer + projector are spawned.
+napi = { version = "3", default-features = false, features = ["napi4", "async"] }
+napi-derive = "3"
+tower = { version = "0.5", features = ["util"] }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[build-dependencies]
+napi-build = "2"

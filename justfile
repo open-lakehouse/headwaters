@@ -305,3 +305,78 @@ lineage-ui *args: ui-build
     rm -rf web && cp -r node/app/dist web
     RUST_LOG="${RUST_LOG:-headwaters=debug}" \
     cargo run -p headwaters -- serve {{ args }}
+
+# --- Neon Function (crates/headwaters-neon; see docs/adr/0015) ---
+
+NEON_FN := "crates/headwaters-neon/function"
+# Neon Functions run Node 24 on linux-arm64 glibc; 2.28 is the glibc floor of
+# the official Node 24 binaries, so linking against it is safe on any of them.
+NEON_TARGET := "aarch64-unknown-linux-gnu.2.28"
+NEON_ZIP := "crates/headwaters-neon/headwaters-neon.zip"
+# Neon's deploy limits: 10 MiB compressed, 64 MiB uncompressed.
+NEON_MAX_ZIP := "10485760"
+NEON_MAX_UNZIPPED := "67108864"
+
+# Needs `zig` + cargo-zigbuild >= 0.23 (older ones choke on rustc's
+# `--fix-cortex-a53-843419` aarch64 link arg).
+#
+# build the deployable Neon Function bundle + zip; fails over Neon's size limits
+neon-build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo zigbuild -p headwaters-neon --profile release-neon --target {{ NEON_TARGET }}
+    just _neon-dist target/aarch64-unknown-linux-gnu/release-neon/libheadwaters_neon.so
+    rm -f {{ NEON_ZIP }}
+    (cd {{ NEON_FN }}/dist && zip -9 -q -r "$OLDPWD/{{ NEON_ZIP }}" .)
+    zipped=$(wc -c < {{ NEON_ZIP }} | tr -d ' ')
+    unzipped=$(unzip -l {{ NEON_ZIP }} | tail -1 | awk '{print $1}')
+    echo "→ {{ NEON_ZIP }}: $zipped bytes zipped (limit {{ NEON_MAX_ZIP }}), $unzipped unzipped (limit {{ NEON_MAX_UNZIPPED }})"
+    if [ "$zipped" -ge {{ NEON_MAX_ZIP }} ] || [ "$unzipped" -ge {{ NEON_MAX_UNZIPPED }} ]; then
+        echo "error: bundle exceeds Neon's deploy limits" >&2; exit 1
+    fi
+
+# build the function bundle with a host-native (debug) addon, for local testing
+neon-build-host:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo build -p headwaters-neon
+    lib=target/debug/libheadwaters_neon.dylib
+    [ -f "$lib" ] || lib=target/debug/libheadwaters_neon.so
+    just _neon-dist "$lib"
+
+# Stage `dist/`: the addon as native/headwaters.node, plus index.mjs emitted by
+# Node's built-in TypeScript type stripping (Node >= 22.13; no npm deps).
+_neon-dist lib:
+    rm -rf {{ NEON_FN }}/dist && mkdir -p {{ NEON_FN }}/dist/native
+    cp {{ lib }} {{ NEON_FN }}/dist/native/headwaters.node
+    node --no-warnings --input-type=module -e "import { readFileSync, writeFileSync } from 'node:fs'; import { stripTypeScriptTypes } from 'node:module'; writeFileSync('{{ NEON_FN }}/dist/index.mjs', stripTypeScriptTypes(readFileSync('{{ NEON_FN }}/index.ts', 'utf8')));"
+
+# smoke-test the function handler on the host against the local dev Postgres
+neon-test: pg-up neon-build-host
+    DATABASE_URL="{{ DATABASE_URL }}" cargo run -q -p headwaters -- migrate
+    DATABASE_URL="{{ DATABASE_URL }}" node --test {{ NEON_FN }}/smoke.test.mjs
+
+# Proves the shipped artifact loads on the real target ABI (linux-arm64 glibc,
+# Node 24). Native speed on Apple Silicon; emulated elsewhere.
+#
+# smoke-test the deployable linux-arm64 bundle in a Node 24 container
+neon-test-arm64: pg-up neon-build
+    DATABASE_URL="{{ DATABASE_URL }}" cargo run -q -p headwaters -- migrate
+    docker run --rm --platform linux/arm64 \
+        --add-host host.docker.internal:host-gateway \
+        -e DATABASE_URL="postgres://{{ PG_USER }}:{{ PG_PASSWORD }}@host.docker.internal:{{ PG_PORT }}/{{ PG_DB }}" \
+        -v "$PWD/{{ NEON_FN }}:/fn:ro" -w /fn \
+        node:24-bookworm-slim node --test smoke.test.mjs
+
+# Migrations are never applied by the function itself; run this once per
+# schema change. Use the branch's *direct* connection string (the migrator holds
+# a session advisory lock, which Neon's pooled DATABASE_URL can't keep).
+#
+# apply migrations to a Neon branch (needs DATABASE_URL_UNPOOLED)
+neon-migrate:
+    DATABASE_URL="${DATABASE_URL_UNPOOLED:?set DATABASE_URL_UNPOOLED to the Neon branch direct (unpooled) connection string}" \
+    cargo run -p headwaters -- migrate
+
+# deploy the built bundle as a Neon Function (needs the `neon` CLI, logged in)
+neon-deploy slug="headwaters": neon-build
+    neon functions deploy {{ slug }} --src {{ NEON_FN }}/dist --no-bundle --wait
