@@ -338,6 +338,7 @@ _neon-dist lib:
 neon-test: pg-up neon-build-host
     DATABASE_URL="{{ DATABASE_URL }}" cargo run -q -p headwaters -- migrate
     DATABASE_URL="{{ DATABASE_URL }}" node --test {{ NEON_FN }}/smoke.test.mjs
+    DATABASE_URL="{{ DATABASE_URL }}" HEADWATERS_NEON_SETTLE_ON_INGEST=false node --test {{ NEON_FN }}/lazy.test.mjs
 
 # Proves the shipped artifact loads on the real target ABI (linux-arm64 glibc,
 # Node 24). Native speed on Apple Silicon; emulated elsewhere.
@@ -349,7 +350,7 @@ neon-test-arm64: pg-up neon-build
         --add-host host.docker.internal:host-gateway \
         -e DATABASE_URL="postgres://{{ PG_USER }}:{{ PG_PASSWORD }}@host.docker.internal:{{ PG_PORT }}/{{ PG_DB }}" \
         -v "$PWD/{{ NEON_FN }}:/fn:ro" -w /fn \
-        node:24-bookworm-slim node --test smoke.test.mjs
+        node:24-bookworm-slim sh -c 'node --test smoke.test.mjs && HEADWATERS_NEON_SETTLE_ON_INGEST=false node --test lazy.test.mjs'
 
 # Migrations are never applied by the function itself; run this once per
 # schema change. Use the branch's *direct* connection string (the migrator holds
@@ -364,11 +365,15 @@ neon-migrate:
 neon-deploy slug="headwaters": neon-build
     neon functions deploy {{ slug }} --src {{ NEON_FN }}/dist --no-bundle --wait
 
-# The function projects on demand (ADR 0016): ingest settles via `waitUntil`,
-# and this every-minute trigger is the safety net that folds whatever an
-# evicted isolate left behind. Run once per branch.
+# The function projects on demand (ADR 0016). By default ingest settles via
+# `waitUntil` and this trigger only folds what an evicted isolate left behind,
+# so a slow cadence costs little freshness. With
+# HEADWATERS_NEON_SETTLE_ON_INGEST=false the trigger is the only fold, and the
+# cadence is the read lag. A cadence under Neon's 5 min scale-to-zero window
+# keeps the branch compute awake around the clock. Run once per branch; to
+# change it later: `neon triggers update <trigger-id> --cron '<cron>'`.
 #
-# create the cron trigger that keeps the projection caught up
-neon-trigger slug="headwaters":
+# create the cron trigger that keeps the projection caught up (UTC cron, ≥ 1 min)
+neon-trigger slug="headwaters" cron="*/10 * * * *":
     neon triggers create --function-slug {{ slug }} --name {{ slug }}-projection \
-        --cron '* * * * *' --function-path /internal/projection/run
+        --cron '{{ cron }}' --function-path /internal/projection/run

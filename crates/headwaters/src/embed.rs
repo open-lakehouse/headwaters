@@ -49,6 +49,16 @@ impl Settler {
     pub async fn settle(&self, budget: Duration) -> Result<ProjectionRun, sqlx::Error> {
         self.projection.settle(&self.writer, budget).await
     }
+
+    /// Wait up to `budget` for buffered events to be written, without folding.
+    /// Returns whether everything was written in time. For hosts that leave
+    /// folding to their scheduler but must not go idle with events still
+    /// buffered.
+    pub async fn flush(&self, budget: Duration) -> bool {
+        tokio::time::timeout(budget, self.writer.flushed())
+            .await
+            .is_ok()
+    }
 }
 
 impl Service {

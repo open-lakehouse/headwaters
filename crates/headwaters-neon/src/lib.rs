@@ -161,6 +161,18 @@ pub async fn settle(budget_ms: u32) -> napi::Result<JsProjectionRun> {
     })
 }
 
+/// Wait up to `budget_ms` for buffered events to be written, without folding.
+/// Returns whether everything was written in time.
+#[napi]
+pub async fn flush(budget_ms: u32) -> napi::Result<bool> {
+    let settler = SETTLER
+        .lock()
+        .map_err(to_napi)?
+        .clone()
+        .ok_or_else(|| to_napi("headwaters is not started"))?;
+    Ok(settler.flush(Duration::from_millis(budget_ms.into())).await)
+}
+
 /// Stop accepting requests, flush buffered events, and stop the workers.
 #[napi]
 pub async fn shutdown() -> napi::Result<()> {
