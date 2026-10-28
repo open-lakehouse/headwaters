@@ -102,11 +102,10 @@ The artifact links only libc, libm, libpthread and libdl, and needs at most
 
 ## Consequences
 
-- Each isolate runs its own projector. `project_once` reads the cursor without
-  `FOR UPDATE`, so concurrent isolates repeat work idempotently. This is
-  correct but wasteful, and multi-replica Docker deployments already have the
-  same behaviour. Adding a row lock on `projection_state` is a possible
-  follow-up.
+- Each isolate runs its own projector. The projectors coordinate through a
+  row lock on the `projection_state` cursor, so each batch is folded once. The
+  background loop uses `SKIP LOCKED`: while another isolate is folding, the
+  rest go back to sleep instead of each holding a pooled connection.
 - Buffered events are lost if an isolate is killed without SIGINT. This
   matches the existing 202 semantics.
 - The bundled UI is not served (`ui.serve = false`). Neon Functions don't host
