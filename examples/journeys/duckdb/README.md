@@ -3,12 +3,11 @@
 A black-box, end-to-end lineage journey that drives a **published, third-party**
 engine integration — the [duck_lineage](https://github.com/ilum-cloud/duck_lineage)
 DuckDB OpenLineage community extension — against a running `headwaters`, then
-verifies headwaters reconstructed the graph. It's the DuckDB sibling of the in-crate
-DataFusion demo (`crates/open-lineage/examples/e2e_pipeline`) and runs the *same*
+verifies headwaters reconstructed the graph. It's the DuckDB sibling of the DataFusion
+`e2e_pipeline` example in [datafusion-openlineage](https://github.com/datafusion-contrib/datafusion-openlineage) and runs the *same*
 bronze → silver → gold story, so the two graphs are directly comparable.
 
-Where the DataFusion example exercises our own instrumentation in-process (and is
-covered by `tests/e2e_pipeline.rs`), this validates the **live HTTP wire path**: a
+Where the DataFusion example exercises in-process instrumentation, this validates the **live HTTP wire path**: a
 real external engine emitting OpenLineage over the network into headwaters' ingest
 endpoint. It is intentionally *not* part of Rust coverage.
 
@@ -54,7 +53,7 @@ The DuckDB graph lives in the `duckdb` namespace; the DataFusion demo's lives in
 ## How duck_lineage differs from our integration (notes from the review)
 
 Reviewing duck_lineage informed the "safe wins" we folded into
-`datafusion-openlineage`, and is worth recording:
+[`datafusion-openlineage`](https://github.com/datafusion-contrib/datafusion-openlineage), and is worth recording:
 
 - **Config is SQL-`SET`-driven, not env/YAML.** It reads `duck_lineage_url`,
   `duck_lineage_namespace`, `duck_lineage_api_key`, etc. via DuckDB `SET`, and does

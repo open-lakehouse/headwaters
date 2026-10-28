@@ -7,14 +7,14 @@
 # ///
 """Live DuckDB → headwaters lineage journey, via the published duck_lineage extension.
 
-This is the DuckDB sibling of the in-crate DataFusion demo
-(`crates/open-lineage/examples/e2e_pipeline`). It runs the *same* bronze → silver
+This is the DuckDB sibling of the DataFusion `e2e_pipeline` example in
+https://github.com/datafusion-contrib/datafusion-openlineage. It runs the *same* bronze → silver
 → gold medallion story, but through a third-party engine integration we don't
 control — the DuckDB OpenLineage community extension
 (https://github.com/ilum-cloud/duck_lineage) — to prove headwaters ingests and
 reconstructs lineage emitted by an external engine over the real HTTP wire path.
 
-Unlike our DataFusion integration (which reads standard OPENLINEAGE_* env vars),
+Unlike the DataFusion integration (which reads standard OPENLINEAGE_* env vars),
 duck_lineage is configured entirely through DuckDB `SET` options. We deliberately
 don't modify the extension; we just install it from the community repository and
 point it at headwaters.

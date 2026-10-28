@@ -7,11 +7,8 @@
 # topological order. PR titles are gated by .github/workflows/pr-title.yml; see
 # CONTRIBUTING.md for the end-to-end flow.
 #
-# All crates are versioned, changelogged, tagged and GitHub-released — but they
-# diverge at the publish step:
-#   - openlineage-client     -> published to crates.io (a library).
-#   - datafusion-openlineage -> published to crates.io (depends on the client,
-#     so release-plz publishes the client first).
+# Crates are versioned, changelogged, tagged and GitHub-released (except
+# headwaters-neon) — but they diverge at the publish step:
 #   - headwaters-proto       -> published to crates.io (generated proto + stubs).
 #   - headwaters-client      -> published to crates.io (depends on headwaters-proto,
 #     so release-plz publishes the proto crate first).
@@ -21,6 +18,9 @@
 #     Docker image build/push to GHCR (see release-plz.yml ->
 #     .github/workflows/docker-release.yml). Its bundled UI participates via
 #     crates/headwaters/ui.lock — see `just ui-fingerprint`.
+#   - headwaters-cli         -> `git_only = true`, like headwaters (no Docker).
+#   - headwaters-neon        -> `release = false`: not versioned, tagged or
+#     published yet.
 #
 # Config reference: https://release-plz.dev/docs/config
 
@@ -36,7 +36,7 @@ semver_check = true            # run cargo-semver-checks before bumping, to catc
                                # accidental breaking changes in published crates
 
 # --- Git tags & GitHub releases (per-crate) ---
-# Per-crate tags, e.g. `datafusion-openlineage-v0.1.0` / `headwaters-v0.1.0`.
+# Per-crate tags, e.g. `headwaters-proto-v0.1.0` / `headwaters-v0.1.0`.
 # The headwaters tag is what the Docker release workflow keys off, and the
 # prefix keeps each crate's tags distinct.
 git_tag_enable = true
@@ -48,7 +48,7 @@ git_release_body = "{{ changelog }}"
 # --- Publishing ---
 # release-plz runs `cargo publish` itself, in dependency order. With
 # `id-token: write` in the workflow it performs crates.io OIDC publishing, so
-# NO CARGO_REGISTRY_TOKEN is required. `headwaters` opts out below.
+# NO CARGO_REGISTRY_TOKEN is required. Unpublished crates opt out below.
 publish = true
 publish_timeout = "30m"        # protoc/codegen-heavy crates are slow to verify
 
@@ -91,12 +91,6 @@ git_only = true
 publish = false
 
 [[package]]
-name = "datafusion-openlineage"
-# The crate's directory is `crates/open-lineage/` (only the package name was
-# renamed), so pin the changelog path explicitly.
-changelog_path = "crates/open-lineage/CHANGELOG.md"
-
-[[package]]
 name = "headwaters-neon"
 # A deployment artifact (the `.node` inside the Neon Function zip, built by
 # `just neon-build`), not a library: no version bumps, tags, or releases, and
@@ -131,5 +125,5 @@ commit_parsers = [
 # Strip the redundant "(scope)" from each rendered line — each crate's changelog
 # is already crate-scoped.
 commit_preprocessors = [
-  { pattern = '\((openlineage-client|client|datafusion-openlineage|open-lineage|headwaters|headwaters-proto|proto|headwaters-client|read-client|headwaters-cli|read-cli|cli|headwaters-neon|neon)\)', replace = "" },
+  { pattern = '\((client|headwaters|headwaters-proto|proto|headwaters-client|read-client|headwaters-cli|read-cli|cli|headwaters-neon|neon)\)', replace = "" },
 ]

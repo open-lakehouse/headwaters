@@ -19,14 +19,12 @@ just build          # cargo build --workspace --all-features
 just test           # cargo nextest run --workspace --all-features
 ```
 
-The default test run needs no services: live-integration tests are `#[ignore]`d
-and the offline OpenLineage spec-conformance suite validates against vendored
-JSON Schemas. The Docker-gated suites:
+The default test run needs no services: live-integration tests are `#[ignore]`d.
+The Docker-gated suites:
 
 ```sh
 just postgres-it    # headwaters read/projection tests (Postgres via testcontainers)
 just conformance-it # differential conformance against the real Marquez
-just marquez-it      # open-lineage acceptance test against the Marquez reference backend
 ```
 
 ## Local dev environment
@@ -49,7 +47,7 @@ the MSRV build. Run the same checks locally:
 cargo fmt --all
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo nextest run --workspace --all-features
-cargo doc --no-deps                  # must be warning-free (datafusion-openlineage ships to docs.rs)
+cargo doc --no-deps                  # must be warning-free (published crates ship to docs.rs)
 ```
 
 ### Protobuf changes

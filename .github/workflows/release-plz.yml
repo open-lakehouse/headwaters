@@ -3,10 +3,10 @@ name: Release-plz
 # Automated releases. On every push to `main`, release-plz opens/updates a
 # single "Release PR" containing per-crate version bumps + regenerated
 # changelogs. When that PR is merged, release-plz creates the per-crate git
-# tags + GitHub Releases. Both crates are versioned/tagged/released; they
-# diverge at publish: datafusion-openlineage publishes to crates.io, while
-# headwaters is `publish = false` (a deployable app) and instead has its
-# container image built by the `docker` job here.
+# tags + GitHub Releases. Crates diverge at publish: headwaters-proto and
+# headwaters-client publish to crates.io, while headwaters is `publish = false`
+# (a deployable app) and instead has its container image built by the `docker`
+# job here.
 # See release-plz.toml; CONTRIBUTING.md has the full flow.
 
 on:
