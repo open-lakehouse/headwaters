@@ -363,3 +363,12 @@ neon-migrate:
 # deploy the built bundle as a Neon Function (needs the `neon` CLI, logged in)
 neon-deploy slug="headwaters": neon-build
     neon functions deploy {{ slug }} --src {{ NEON_FN }}/dist --no-bundle --wait
+
+# The function projects on demand (ADR 0016): ingest settles via `waitUntil`,
+# and this every-minute trigger is the safety net that folds whatever an
+# evicted isolate left behind. Run once per branch.
+#
+# create the cron trigger that keeps the projection caught up
+neon-trigger slug="headwaters":
+    neon triggers create --function-slug {{ slug }} --name {{ slug }}-projection \
+        --cron '* * * * *' --function-path /internal/projection/run

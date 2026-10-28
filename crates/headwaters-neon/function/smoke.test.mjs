@@ -37,8 +37,8 @@ test("ingest, project, and read back over REST and ConnectRPC", async () => {
   });
   assert.equal(ingest.status, 202, await ingest.text());
 
-  // Writer flush + projector poll are each 500 ms by default. Read responses
-  // are proto3 JSON, which omits empty repeated fields.
+  // The handler settles after ingest (writer flush, default 500 ms, then a
+  // fold). Read responses are proto3 JSON, which omits empty repeated fields.
   let names = [];
   for (let i = 0; i < 40 && !names.includes(namespace); i++) {
     await new Promise((r) => setTimeout(r, 250));
@@ -56,4 +56,30 @@ test("ingest, project, and read back over REST and ConnectRPC", async () => {
   assert.equal(rpc.status, 200, await rpc.clone().text());
   const jobs = ((await rpc.json()).jobs ?? []).map((j) => j.name);
   assert.deepEqual(jobs, ["smoke_job"]);
+});
+
+test("a trigger delivery settles the projection", async () => {
+  const invocationId = randomUUID();
+  const res = await call("/internal/projection/run", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-neon-trigger-invocation-id": invocationId,
+    },
+    body: JSON.stringify({
+      version: 1,
+      invocation_id: invocationId,
+      trigger: { type: "schedule", id: "t", name: "headwaters-projection" },
+      data: { scheduled_at: new Date().toISOString() },
+    }),
+  });
+  assert.equal(res.status, 200, await res.clone().text());
+  const run = await res.json();
+  assert.equal(typeof run.applied, "number");
+  assert.equal(run.caughtUp, true);
+});
+
+test("without the trigger header the path is not mounted", async () => {
+  const res = await call("/internal/projection/run", { method: "POST" });
+  assert.equal(res.status, 404);
 });

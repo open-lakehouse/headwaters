@@ -34,7 +34,24 @@ just neon-test-arm64   # the deployable bundle, in node:24-bookworm-slim
 ```bash
 DATABASE_URL_UNPOOLED='postgres://…' just neon-migrate   # once per schema change; direct URL
 just neon-deploy                                          # or: just neon-deploy my-slug
+just neon-trigger                                         # once per branch; same slug
 ```
+
+## Projection
+
+Neon only keeps an isolate's work alive while it handles requests or has
+`waitUntil` work pending, so the function folds the event log on demand
+instead of in a background loop
+([ADR 0016](../../docs/adr/0016-projection-liveness-and-topology-on-neon.md)):
+
+- After each accepted ingest, the handler calls the addon's `settle`, which
+  waits for the writer to flush and then folds. It registers that work with
+  `waitUntil`, so the isolate stays alive until the fold finishes. Concurrent
+  ingests share one settle.
+- The `neon-trigger` cron (every minute) POSTs to `/internal/projection/run`.
+  The handler accepts it only when Neon's `X-Neon-Trigger-Invocation-Id`
+  header is present (Neon strips that header from client requests) and folds
+  for up to 50 s. This catches events left behind when an isolate is evicted.
 
 ## Runtime configuration
 
@@ -42,5 +59,7 @@ At runtime the function reads the same `HEADWATERS__*` env vars and
 `DATABASE_URL` as the standalone binary. Neon injects `DATABASE_URL` (pooled)
 and `DATABASE_URL_UNPOOLED` (direct). The direct URL is used only for the
 startup schema check, unless `HEADWATERS__POSTGRES__SCHEMA_CHECK_URL` is set.
-The bundled UI is never served. Logs follow `RUST_LOG` (default
+Projection defaults to `on_demand` here; set
+`HEADWATERS__POSTGRES__PROJECTION_MODE=background` to bring back the polling
+loop. The bundled UI is never served. Logs follow `RUST_LOG` (default
 `headwaters=info`).
