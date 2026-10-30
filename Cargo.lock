@@ -1483,6 +1483,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "headwaters-ui"
+version = "0.0.1"
+
+[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

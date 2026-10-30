@@ -68,20 +68,14 @@ CI fails if the committed output drifts from the `.proto` sources.
 
 The lineage UI (`node/`) is bundled into the `headwaters` Docker image, but it
 lives outside the crate, so release-plz — which decides a commit belongs to a
-crate by that crate's packaged files — can't see UI-only changes. Without a
-nudge, a UI change would ship into the image yet never bump `headwaters` or
-trigger a rebuild. `crates/headwaters/ui.lock` is a committed fingerprint of
-`node/` that closes the gap: regenerate it whenever you touch `node/` and commit
-it alongside, under a `feat`/`fix` commit so release-plz bumps `headwaters` and
-the Docker workflow rebuilds the image.
-
-```sh
-just ui-fingerprint   # after editing node/, regenerates crates/headwaters/ui.lock
-```
-
-CI (`ui-fingerprint`) fails if the lock is stale relative to `node/`. The UI
-packages keep their own version line in `node/`; this only routes UI changes
-into a `headwaters` release.
+crate by that crate's packaged files — can't see UI-only changes on its own. A
+placeholder crate at `node/Cargo.toml` (`headwaters-ui`, `git_only`, never
+published) owns every tracked file under `node/`, and `headwaters` lists it in
+`changelog_include` in `release-plz.toml`. A UI change therefore releases
+`headwaters-ui` and `headwaters` (at most a patch bump), and the headwaters tag
+rebuilds the Docker image. Nothing needs regenerating by hand. The UI packages
+keep their own version line in `node/`; this only routes UI changes into a
+`headwaters` release.
 
 ## Commit & PR conventions
 
