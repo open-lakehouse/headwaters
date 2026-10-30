@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.9](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.8...headwaters-v0.0.9) - 2026-10-30
+
+### Added
+
+- drive projection from waitUntil settles and a cron trigger (#74)
+- *(server)* add on-demand projection mode and trigger route (#73)
+- deploy headwaters as a Neon Function via a napi-rs addon (#66)
+- configurable UI base path (static prefix) (#45)
+- *(service)* serve the bundled web UI as static assets (#17)
+- hydrofoil-aligned theme tokens + dark mode toggle (#13)
+- rich demo lineage seed, Dockerized dev env, Marquez UI, graph fixes (#12)
+- lineage UI — reusable ConnectRPC components, scaffold app, Storybook (#11)
+
+### Changed
+
+- rename lineage-service component to headwaters (#19)
+
+### Fixed
+
+- *(server)* project only below the visibility watermark (#72)
+- *(server)* lock the projection cursor so concurrent projectors don't re-fold (#67)
+
 ## [0.0.8](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.7...headwaters-v0.0.8) - 2026-07-03
 
 ### Fixed
