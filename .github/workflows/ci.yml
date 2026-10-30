@@ -86,7 +86,7 @@ jobs:
       # keep this job seconds-fast for the quickest possible style feedback.
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          toolchain: "1.96"
+          toolchain: "1.99"
           components: rustfmt
 
       - name: Format
@@ -126,7 +126,7 @@ jobs:
       # job below.
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          toolchain: "1.96"
+          toolchain: "1.99"
           components: clippy
 
       # cedar-policy's build script compiles .proto schemas via prost-build,
@@ -216,7 +216,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          toolchain: "1.96"
+          toolchain: "1.99"
           components: rustfmt
 
       # The only local codegen plugin `buf generate` invokes (the buffa and
@@ -257,7 +257,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          toolchain: "1.96"
+          toolchain: "1.99"
 
       - name: Install protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
@@ -333,10 +333,10 @@ jobs:
           components: llvm-tools-preview
 
       # llvm-tools-preview ships the profdata tooling cargo-llvm-cov needs.
-      # Installed after nightly so "1.96" remains the default toolchain.
+      # Installed after nightly so "1.99" remains the default toolchain.
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          toolchain: "1.96"
+          toolchain: "1.99"
           components: llvm-tools-preview
 
       - name: Install protoc
