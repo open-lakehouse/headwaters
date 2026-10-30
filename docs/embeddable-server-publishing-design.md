@@ -218,8 +218,10 @@ Files: `release-plz.toml`, `.github/workflows/release-plz.yml`,
   `CONTRIBUTING.md` to describe the new path: headwaters publishes, its tag
   triggers Docker.
 - **Confirm UI/Docker coupling is unaffected:** the Docker build still builds the
-  bundled UI and `crates/headwaters/ui.lock` / `just ui-fingerprint` still gates
-  it. Publishing changes only what *triggers* the image build, not the build.
+  bundled UI, and UI changes still release headwaters through the
+  `headwaters-ui` placeholder crate and `changelog_include` (this replaced the
+  original `crates/headwaters/ui.lock` fingerprint). Publishing changes only
+  what *triggers* the image build, not the build.
 
 ## Out of scope (deferred)
 

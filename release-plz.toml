@@ -17,10 +17,12 @@
 #     (not the registry), and its git tag `headwaters-v<version>` triggers the
 #     Docker image build/push to GHCR (see release-plz.yml ->
 #     .github/workflows/docker-release.yml). Its bundled UI participates via
-#     crates/headwaters/ui.lock — see `just ui-fingerprint`.
+#     the `headwaters-ui` placeholder and `changelog_include` — see below.
 #   - headwaters-cli         -> `git_only = true`, like headwaters (no Docker).
 #   - headwaters-neon        -> `release = false`: not versioned, tagged or
 #     published yet.
+#   - headwaters-ui          -> `git_only = true`: a placeholder crate at
+#     node/Cargo.toml for the bundled UI; tagged only, never published.
 #
 # Config reference: https://release-plz.dev/docs/config
 
@@ -80,6 +82,12 @@ name = "headwaters"
 # is `publish = true`), so both are pinned here.
 git_only = true
 publish = false
+# The Docker image bakes in the lineage UI built from node/, which lives outside
+# this crate. Commits to the `headwaters-ui` placeholder (every tracked file
+# under node/) release headwaters too, at most as a patch bump, so a UI-only
+# change still produces a headwaters tag and a Docker rebuild. (This replaced
+# the crates/headwaters/ui.lock fingerprint; it needs release-plz >= 0.4.1.)
+changelog_include = ["headwaters-ui"]
 
 [[package]]
 name = "headwaters-cli"
@@ -89,6 +97,19 @@ name = "headwaters-cli"
 # Flip to crates.io publishing later if `cargo install headwaters-cli` is wanted.
 git_only = true
 publish = false
+
+[[package]]
+name = "headwaters-ui"
+# The lineage UI bundled into the headwaters image, through its placeholder
+# crate at node/Cargo.toml. It only exists so headwaters' `changelog_include`
+# sees UI commits; release-plz needs it to take part in the release for that, so
+# it is `git_only` (versioned from `headwaters-ui-v*` tags) rather than
+# `release = false`. Nothing is published, and the tag is enough — no GitHub
+# release. It has no Rust API for cargo-semver-checks to compare.
+git_only = true
+publish = false # required alongside git_only
+semver_check = false
+git_release_enable = false
 
 [[package]]
 name = "headwaters-neon"
@@ -125,5 +146,5 @@ commit_parsers = [
 # Strip the redundant "(scope)" from each rendered line — each crate's changelog
 # is already crate-scoped.
 commit_preprocessors = [
-  { pattern = '\((client|headwaters|headwaters-proto|proto|headwaters-client|read-client|headwaters-cli|read-cli|cli|headwaters-neon|neon)\)', replace = "" },
+  { pattern = '\((client|headwaters|headwaters-proto|proto|headwaters-client|read-client|headwaters-cli|read-cli|cli|headwaters-neon|neon|headwaters-ui|ui)\)', replace = "" },
 ]

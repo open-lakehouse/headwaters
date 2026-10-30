@@ -5,7 +5,7 @@
 # git-pinned delta-rs / unitycatalog-rs forks resolve from there, so no sibling
 # checkouts are needed. cargo-chef caches the dependency graph as a separate
 # layer so source edits don't trigger a full dependency rebuild.
-ARG RUST_TAG=1.96-bookworm
+ARG RUST_TAG=1.99-bookworm
 
 FROM rust:${RUST_TAG} AS chef
 # protoc is available at build time for any transitive build script that shells

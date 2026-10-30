@@ -37,13 +37,12 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       proto: ${{ steps.filter.outputs.proto }}
-      ui: ${{ steps.filter.outputs.ui }}
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           # `code` is true when ANY changed path is NOT one of these docs/meta
@@ -65,9 +64,6 @@ jobs:
               - 'buf.lock'
               - 'crates/headwaters/src/proto/**'
               - 'crates/headwaters/src/connect_gen/**'
-            ui:
-              - 'node/**'
-              - 'crates/headwaters/ui.lock'
 
   # fmt, clippy, test and coverage are independent jobs that run in parallel.
   # Splitting them (rather than one sequential job) means a clippy or fmt failure
@@ -82,15 +78,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       # fmt only parses source, so it needs no protoc and no build cache —
       # keep this job seconds-fast for the quickest possible style feedback.
-      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          toolchain: "1.96"
+          toolchain: "1.99"
           components: rustfmt
 
       - name: Format
@@ -106,7 +102,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -121,16 +117,16 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       # clippy runs on a recent pinned stable for the best lints; the declared
       # MSRV floor (workspace rust-version) is verified separately by the `msrv`
       # job below.
-      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          toolchain: "1.96"
+          toolchain: "1.99"
           components: clippy
 
       # cedar-policy's build script compiles .proto schemas via prost-build,
@@ -146,7 +142,7 @@ jobs:
       # Caches ~/.cargo and ./target keyed on the lockfile. clippy and test share
       # the "ci" shared-key so they reuse one warmed target/; only main writes the
       # cache (save-if) so parallel PR jobs don't thrash each other's entry.
-      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: ci
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -170,13 +166,13 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       # Pinned to the workspace's declared rust-version. Bump in lock-step with
       # Cargo.toml's `rust-version` so this job tests exactly what we promise.
-      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: "1.94"
 
@@ -186,7 +182,7 @@ jobs:
           version: "31.1"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: msrv
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -210,7 +206,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -218,9 +214,9 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          toolchain: "1.96"
+          toolchain: "1.99"
           components: rustfmt
 
       # The only local codegen plugin `buf generate` invokes (the buffa and
@@ -243,30 +239,6 @@ jobs:
             exit 1
           fi
 
-  # The bundled lineage UI (node/) ships inside the headwaters Docker image but
-  # lives outside the crate, so release-plz can't see UI changes. crates/
-  # headwaters/ui.lock is a fingerprint of node/ that lives in the crate; a UI
-  # change must land with its regenerated lock so release-plz bumps headwaters
-  # and the Docker image rebuilds. Fail if the committed lock is stale — same
-  # "regenerate and diff" pattern as proto-check. See `just ui-fingerprint`.
-  ui-fingerprint:
-    name: ui-fingerprint
-    needs: changes
-    if: ${{ needs.changes.outputs.ui == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-
-      - uses: extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff # v3.0.0
-
-      - name: Check UI fingerprint is up to date
-        run: just ui-fingerprint-check
-
   test:
     name: test
     # Skip on docs-only PRs (no code change can move test results).
@@ -279,13 +251,13 @@ jobs:
       # dorny/test-reporter publishes a check run with the parsed JUnit results.
       checks: write
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          toolchain: "1.96"
+          toolchain: "1.99"
 
       - name: Install protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
@@ -293,13 +265,13 @@ jobs:
           version: "31.1"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: ci
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # Prebuilt binary (no compile); the ci profile emits JUnit XML.
-      - uses: taiki-e/install-action@8b3c737da4b541bf0fb5a3e0488ff20535badac9 # v2.82.1
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: cargo-nextest
 
@@ -329,7 +301,7 @@ jobs:
           reporter: jest-junit
 
       - name: Upload JUnit artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:
           name: junit-results
@@ -346,7 +318,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -355,16 +327,16 @@ jobs:
       # compiler accepts. Install nightly so the doctest coverage step can run
       # via `cargo +nightly`. Stable is installed last below so it stays the
       # default toolchain for the nextest run.
-      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: nightly
           components: llvm-tools-preview
 
       # llvm-tools-preview ships the profdata tooling cargo-llvm-cov needs.
-      # Installed after nightly so "1.96" remains the default toolchain.
-      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+      # Installed after nightly so "1.99" remains the default toolchain.
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          toolchain: "1.96"
+          toolchain: "1.99"
           components: llvm-tools-preview
 
       - name: Install protoc
@@ -375,12 +347,12 @@ jobs:
 
       # Coverage recompiles with -C instrument-coverage, so it cannot reuse the
       # test/clippy "ci" cache — give it its own shared-key.
-      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: coverage
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - uses: taiki-e/install-action@8b3c737da4b541bf0fb5a3e0488ff20535badac9 # v2.82.1
+      - uses: taiki-e/install-action@86f7a0ffb25f40114606501a311ebcfaf882ea32 # v2.88.0
         with:
           tool: cargo-llvm-cov,cargo-nextest
 
@@ -411,7 +383,7 @@ jobs:
       # fails CI on a flaky upload, and codecov.yml keeps the status
       # informational so it can't block a PR.
       - name: Upload to Codecov
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: codecov.json
           fail_ci_if_error: false
@@ -425,7 +397,7 @@ jobs:
   ci:
     name: ci
     if: ${{ always() }}
-    needs: [fmt, machete, clippy, msrv, proto-check, ui-fingerprint, test, coverage]
+    needs: [fmt, machete, clippy, msrv, proto-check, test, coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -441,7 +413,6 @@ jobs:
             "clippy:${{ needs.clippy.result }}" \
             "msrv:${{ needs.msrv.result }}" \
             "proto-check:${{ needs.proto-check.result }}" \
-            "ui-fingerprint:${{ needs.ui-fingerprint.result }}" \
             "test:${{ needs.test.result }}" \
             "coverage:${{ needs.coverage.result }}"; do
             name="${r%%:*}"; result="${r##*:}"

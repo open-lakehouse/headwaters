@@ -1,0 +1,36 @@
+# A placeholder crate that ties the bundled lineage UI (the npm workspace under
+# node/) to the headwaters release. The headwaters Docker image bakes in the SPA
+# built from node/, but release-plz only understands Cargo packages and decides
+# a package has changed from the files `cargo package --list` reports, so a
+# node/ change never touched the headwaters crate on its own.
+#
+# This manifest sits at node/ so its package fileset is every git-tracked file
+# under node/ (stories and tests excluded below). Any UI change therefore
+# releases this crate, and headwaters' `changelog_include = ["headwaters-ui"]`
+# in release-plz.toml makes that release headwaters too (at most a patch bump),
+# whose tag drives the Docker build. This replaces the old
+# crates/headwaters/ui.lock fingerprint.
+#
+# It is never published to crates.io (`publish = false`, and `git_only` in
+# release-plz.toml). release-plz bumps its version, writes CHANGELOG.md, and
+# tags `headwaters-ui-v<version>`; nothing is published for it. The npm
+# packages keep their own version line in their package.json files.
+
+[package]
+name = "headwaters-ui"
+version = "0.0.1"
+description = "Release placeholder for the lineage UI bundled into the headwaters image"
+publish = false
+readme = "README.md"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+# Stories and tests never reach the bundle.
+exclude = ["**/*.stories.tsx", "**/*.test.ts", "**/*.test.tsx"]
+
+[lib]
+path = "release.rs"
