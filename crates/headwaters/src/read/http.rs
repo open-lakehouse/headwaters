@@ -23,26 +23,26 @@ use crate::proto::headwaters::read::v1 as pb;
 /// rather than nested, so its `GET /api/v1/lineage` coexists with the ingest
 /// side's `POST /api/v1/lineage`.
 pub fn router(store: LineageStore) -> Router {
-    // NOTE: axum 0.7 path captures use the `:param` syntax (`{param}` is a
-    // literal segment here — that changed in axum 0.8). Keep these as `:param`
-    // until the crate moves to axum 0.8.
     Router::new()
         .route("/api/v1/namespaces", get(list_namespaces))
         .route("/api/v1/jobs", get(list_all_jobs))
         .route("/api/v1/datasets", get(list_all_datasets))
-        .route("/api/v1/namespaces/:namespace/jobs", get(list_jobs))
-        .route("/api/v1/namespaces/:namespace/jobs/:job", get(get_job))
+        .route("/api/v1/namespaces/{namespace}/jobs", get(list_jobs))
+        .route("/api/v1/namespaces/{namespace}/jobs/{job}", get(get_job))
         .route(
-            "/api/v1/namespaces/:namespace/jobs/:job/runs",
+            "/api/v1/namespaces/{namespace}/jobs/{job}/runs",
             get(get_job_runs),
         )
-        .route("/api/v1/namespaces/:namespace/datasets", get(list_datasets))
         .route(
-            "/api/v1/namespaces/:namespace/datasets/:dataset",
+            "/api/v1/namespaces/{namespace}/datasets",
+            get(list_datasets),
+        )
+        .route(
+            "/api/v1/namespaces/{namespace}/datasets/{dataset}",
             get(get_dataset),
         )
         .route(
-            "/api/v1/namespaces/:namespace/datasets/:dataset/versions",
+            "/api/v1/namespaces/{namespace}/datasets/{dataset}/versions",
             get(get_dataset_versions),
         )
         .route("/api/v1/search", get(search))
@@ -50,18 +50,18 @@ pub fn router(store: LineageStore) -> Router {
         // Events page: a paginated scan of the raw OpenLineage event log.
         .route("/api/v1/events/lineage", get(list_events))
         // Run-detail facets tab.
-        .route("/api/v1/jobs/runs/:run_id/facets", get(get_run_facets))
+        .route("/api/v1/jobs/runs/{run_id}/facets", get(get_run_facets))
         // Dataset column-lineage view, served from the latest stored
         // column-lineage facet of the addressed dataset (empty graph, not
         // 404, when there is none).
         .route("/api/v1/column-lineage", get(column_lineage))
         // Home-page activity charts: time-bucketed counts off the event log.
         .route("/api/v1/stats/lineage-events", get(stats_lineage_events))
-        .route("/api/v1/stats/:asset", get(stats_asset))
+        .route("/api/v1/stats/{asset}", get(stats_asset))
         // Tag catalog the UI fetches on load.
         .route("/api/v1/tags", get(list_tags))
         // Tag/PII propagation: the fields reachable downstream from a tag.
-        .route("/api/v1/tags/:tag/downstream", get(tag_downstream))
+        .route("/api/v1/tags/{tag}/downstream", get(tag_downstream))
         // Normalize JSON responses so the upstream Marquez web UI (which assumes
         // empty arrays like `tags`/`inputs` are always present) doesn't crash on
         // proto3-JSON's omitted-empty fields. Additive only — a no-op for our own

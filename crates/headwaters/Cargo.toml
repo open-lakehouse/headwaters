@@ -35,7 +35,7 @@ clap = { version = "4", features = ["derive", "env", "wrap_help"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
-axum = "0.7"
+axum = "0.8"
 # `fs` provides ServeDir/ServeFile for serving the bundled SPA (see http.rs).
 tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 # `ServiceBuilder` composes the UI base-path prefix-stripping layer ahead of the

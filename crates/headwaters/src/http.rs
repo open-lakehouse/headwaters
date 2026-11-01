@@ -140,10 +140,8 @@ fn router_in(state: AppState, ui_dir: impl AsRef<Path>, base_path: &str, serve_u
         // Mount the Connect dispatcher under its own path prefix. `route_service`
         // (not `nest_service`) keeps the full URI intact, which the dispatcher
         // needs since it routes on the fully-qualified `service/method` path.
-        // axum 0.7 catch-all syntax is `/*param` (`{*param}` is 0.8); keep this in
-        // step with the `:param` captures in `read::http` until the crate moves.
         .route_service(
-            &format!("{CONNECT_PREFIX}/*rest"),
+            &format!("{CONNECT_PREFIX}/{{*rest}}"),
             connect_router.into_axum_service(),
         );
 
