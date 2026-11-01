@@ -7,8 +7,8 @@
 # topological order. PR titles are gated by .github/workflows/pr-title.yml; see
 # CONTRIBUTING.md for the end-to-end flow.
 #
-# Crates are versioned, changelogged, tagged and GitHub-released (except
-# headwaters-neon) — but they diverge at the publish step:
+# Crates are versioned, changelogged, tagged and GitHub-released, but they
+# diverge at the publish step:
 #   - headwaters-proto       -> published to crates.io (generated proto + stubs).
 #   - headwaters-client      -> published to crates.io (depends on headwaters-proto,
 #     so release-plz publishes the proto crate first).
@@ -19,8 +19,6 @@
 #     .github/workflows/docker-release.yml). Its bundled UI participates via
 #     the `headwaters-ui` placeholder and `changelog_include` — see below.
 #   - headwaters-cli         -> `git_only = true`, like headwaters (no Docker).
-#   - headwaters-neon        -> `release = false`: not versioned, tagged or
-#     published yet.
 #   - headwaters-ui          -> `git_only = true`: a placeholder crate at
 #     node/Cargo.toml for the bundled UI; tagged only, never published.
 #
@@ -111,17 +109,6 @@ publish = false # required alongside git_only
 semver_check = false
 git_release_enable = false
 
-[[package]]
-name = "headwaters-neon"
-# A deployment artifact (the `.node` inside the Neon Function zip, built by
-# `just neon-build`), not a library: no version bumps, tags, or releases, and
-# not published to crates.io while its design settles. `release = false` alone
-# is not enough: release-plz still checks the [workspace] default
-# `publish = true` against Cargo.toml's `publish = false` and aborts the whole
-# run, so `publish = false` is pinned here too.
-release = false
-publish = false
-
 # ---------------------------------------------------------------------------
 # Changelog rendering (git-cliff, embedded). Conventional-commit grouping.
 # Because commits use crate scopes (feat(client): ...), each crate's changelog
@@ -146,5 +133,5 @@ commit_parsers = [
 # Strip the redundant "(scope)" from each rendered line — each crate's changelog
 # is already crate-scoped.
 commit_preprocessors = [
-  { pattern = '\((client|headwaters|headwaters-proto|proto|headwaters-client|read-client|headwaters-cli|read-cli|cli|headwaters-neon|neon|headwaters-ui|ui)\)', replace = "" },
+  { pattern = '\((client|headwaters|headwaters-proto|proto|headwaters-client|read-client|headwaters-cli|read-cli|cli|headwaters-ui|ui)\)', replace = "" },
 ]

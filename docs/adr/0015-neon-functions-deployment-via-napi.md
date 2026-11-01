@@ -3,6 +3,11 @@
 > Status: **Accepted** (2026-10). Adds `crates/headwaters-neon` and the
 > `headwaters::embed` module. Sizes below were measured on 2026-10-27 with
 > rustc 1.99.1 and cargo-zigbuild 0.23.4.
+>
+> Since 2026-11 `headwaters-neon` lives in
+> [luminescent-lakehouse](https://github.com/open-lakehouse/luminescent-lakehouse)
+> with the other Neon hosts, on a pinned git rev of this repository.
+> `headwaters::embed` stays here.
 
 ## Context
 
