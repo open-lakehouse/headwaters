@@ -317,6 +317,13 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    env:
+      # Pinned rather than floating `nightly`, so an upstream compiler
+      # regression can't turn main red overnight (nightly-2026-11-01 fails to
+      # build sqlx-core 0.8.6 with an E0391 "needs async drop" query cycle).
+      # Bump deliberately; the toolchain install and every `cargo +…` call
+      # below read this one value.
+      NIGHTLY: nightly-2026-10-31
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -325,11 +332,11 @@ jobs:
       # Doctest coverage (`--doc` / `report --doctests`) relies on
       # `-Z unstable-options --persist-doctests`, which only the nightly
       # compiler accepts. Install nightly so the doctest coverage step can run
-      # via `cargo +nightly`. Stable is installed last below so it stays the
+      # via `cargo +$NIGHTLY`. Stable is installed last below so it stays the
       # default toolchain for the nextest run.
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          toolchain: nightly
+          toolchain: ${{ env.NIGHTLY }}
           components: llvm-tools-preview
 
       # llvm-tools-preview ships the profdata tooling cargo-llvm-cov needs.
@@ -372,9 +379,9 @@ jobs:
       # keeps the uploaded artifact honest too. Keep the two in sync.
       - name: Collect coverage
         run: |
-          cargo +nightly llvm-cov --no-report nextest --workspace --all-features
-          cargo +nightly llvm-cov --no-report --doc --workspace --all-features
-          cargo +nightly llvm-cov report --doctests --codecov --output-path codecov.json \
+          cargo "+$NIGHTLY" llvm-cov --no-report nextest --workspace --all-features
+          cargo "+$NIGHTLY" llvm-cov --no-report --doc --workspace --all-features
+          cargo "+$NIGHTLY" llvm-cov report --doctests --codecov --output-path codecov.json \
             --ignore-filename-regex 'headwaters/src/(proto/[^/]+\.v1\.rs|connect_gen/|main\.rs|projection/applier\.rs)'
 
       # Codecov rejects tokenless uploads for this repo
