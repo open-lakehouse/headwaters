@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.10](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.9...headwaters-v0.0.10) - 2026-11-01
+
+### Chore
+
+- *(server)* [**breaking**] upgrade axum 0.7 → 0.8 (#81)
+
 ## [0.0.9](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.8...headwaters-v0.0.9) - 2026-10-30
 
 ### Added

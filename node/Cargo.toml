@@ -18,7 +18,7 @@
 
 [package]
 name = "headwaters-ui"
-version = "0.0.1"
+version = "0.0.2"
 description = "Release placeholder for the lineage UI bundled into the headwaters image"
 publish = false
 readme = "README.md"
