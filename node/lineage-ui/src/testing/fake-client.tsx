@@ -2,7 +2,7 @@
 // components inject their client via ReadClientProvider, so a fake client is all
 // it takes to drive them with fixtures — no transport, no network, no MSW.
 
-import type { ReadClient } from "@headwaters/lineage-client";
+import type { ReadClient } from "@open-lakehouse/lineage-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { ReadClientProvider } from "../hooks/client-context.js";

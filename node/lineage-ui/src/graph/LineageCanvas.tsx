@@ -1,4 +1,4 @@
-import type { LineageGraph, LineageNode } from "@headwaters/lineage-client";
+import type { LineageGraph, LineageNode } from "@open-lakehouse/lineage-client";
 import {
   Background,
   type ColorMode,

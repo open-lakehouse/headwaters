@@ -231,9 +231,13 @@ ui-dev:
 ui-sb:
     cd node && npm run storybook
 
-# typecheck + lint the whole node workspace (what CI gates on)
+# typecheck + lint + unit-test the whole node workspace (what CI gates on)
 ui-check:
-    cd node && npm run typecheck && npm run lint:ci
+    cd node && npm run typecheck && npm run lint:ci && npm test
+
+# run the node workspace's unit tests (vitest)
+ui-test *args:
+    cd node && npm test -- {{ args }}
 
 # build the SPA into static assets (node/app/dist).
 ui-build:

@@ -1,6 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defaultClientConditions, defineConfig } from "vite";
 
 // A local headwaters instance (`just lineage`, default :8091) serves both the REST
 // read API and the ConnectRPC read API on one port. In dev we proxy the
@@ -18,6 +18,12 @@ export default defineConfig({
   // HEADWATERS__UI__BASE_PATH at runtime without rebuilding the bundle.
   base: "./",
   plugins: [react(), tailwindcss()],
+  // The workspace packages export their sources under the `headwaters-source`
+  // condition, so the app (and Storybook, which reuses this config) builds from
+  // `src/` without building the packages first. It is repo-specific on purpose:
+  // a generic `source` would also pick up dependencies' published sources
+  // (`@open-lakehouse/host` ships one) and compile them without their tsconfig.
+  resolve: { conditions: ["headwaters-source", ...defaultClientConditions] },
   server: {
     port: 3010,
     proxy: {

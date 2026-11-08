@@ -1,24 +1,32 @@
-// Pluggable ConnectRPC transport registry — the single seam that lets a host
-// environment route the read API's RPC calls somewhere other than the network,
-// WITHOUT the UI taking on any dependency on that host.
+// How the read API's RPCs reach headwaters. The lineage UI never constructs a
+// transport; it calls a client over `clientTransport` (or over
+// `transportFor(host)`), which picks the transport again on every call:
 //
-// By default this speaks Connect over the platform fetch against the current
-// origin, so a normal web build behaves exactly as a direct client. A host can
-// call `registerTransport` before the UI bootstraps to swap in its own
-// implementation:
-//   - the scaffold app registers a `createConnectTransport({ baseUrl })`;
-//   - Storybook registers an in-memory fixture transport;
-//   - hydrofoil (later) registers its own transport pointed at its gateway.
+//   1. a transport passed explicitly to `createReadClient(transport)`
+//      (that one never comes through here);
+//   2. the one installed with `registerTransport`, the explicit override a host
+//      can still use (the standalone app does, to root RPCs at its base path);
+//   3. the `headwaters` binding of the `@open-lakehouse/host` host: its
+//      ConnectRPC `transport`, or else Connect over its `fetch`;
+//   4. with no host at all, Connect over the platform fetch against the page's
+//      own origin.
 //
-// `lineage-ui` components NEVER construct a transport — they read `clientTransport`
-// (via `createReadClient`). This file is the only place that knows how RPCs reach
-// the wire, so the path is fully replaceable.
-//
-// Deliberately framework-agnostic: no `import.meta.env`, no globals beyond the
-// default transport's fetch.
+// A host that is there but doesn't bind headwaters fails the call with the
+// host's `ServiceUnavailableError` rather than guessing an origin. Since every
+// call resolves again, registering a transport or a host before or after a
+// client is built, or switching environments, needs no new client.
 
 import type { Transport } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
+import {
+  getHost,
+  type LakehouseHost,
+  type ServiceBinding,
+  ServiceUnavailableError,
+} from "@open-lakehouse/host";
+
+/** The trestle catalog module id headwaters is bound under. */
+export const HEADWATERS_MODULE_ID = "headwaters";
 
 /**
  * Build a Connect-over-fetch transport rooted at `baseUrl` (default `"/"`, the
@@ -32,33 +40,73 @@ export function createDefaultTransport(baseUrl = "/"): Transport {
   return createConnectTransport({ baseUrl });
 }
 
-// Default: Connect-over-fetch against the current origin. An empty base resolves
-// against the dev origin; a Vite proxy forwards the RPC path prefix
-// (/headwaters.read.v1.ReadService/*) to headwaters. See the app's
-// vite.config.ts.
+// Without a host, the page's own origin; a Vite proxy forwards the RPC path
+// prefix (/headwaters.read.v1.ReadService/*) to headwaters in dev (see the
+// app's vite.config.ts).
 const defaultTransport: Transport = createDefaultTransport();
 
-let currentTransport: Transport = defaultTransport;
+let registered: Transport | null = null;
 
-/** Install a custom transport. Hosts call this once, before the UI bootstraps. */
-export function registerTransport(t: Transport): void {
-  currentTransport = t;
+/**
+ * Install a transport that wins over the host's binding, or clear it with
+ * `null`. Hosts that implement `@open-lakehouse/host` don't need this.
+ */
+export function registerTransport(transport: Transport | null): void {
+  registered = transport;
 }
 
-/** The transport currently in effect (the registered one, or the default). */
+// Connect over a binding's `fetch`, built once per binding. The read API's
+// paths sit at the binding's root: `/headwaters.read.v1.ReadService/<method>`.
+const overFetch = new WeakMap<ServiceBinding, Transport>();
+
+function bindingTransport(binding: ServiceBinding): Transport {
+  // The host types `transport` structurally; any connect v2 Transport fits.
+  if (binding.transport) return binding.transport as Transport;
+  let transport = overFetch.get(binding);
+  if (!transport) {
+    transport = createConnectTransport({ baseUrl: "", fetch: binding.fetch });
+    overFetch.set(binding, transport);
+  }
+  return transport;
+}
+
+/** The transport for the next call, given the host in effect (if any). */
+function resolve(host: LakehouseHost | null): Transport {
+  if (registered) return registered;
+  if (!host) return defaultTransport;
+  const binding = host.services.get(HEADWATERS_MODULE_ID);
+  if (!binding) {
+    throw new ServiceUnavailableError(
+      HEADWATERS_MODULE_ID,
+      "the current environment doesn't bind it",
+    );
+  }
+  return bindingTransport(binding);
+}
+
+/**
+ * A transport that resolves on every call, against `host` when one is given
+ * (a `<HostProvider>`'s, say) and against the registered host otherwise.
+ */
+export function transportFor(host?: LakehouseHost): Transport {
+  const current = () => resolve(host ?? getHost());
+  return {
+    async unary(...args) {
+      return current().unary(...args);
+    },
+    async stream(...args) {
+      return current().stream(...args);
+    },
+  };
+}
+
+/**
+ * The transport a call through `clientTransport` would use now. Throws
+ * `ServiceUnavailableError` when the registered host doesn't bind headwaters.
+ */
 export function getTransport(): Transport {
-  return currentTransport;
+  return resolve(getHost());
 }
 
-// Stable, late-binding transport handed to ConnectRPC clients. Each method
-// dereferences `currentTransport` on every call, so registration order relative
-// to client construction never matters — a host can register before OR after the
-// client is created and still take effect.
-export const clientTransport: Transport = {
-  unary(...args) {
-    return currentTransport.unary(...args);
-  },
-  stream(...args) {
-    return currentTransport.stream(...args);
-  },
-};
+/** The late-binding transport `createReadClient()` uses by default. */
+export const clientTransport: Transport = transportFor();

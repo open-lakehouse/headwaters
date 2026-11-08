@@ -3,7 +3,7 @@
 // the graph treats it as typed-on-read: small, defensive accessors pull out only
 // the fields the nodes render, tolerating missing keys.
 
-import type { LineageGraph, LineageNode } from "@headwaters/lineage-client";
+import type { LineageGraph, LineageNode } from "@open-lakehouse/lineage-client";
 
 /** The node kinds the read API emits in a lineage graph. */
 export type LineageNodeKind = "JOB" | "DATASET" | "DATASET_FIELD";

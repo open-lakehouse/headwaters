@@ -43,6 +43,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+# `tsc -b` (the typecheck) declaration output; publish builds go to dist/.
+.tsbuild
 # Staged SPA bundle for `just lineage-ui` (served from ./web; see UI_DIR in
 # crates/headwaters/src/http.rs).
 /web

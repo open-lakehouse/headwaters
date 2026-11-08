@@ -12,7 +12,7 @@ import type {
   ListRunsResponse,
   SearchResponse,
   StatsResponse,
-} from "@headwaters/lineage-client";
+} from "@open-lakehouse/lineage-client";
 import { type UseQueryResult, useQuery } from "@tanstack/react-query";
 import { useReadClient } from "./client-context.js";
 

@@ -1,4 +1,4 @@
-import type { StatBucket } from "@headwaters/lineage-client";
+import type { StatBucket } from "@open-lakehouse/lineage-client";
 
 export interface StatsViewProps {
   title: string;

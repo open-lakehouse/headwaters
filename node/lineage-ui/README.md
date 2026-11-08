@@ -5,7 +5,7 @@ Composable, host-agnostic React components for the Headwaters lineage read API.
 This is the reusable feature package — the analog of hydrofoil's `unity-catalog`
 feature. The scaffold app (`node/app`) is one host; **hydrofoil (or any app) can
 mount these same components** by depending on this package and
-`@headwaters/lineage-client`, with zero changes here.
+`@open-lakehouse/lineage-client`, with zero changes here.
 
 ## The integration contract
 
@@ -48,14 +48,14 @@ enforces this for in-repo consumers.
 ## How a host mounts it
 
 Components never construct a transport or a client — they read the injected
-`ReadClient`, which itself rides `@headwaters/lineage-client`'s late-binding
+`ReadClient`, which itself rides `@open-lakehouse/lineage-client`'s late-binding
 transport seam. A host wires it up once:
 
 ```tsx
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import { ReadClientProvider, LineageView } from "@headwaters/lineage-ui";
 // optional: point the client somewhere other than the current origin
-import { registerTransport } from "@headwaters/lineage-client";
+import { registerTransport } from "@open-lakehouse/lineage-client";
 import { createConnectTransport } from "@connectrpc/connect-web";
 
 // 1. (optional) register a transport before mount — e.g. a host gateway.

@@ -1,4 +1,4 @@
-import type { RunDetail } from "@headwaters/lineage-client";
+import type { RunDetail } from "@open-lakehouse/lineage-client";
 import { RunStateBadge } from "../components/ui/RunStateBadge.js";
 
 function duration(ms: bigint): string {

@@ -6,7 +6,7 @@ Rust service and proto (mirrors the layout in the sibling `hydrofoil` and
 
 | Package | What it is |
 | --- | --- |
-| [`@headwaters/lineage-client`](./lineage-client) | Generated ConnectRPC TypeScript client + types for the read API, plus the late-binding transport seam. The analog of hydrofoil's `uc-client`. Generated code is committed under `src/gen/`. |
+| [`@open-lakehouse/lineage-client`](./lineage-client) | Generated ConnectRPC TypeScript client + types for the read API. Calls reach headwaters through the [`@open-lakehouse/host`](https://github.com/open-lakehouse/trestle/tree/main/node/host) binding, or a `registerTransport` override; see its [README](./lineage-client/README.md). Generated code is committed under `src/gen/`. |
 | [`@headwaters/lineage-ui`](./lineage-ui) | The reusable React feature: graph canvas, browsers, detail panels, search, stats. The integration surface a host (e.g. hydrofoil) consumes. See its [README](./lineage-ui/README.md) for the public/internal contract. |
 | `@headwaters/lineage-app` (`app/`) | A thin scaffold app + Storybook. Runs against a local `headwaters` instance. |
 
@@ -23,7 +23,7 @@ DATABASE_URL=postgres://… just lineage   # start headwaters on :8091 (separate
 just ui-dev                  # Vite dev server on :3010, proxying ConnectRPC to :8091
 
 just ui-sb                   # Storybook (mocked, no backend)
-just ui-check                # tsc -b + biome (what CI gates on)
+just ui-check                # tsc -b + biome + vitest (what CI gates on)
 
 # or serve the built UI + API from one origin, the way production does:
 DATABASE_URL=postgres://… just lineage-ui   # builds the app, stages it at ./web,

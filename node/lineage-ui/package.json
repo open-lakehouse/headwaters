@@ -13,7 +13,7 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@headwaters/lineage-client": "*",
+    "@open-lakehouse/lineage-client": "*",
     "@tanstack/react-query": "^5.100.0",
     "@xyflow/react": "^12.4.0",
     "clsx": "^2.1.1",
