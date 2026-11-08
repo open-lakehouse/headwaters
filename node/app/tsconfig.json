@@ -5,6 +5,7 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "esnext",
     "moduleResolution": "bundler",
+    "customConditions": ["headwaters-source"],
     "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,

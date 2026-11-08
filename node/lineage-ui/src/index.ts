@@ -13,7 +13,7 @@ export type {
   RunDetail,
   SearchResult,
   StatBucket,
-} from "@headwaters/lineage-client";
+} from "@open-lakehouse/lineage-client";
 export type { DatasetBrowserProps } from "./browser/DatasetBrowser.js";
 // --- browsers ---
 export { DatasetBrowser } from "./browser/DatasetBrowser.js";

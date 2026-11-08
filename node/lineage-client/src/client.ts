@@ -3,9 +3,9 @@
 // `lineage-ui` and the scaffold app obtain a client via `createReadClient()` and
 // call methods like `client.listJobs({ limit: 50 })` or
 // `client.getLineage({ nodeId, depth: 10 })`. Every call routes through
-// `clientTransport`, the late-binding seam in transport.ts, so the same client
-// works against the network, Storybook fixtures, or a host gateway depending on
-// what (if anything) was registered via `registerTransport`.
+// `clientTransport` unless given a transport, and that resolves on every call
+// (transport.ts): a `registerTransport` override, the `@open-lakehouse/host`
+// host's `headwaters` binding, or the page's own origin.
 
 import type { Transport } from "@connectrpc/connect";
 import { type Client, createClient } from "@connectrpc/connect";
@@ -18,9 +18,9 @@ export type ReadClient = Client<typeof ReadService>;
 /**
  * Create a read-API client.
  *
- * With no argument it uses `clientTransport` (the registered transport, or the
- * default Connect-over-fetch). Pass an explicit `transport` to bind a client to
- * a specific transport — used by tests and by hosts that manage their own.
+ * With no argument it uses `clientTransport`, which resolves the transport on
+ * every call (see transport.ts). Pass `transportFor(host)` to bind it to a
+ * particular host, or any `transport` to bypass the resolution entirely.
  */
 export function createReadClient(
   transport: Transport = clientTransport,

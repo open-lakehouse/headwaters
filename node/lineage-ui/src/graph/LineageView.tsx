@@ -1,4 +1,4 @@
-import type { LineageNode } from "@headwaters/lineage-client";
+import type { LineageNode } from "@open-lakehouse/lineage-client";
 import { useState } from "react";
 import { AsyncBoundary } from "../components/ui/AsyncBoundary.js";
 import { useColumnLineage, useLineage } from "../hooks/queries.js";

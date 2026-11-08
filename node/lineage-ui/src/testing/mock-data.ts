@@ -9,7 +9,7 @@ import type {
   RunDetail,
   SearchResult,
   StatBucket,
-} from "@headwaters/lineage-client";
+} from "@open-lakehouse/lineage-client";
 
 export const mockRun: RunDetail = {
   id: "11111111-2222-3333-4444-555555555555",

@@ -12,12 +12,14 @@
     "lint:ci": "biome ci .",
     "format": "biome format --write .",
     "typecheck": "tsc -b",
-    "gen:rpc": "npm run gen:rpc --workspace @headwaters/lineage-client",
+    "gen:rpc": "npm run gen:rpc --workspace @open-lakehouse/lineage-client",
     "dev": "npm run dev --workspace @headwaters/lineage-app",
-    "storybook": "npm run storybook --workspace @headwaters/lineage-app"
+    "storybook": "npm run storybook --workspace @headwaters/lineage-app",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^5.1.0"
   }
 }

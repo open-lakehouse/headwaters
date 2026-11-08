@@ -5,7 +5,10 @@
 // app (hydrofoil) passes its own. Components never import createReadClient
 // directly, so the data source is fully swappable.
 
-import { createReadClient, type ReadClient } from "@headwaters/lineage-client";
+import {
+  createReadClient,
+  type ReadClient,
+} from "@open-lakehouse/lineage-client";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 
 const ReadClientContext = createContext<ReadClient | null>(null);

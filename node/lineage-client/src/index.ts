@@ -1,10 +1,11 @@
-// @headwaters/lineage-client — the generated ConnectRPC client + types for
-// headwaters' read API, plus the transport seam that makes it host-agnostic.
-//
-// This is the analog of hydrofoil's `@open-lakehouse/uc-client`: a thin package
-// whose job is *generated types + a pluggable transport*. `lineage-ui` and the
-// scaffold app depend ONLY on this barrel — never on `./gen` internals directly.
+// @open-lakehouse/lineage-client — the generated ConnectRPC client + types for
+// headwaters' read API. Calls reach headwaters through the `@open-lakehouse/host`
+// binding of whatever runs the UI, or through `registerTransport` (see
+// transport.ts). `lineage-ui` and the scaffold app depend ONLY on this barrel —
+// never on `./gen` internals directly.
 
+// The host's error for a service the current environment doesn't bind.
+export { ServiceUnavailableError } from "@open-lakehouse/host";
 // --- client + transport seam ---
 export { createReadClient, type ReadClient } from "./client.js";
 // --- read-API message types (the read model the UI renders) ---
@@ -59,5 +60,7 @@ export {
   clientTransport,
   createDefaultTransport,
   getTransport,
+  HEADWATERS_MODULE_ID,
   registerTransport,
+  transportFor,
 } from "./transport.js";

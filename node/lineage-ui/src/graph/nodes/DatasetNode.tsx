@@ -1,4 +1,4 @@
-import type { LineageNode } from "@headwaters/lineage-client";
+import type { LineageNode } from "@open-lakehouse/lineage-client";
 import type { NodeProps } from "@xyflow/react";
 import { Database } from "lucide-react";
 import { datasetNodeData } from "../model.js";

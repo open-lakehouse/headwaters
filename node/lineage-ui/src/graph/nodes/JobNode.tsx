@@ -1,4 +1,4 @@
-import type { LineageNode } from "@headwaters/lineage-client";
+import type { LineageNode } from "@open-lakehouse/lineage-client";
 import type { NodeProps } from "@xyflow/react";
 import { Cog } from "lucide-react";
 import { RunStateBadge } from "../../components/ui/RunStateBadge.js";

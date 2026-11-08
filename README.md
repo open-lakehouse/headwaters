@@ -93,7 +93,7 @@ generated.
 ## Web UI
 
 A TypeScript/React lineage UI lives under [`node/`](node) — an npm-workspaces
-monorepo with a generated ConnectRPC client (`@headwaters/lineage-client`), a
+monorepo with a generated ConnectRPC client (`@open-lakehouse/lineage-client`), a
 reusable component package (`@headwaters/lineage-ui`: graph canvas, browsers,
 detail panels, search, stats), and a thin scaffold app + Storybook. The client
 is generated from the same `proto/` module as the Rust crate — one proto, two

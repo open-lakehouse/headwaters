@@ -6,7 +6,7 @@
 // ReactFlow nodes + edges. Until it resolves it returns the previous layout (or
 // empty), so the canvas never flashes unpositioned nodes.
 
-import type { LineageGraph } from "@headwaters/lineage-client";
+import type { LineageGraph } from "@open-lakehouse/lineage-client";
 import type { Edge, Node } from "@xyflow/react";
 import ELK, { type ElkNode } from "elkjs/lib/elk.bundled.js";
 import { useEffect, useRef, useState } from "react";

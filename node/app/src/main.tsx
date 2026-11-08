@@ -1,8 +1,8 @@
+import { ReadClientProvider } from "@headwaters/lineage-ui";
 import {
   createDefaultTransport,
   registerTransport,
-} from "@headwaters/lineage-client";
-import { ReadClientProvider } from "@headwaters/lineage-ui";
+} from "@open-lakehouse/lineage-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
