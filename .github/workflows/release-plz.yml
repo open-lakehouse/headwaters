@@ -9,6 +9,11 @@ name: Release-plz
 # job here. The bundled lineage UI (node/) releases headwaters through the
 # `headwaters-ui` placeholder crate and `changelog_include` (see
 # release-plz.toml), so a UI-only change also lands here as a headwaters release.
+# The npm packages @open-lakehouse/lineage-client and @open-lakehouse/lineage-ui
+# ride along the same way, each through its own placeholder crate
+# (node/<package>/Cargo.toml): for every one this run releases, `publish-npm`
+# (a `workflow_call` into publish-npm.yml) publishes it to GitHub Packages and
+# attaches the attested tarball to its GitHub Release.
 # See release-plz.toml; CONTRIBUTING.md has the full flow.
 
 on:
@@ -67,6 +72,9 @@ jobs:
       # Version + tag of headwaters IF this run released it, else empty.
       service_version: ${{ steps.service.outputs.version }}
       service_tag: ${{ steps.service.outputs.tag }}
+      # The npm packages this run released, as a JSON array of
+      # { package, tag } (`[]` when none) — the publish-npm matrix.
+      npm_releases: ${{ steps.npm.outputs.releases }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -107,6 +115,21 @@ jobs:
           else
             echo "headwaters was not released this run."
           fi
+      # Same for the npm packages' placeholder crates. A placeholder's crate
+      # name is its package's directory under node/ and its npm name without
+      # the scope.
+      - name: Extract npm package releases
+        id: npm
+        env:
+          RELEASES: ${{ steps.release.outputs.releases }}
+          NPM_PACKAGES: '["lineage-client", "lineage-ui"]'
+        run: |
+          set -euo pipefail
+          releases="$(jq -c --argjson npm "$NPM_PACKAGES" \
+            '[.[]? | select(.package_name as $p | $npm | index($p)) | {package: .package_name, tag}]' \
+            <<< "${RELEASES:-[]}")"
+          echo "npm packages released this run: $releases"
+          echo "releases=$releases" >> "$GITHUB_OUTPUT"
 
   # --- Build + push the headwaters Docker image, iff it was released ---
   # Reuses .github/workflows/docker-release.yml with the exact version release-
@@ -123,3 +146,25 @@ jobs:
     with:
       version: ${{ needs.release-plz-release.outputs.service_version }}
       ref: ${{ needs.release-plz-release.outputs.service_tag }}
+
+  # --- Publish each npm package released this run (none: skipped) ---
+  publish-npm:
+    name: Publish ${{ matrix.package }}
+    needs: release-plz-release
+    if: ${{ needs.release-plz-release.outputs.npm_releases != '[]' && needs.release-plz-release.outputs.npm_releases != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.release-plz-release.outputs.npm_releases) }}
+    # A called workflow cannot exceed the caller job's permissions: publishing
+    # needs `packages: write`, attaching the tarball to the release
+    # `contents: write`, and its attestation `id-token` + `attestations: write`.
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    uses: $/.github/workflows/publish-npm.yml
+    with:
+      package: ${{ matrix.package }}
+      tag: ${{ matrix.tag }}

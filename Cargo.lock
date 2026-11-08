@@ -1929,6 +1929,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lineage-client"
+version = "0.0.1"
+
+[[package]]
+name = "lineage-ui"
+version = "0.0.1"
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
