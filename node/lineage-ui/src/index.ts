@@ -1,6 +1,6 @@
-// @headwaters/lineage-ui — composable, host-agnostic React components for the
+// @open-lakehouse/lineage-ui — composable, host-agnostic React components for the
 // headwaters lineage read API. This barrel is the integration surface: the
-// scaffold app and any host (e.g. hydrofoil) import ONLY from here, never from
+// scaffold app and any host (e.g. the desktop shell) import ONLY from here, never from
 // internal paths. See README.md for the public/internal contract.
 
 // --- re-export the read-model types so hosts need only one dependency ---
@@ -46,8 +46,12 @@ export { HomeView } from "./home/HomeView.js";
 export type { StatsViewProps } from "./home/StatsView.js";
 export { StatsView } from "./home/StatsView.js";
 export type { ReadClientProviderProps } from "./hooks/client-context.js";
-// --- client injection (the React companion to lineage-client's transport seam) ---
-export { ReadClientProvider, useReadClient } from "./hooks/client-context.js";
+// --- client injection (over the host binding; see hooks/client-context.tsx) ---
+export {
+  ReadClientProvider,
+  useReadClient,
+  useReadScope,
+} from "./hooks/client-context.js";
 export type { ListPage } from "./hooks/queries.js";
 // --- data hooks (TanStack Query over the read client) ---
 export {

@@ -1,4 +1,4 @@
-import { HomeView } from "@headwaters/lineage-ui";
+import { HomeView } from "@open-lakehouse/lineage-ui";
 
 export function HomePage() {
   return (

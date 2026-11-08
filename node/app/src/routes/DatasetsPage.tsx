@@ -1,4 +1,4 @@
-import { DatasetBrowser } from "@headwaters/lineage-ui";
+import { DatasetBrowser } from "@open-lakehouse/lineage-ui";
 import { useNavigate } from "@tanstack/react-router";
 
 export function DatasetsPage() {

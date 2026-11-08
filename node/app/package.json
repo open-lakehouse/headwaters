@@ -11,7 +11,7 @@
     "build-storybook": "storybook build"
   },
   "dependencies": {
-    "@headwaters/lineage-ui": "*",
+    "@open-lakehouse/lineage-ui": "*",
     "@open-lakehouse/host": "0.0.1",
     "@open-lakehouse/lineage-client": "*",
     "@tanstack/react-query": "^5.100.0",
