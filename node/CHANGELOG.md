@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3](https://github.com/open-lakehouse/headwaters/compare/headwaters-ui-v0.0.2...headwaters-ui-v0.0.3) - 2026-11-08
+
+### Added
+
+- [**breaking**] fall back to the host's headwaters binding (#90)
+- [**breaking**] adopt the @open-lakehouse/host contract (#89)
+
 ## [0.0.1](https://github.com/open-lakehouse/headwaters/releases/tag/headwaters-ui-v0.0.1) - 2026-10-30
 
 ### Added

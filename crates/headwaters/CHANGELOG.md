@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.11](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.10...headwaters-v0.0.11) - 2026-11-08
+
+### Added
+
+- [**breaking**] fall back to the host's headwaters binding (#90)
+- [**breaking**] adopt the @open-lakehouse/host contract (#89)
+- configurable UI base path (static prefix) (#45)
+- lineage UI — reusable ConnectRPC components, scaffold app, Storybook (#11)
+- hydrofoil-aligned theme tokens + dark mode toggle (#13)
+- rich demo lineage seed, Dockerized dev env, Marquez UI, graph fixes (#12)
+
+### Changed
+
+- rename lineage-service component to headwaters (#19)
+
 ## [0.0.10](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.9...headwaters-v0.0.10) - 2026-11-01
 
 ### Chore
