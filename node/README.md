@@ -7,7 +7,7 @@ Rust service and proto (mirrors the layout in the sibling `hydrofoil` and
 | Package | What it is |
 | --- | --- |
 | [`@open-lakehouse/lineage-client`](./lineage-client) | Generated ConnectRPC TypeScript client + types for the read API. Calls reach headwaters through the [`@open-lakehouse/host`](https://github.com/open-lakehouse/trestle/tree/main/node/host) binding, or a `registerTransport` override; see its [README](./lineage-client/README.md). Generated code is committed under `src/gen/`. |
-| [`@headwaters/lineage-ui`](./lineage-ui) | The reusable React feature: graph canvas, browsers, detail panels, search, stats. The integration surface a host (e.g. hydrofoil) consumes. See its [README](./lineage-ui/README.md) for the public/internal contract. |
+| [`@open-lakehouse/lineage-ui`](./lineage-ui) | The reusable React feature: graph canvas, browsers, detail panels, search, stats. The integration surface a host (e.g. hydrofoil) consumes. See its [README](./lineage-ui/README.md) for the public/internal contract. |
 | `@headwaters/lineage-app` (`app/`) | A thin scaffold app + Storybook. Runs against a local `headwaters` instance. |
 
 ## Quick start
@@ -49,7 +49,8 @@ locally with `just lineage-ui`.
 The read API is served as **ConnectRPC** by `headwaters` (alongside REST,
 on one port). `lineage-client` generates a typed client from the same `proto/`
 module the Rust crate uses — one proto, two language clients. Components obtain
-that client through `ReadClientProvider`, which rides a late-binding transport
-seam, so the **same components run against the network, Storybook fixtures, or a
-host gateway** depending only on what the host registers. That seam is what makes
-`lineage-ui` reusable without modification.
+that client through `ReadClientProvider`, which resolves its transport on every
+call: a `registerTransport` override, the `@open-lakehouse/host` host's
+`headwaters` binding, or the page's own origin. So the **same components run
+against the network, Storybook's fake host or the desktop shell** depending only
+on what runs them, and `lineage-ui` stays reusable without modification.

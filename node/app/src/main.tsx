@@ -1,8 +1,8 @@
-import { ReadClientProvider } from "@headwaters/lineage-ui";
 import {
   createDefaultTransport,
   registerTransport,
 } from "@open-lakehouse/lineage-client";
+import { ReadClientProvider } from "@open-lakehouse/lineage-ui";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
@@ -21,8 +21,10 @@ const basePath = window.__HEADWATERS_BASE_PATH__ ?? "";
 
 // Point the RPC transport at the prefix. `createConnectTransport`'s baseUrl is
 // resolved against the origin (it does NOT honor <base href>), so the prefix
-// must be threaded in explicitly; empty falls back to "/" — identical to the
-// previous default. Storybook overrides this with a fixture transport.
+// must be threaded in explicitly; empty falls back to "/". This standalone app
+// registers no `@open-lakehouse/host` host; `registerTransport` is the override
+// that lineage-client keeps for it. (Storybook doesn't run this file: its
+// stories bind a fake host instead.)
 registerTransport(createDefaultTransport(basePath || "/"));
 
 const queryClient = new QueryClient({

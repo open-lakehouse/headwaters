@@ -1,4 +1,4 @@
-import { SearchView } from "@headwaters/lineage-ui";
+import { SearchView } from "@open-lakehouse/lineage-ui";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 
 const route = getRouteApi("/search");

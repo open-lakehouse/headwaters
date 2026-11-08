@@ -68,8 +68,8 @@
               "options": {
                 "patterns": [
                   {
-                    "group": ["@headwaters/lineage-ui/src/**"],
-                    "message": "Import from the lineage-ui barrel '@headwaters/lineage-ui', not its internals."
+                    "group": ["@open-lakehouse/lineage-ui/src/**"],
+                    "message": "Import from the lineage-ui barrel '@open-lakehouse/lineage-ui', not its internals."
                   }
                 ]
               }

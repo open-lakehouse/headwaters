@@ -3,7 +3,7 @@ import {
   JobDetailPanel,
   type LineageNode,
   LineageView,
-} from "@headwaters/lineage-ui";
+} from "@open-lakehouse/lineage-ui";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 

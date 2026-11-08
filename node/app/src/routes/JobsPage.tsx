@@ -1,4 +1,4 @@
-import { JobBrowser } from "@headwaters/lineage-ui";
+import { JobBrowser } from "@open-lakehouse/lineage-ui";
 import { useNavigate } from "@tanstack/react-router";
 
 export function JobsPage() {
