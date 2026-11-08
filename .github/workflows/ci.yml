@@ -396,6 +396,49 @@ jobs:
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  # The node workspace (node/): typecheck, lint and unit tests, then build and
+  # pack the two published packages (@open-lakehouse/lineage-client and
+  # @open-lakehouse/lineage-ui) the way publish-npm.yml does, and build the
+  # scaffold app the Docker image bundles.
+  ui:
+    name: ui
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: node
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      # package-lock.json records the internal mirror it was resolved through;
+      # fetch the same tarballs (same integrity) from the public registry. See
+      # the Dockerfile's `ui` stage.
+      - name: Install
+        run: |
+          sed -i 's#https://npm-proxy.cloud.databricks.com/#https://registry.npmjs.org/#g' package-lock.json
+          npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint:ci
+      - run: npm test
+      - name: Build and pack the published packages
+        run: |
+          npm run build -w @open-lakehouse/lineage-client
+          npm run build -w @open-lakehouse/lineage-ui
+          for package in lineage-client lineage-ui; do
+            node scripts/pack-package.mjs "$package" "$RUNNER_TEMP"
+          done
+      - name: Build the app
+        run: npm run build -w @headwaters/lineage-app
+
   # Single roll-up status. Because `test`/`coverage` are conditionally skipped on
   # docs-only PRs, the individual checks aren't a stable name to require in branch
   # protection. This job always runs and turns red only if a job that *did* run
@@ -404,7 +447,7 @@ jobs:
   ci:
     name: ci
     if: ${{ always() }}
-    needs: [fmt, machete, clippy, msrv, proto-check, test, coverage]
+    needs: [fmt, machete, clippy, msrv, proto-check, test, coverage, ui]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -421,7 +464,8 @@ jobs:
             "msrv:${{ needs.msrv.result }}" \
             "proto-check:${{ needs.proto-check.result }}" \
             "test:${{ needs.test.result }}" \
-            "coverage:${{ needs.coverage.result }}"; do
+            "coverage:${{ needs.coverage.result }}" \
+            "ui:${{ needs.ui.result }}"; do
             name="${r%%:*}"; result="${r##*:}"
             echo "$name -> $result"
             if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then

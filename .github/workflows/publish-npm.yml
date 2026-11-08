@@ -1,0 +1,216 @@
+name: Publish npm package
+
+# Publish one of the npm packages under node/ (`@open-lakehouse/<package>`,
+# from node/<package>) to GitHub Packages, and attach it to its GitHub Release.
+# One job builds and packs the tarball, and two jobs ship that same tarball,
+# each with only the permissions it needs. The GitHub Release gets the tarball,
+# its SHA-256 and a build-provenance attestation. Mirrors trestle's
+# publish-npm.yml, without the npmjs.com side.
+#
+# Releases come from release-plz: each package has a placeholder crate
+# (node/<package>/Cargo.toml) that carries its version. release-plz bumps it
+# and tags `<package>-v<version>`, and release-plz.yml calls this workflow once
+# per released package with that tag. The version is stamped into package.json
+# at pack time (node/scripts/pack-package.mjs). Publishing is idempotent: a
+# version the registry already has is skipped, so re-runs are safe.
+#
+# No stored credentials: GitHub Packages authenticates the job's own
+# short-lived GITHUB_TOKEN (`packages: write`). Packages are only ever
+# published from CI, never from a developer machine. A manual run is a dry run
+# by default.
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: "The package's directory under node/ (= its npm name without the scope)"
+        required: true
+        type: string
+      tag:
+        description: "The release-plz tag to publish (<package>-v<version>)"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "The package to publish"
+        required: true
+        type: choice
+        options:
+          - lineage-client
+          - lineage-ui
+      tag:
+        description: "Release tag to build (<package>-v<version>); default: the selected ref"
+        required: false
+        type: string
+      dry_run:
+        description: "Pack and run `npm publish --dry-run` only (no upload)"
+        required: false
+        type: boolean
+        default: true
+
+# Least privilege: grant per job, nothing at the top level.
+permissions: {}
+
+env:
+  PACKAGE_DIR: ${{ inputs.package }}
+  PACKAGE: "@open-lakehouse/${{ inputs.package }}"
+  # The tarball's artifact name. It must be unique per package: release-plz.yml
+  # calls this workflow once per released package, all inside one workflow run,
+  # where artifact names are shared.
+  ARTIFACT: npm-tgz-${{ inputs.package }}
+  # workflow_call has no `dry_run` input; treat it as a real publish.
+  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+
+jobs:
+  build:
+    name: Build and pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.pack.outputs.version }}
+      filename: ${{ steps.pack.outputs.filename }}
+    defaults:
+      run:
+        working-directory: node
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: Check the package and tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          case "$PACKAGE_DIR" in
+            lineage-client | lineage-ui) ;;
+            *) echo "::error::not a published package: $PACKAGE_DIR"; exit 1 ;;
+          esac
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' "$PACKAGE_DIR/Cargo.toml" | head -n1)"
+          if [ -n "$TAG" ] && [ "$TAG" != "$PACKAGE_DIR-v$version" ]; then
+            echo "::error::tag $TAG does not match $PACKAGE_DIR version $version"
+            exit 1
+          fi
+      # package-lock.json records the internal mirror it was resolved through;
+      # fetch the same tarballs (same integrity) from the public registry. See
+      # the Dockerfile's `ui` stage.
+      - name: Install
+        run: |
+          sed -i 's#https://npm-proxy.cloud.databricks.com/#https://registry.npmjs.org/#g' package-lock.json
+          npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint:ci
+      - run: npm test
+      # lineage-ui's build reads lineage-client's dist/ types, so both, in order.
+      - name: Build
+        run: |
+          npm run build -w @open-lakehouse/lineage-client
+          npm run build -w @open-lakehouse/lineage-ui
+      - name: Pack
+        id: pack
+        run: |
+          result="$(node scripts/pack-package.mjs "$PACKAGE_DIR" "$RUNNER_TEMP" | tail -n1)"
+          echo "$result"
+          echo "version=$(jq -r .version <<< "$result")" >> "$GITHUB_OUTPUT"
+          echo "filename=$(basename "$(jq -r .tarball <<< "$result")")" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: ${{ runner.temp }}/${{ steps.pack.outputs.filename }}
+          if-no-files-found: error
+          retention-days: 7
+
+  github-packages:
+    name: Publish to GitHub Packages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      FILENAME: ${{ needs.build.outputs.filename }}
+      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: ${{ runner.temp }}
+      # Writes an .npmrc for the GitHub Packages registry that reads the token
+      # from NODE_AUTH_TOKEN.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@open-lakehouse"
+          package-manager-cache: false
+      - name: Skip a version that is already published
+        id: published
+        run: |
+          if npm view "$PACKAGE@$VERSION" version >/dev/null 2>&1; then
+            echo "$PACKAGE@$VERSION is already on GitHub Packages; skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish (dry-run)
+        if: ${{ env.DRY_RUN == 'true' }}
+        run: npm publish "$RUNNER_TEMP/$FILENAME" --dry-run
+      - name: Publish
+        if: ${{ env.DRY_RUN != 'true' && !steps.published.outputs.skip }}
+        # zizmor: ignore[use-trusted-publishing] — npm trusted publishing (OIDC)
+        # exists only for registry.npmjs.org; GitHub Packages authenticates the
+        # job's own ephemeral GITHUB_TOKEN, so no long-lived credential exists.
+        run: npm publish "$RUNNER_TEMP/$FILENAME"
+
+  github-release:
+    name: Attest and attach to the GitHub Release
+    needs: build
+    # Not a dry run (the workflow-level DRY_RUN isn't available to job `if`s).
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Signs in its own job, away from the build job's third-party install and
+    # build code.
+    permissions:
+      contents: write # attach assets to the existing GitHub Release
+      id-token: write # OIDC for build-provenance attestations
+      attestations: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      FILENAME: ${{ needs.build.outputs.filename }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: ${{ runner.temp }}
+      - name: Checksum the tarball
+        id: files
+        working-directory: ${{ runner.temp }}
+        run: |
+          sha256sum "$FILENAME" > "$FILENAME.sha256"
+          echo "tgz=$RUNNER_TEMP/$FILENAME" >> "$GITHUB_OUTPUT"
+          echo "sha256=$RUNNER_TEMP/$FILENAME.sha256" >> "$GITHUB_OUTPUT"
+      # Key-free SLSA build provenance over the exact bytes the registry
+      # receives (GitHub Packages can't carry npm provenance). Verify with
+      # `gh attestation verify <tgz> --repo <owner>/<repo>`.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: |
+            ${{ steps.files.outputs.tgz }}
+            ${{ steps.files.outputs.sha256 }}
+      # release-plz created the release before calling this workflow.
+      # `--clobber` makes re-runs replace the assets.
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TGZ: ${{ steps.files.outputs.tgz }}
+          SHA256: ${{ steps.files.outputs.sha256 }}
+        run: |
+          gh release upload "$PACKAGE_DIR-v$VERSION" "$TGZ" "$SHA256" \
+            --clobber --repo "$GITHUB_REPOSITORY"

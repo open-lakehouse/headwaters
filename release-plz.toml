@@ -21,6 +21,10 @@
 #   - headwaters-cli         -> `git_only = true`, like headwaters (no Docker).
 #   - headwaters-ui          -> `git_only = true`: a placeholder crate at
 #     node/Cargo.toml for the bundled UI; tagged only, never published.
+#   - lineage-client, lineage-ui -> `git_only = true`: placeholder crates at
+#     node/<package>/Cargo.toml for the npm packages @open-lakehouse/<package>.
+#     Their tag `<package>-v<version>` publishes the package to GitHub Packages
+#     (release-plz.yml -> .github/workflows/publish-npm.yml).
 #
 # Config reference: https://release-plz.dev/docs/config
 
@@ -81,11 +85,14 @@ name = "headwaters"
 git_only = true
 publish = false
 # The Docker image bakes in the lineage UI built from node/, which lives outside
-# this crate. Commits to the `headwaters-ui` placeholder (every tracked file
-# under node/) release headwaters too, at most as a patch bump, so a UI-only
-# change still produces a headwaters tag and a Docker rebuild. (This replaced
-# the crates/headwaters/ui.lock fingerprint; it needs release-plz >= 0.4.1.)
-changelog_include = ["headwaters-ui"]
+# this crate. Commits to the `headwaters-ui` placeholder (the tracked files
+# under node/ outside the two packages) and to the `lineage-client` /
+# `lineage-ui` placeholders (the packages, which have their own manifests and
+# so leave headwaters-ui's fileset) release headwaters too, at most as a patch
+# bump, so a UI-only change still produces a headwaters tag and a Docker
+# rebuild. (This replaced the crates/headwaters/ui.lock fingerprint; it needs
+# release-plz >= 0.4.1.)
+changelog_include = ["headwaters-ui", "lineage-client", "lineage-ui"]
 
 [[package]]
 name = "headwaters-cli"
@@ -108,6 +115,31 @@ git_only = true
 publish = false # required alongside git_only
 semver_check = false
 git_release_enable = false
+
+# The npm package @open-lakehouse/lineage-client, through its placeholder crate
+# at node/lineage-client/Cargo.toml. `git_only` versions it from the
+# `lineage-client-v*` tags, and release-plz.yml publishes the npm package when
+# this is released; the GitHub release carries the attested tarball. No Rust API
+# for cargo-semver-checks to compare.
+[[package]]
+name = "lineage-client"
+git_only = true
+publish = false # required alongside git_only
+semver_check = false
+changelog_path = "node/lineage-client/CHANGELOG.md"
+
+# The npm package @open-lakehouse/lineage-ui (node/lineage-ui/Cargo.toml); same
+# setup as lineage-client. Its tarball pins `@open-lakehouse/lineage-client` to
+# `^<client version>`, which on 0.0.x matches that one version only, so a
+# lineage-client release releases lineage-ui too and the new lineage-ui is
+# pinned to the new client.
+[[package]]
+name = "lineage-ui"
+git_only = true
+publish = false
+semver_check = false
+changelog_path = "node/lineage-ui/CHANGELOG.md"
+changelog_include = ["lineage-client"]
 
 # ---------------------------------------------------------------------------
 # Changelog rendering (git-cliff, embedded). Conventional-commit grouping.
@@ -133,5 +165,5 @@ commit_parsers = [
 # Strip the redundant "(scope)" from each rendered line — each crate's changelog
 # is already crate-scoped.
 commit_preprocessors = [
-  { pattern = '\((client|headwaters|headwaters-proto|proto|headwaters-client|read-client|headwaters-cli|read-cli|cli|headwaters-ui|ui)\)', replace = "" },
+  { pattern = '\((client|headwaters|headwaters-proto|proto|headwaters-client|read-client|headwaters-cli|read-cli|cli|headwaters-ui|ui|lineage-client|lineage-ui)\)', replace = "" },
 ]

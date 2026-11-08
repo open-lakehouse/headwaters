@@ -67,15 +67,26 @@ CI fails if the committed output drifts from the `.proto` sources.
 ### UI changes
 
 The lineage UI (`node/`) is bundled into the `headwaters` Docker image, but it
-lives outside the crate, so release-plz — which decides a commit belongs to a
-crate by that crate's packaged files — can't see UI-only changes on its own. A
-placeholder crate at `node/Cargo.toml` (`headwaters-ui`, `git_only`, never
-published) owns every tracked file under `node/`, and `headwaters` lists it in
-`changelog_include` in `release-plz.toml`. A UI change therefore releases
-`headwaters-ui` and `headwaters` (at most a patch bump), and the headwaters tag
-rebuilds the Docker image. Nothing needs regenerating by hand. The UI packages
-keep their own version line in `node/`; this only routes UI changes into a
-`headwaters` release.
+lives outside the crate, so release-plz, which assigns a commit to a crate by
+that crate's packaged files, can't see UI-only changes on its own. Placeholder
+crates (all `git_only`, never on crates.io) fix that:
+
+- `node/lineage-client/Cargo.toml` and `node/lineage-ui/Cargo.toml`
+  (`lineage-client`, `lineage-ui`) own those two packages' published files.
+  Their `version` is the npm version. A release tags `<package>-v<version>`,
+  and `release-plz.yml` publishes `@open-lakehouse/<package>` to GitHub
+  Packages through `publish-npm.yml`, which stamps the version into
+  `package.json` (that file stays at `0.0.0`) and pins lineage-ui's dependency
+  on lineage-client. `node/scripts/pack-package.mjs` packs a tarball exactly the
+  way CI does.
+- `node/Cargo.toml` (`headwaters-ui`) owns the rest of `node/` (the app, the
+  workspace config).
+
+`headwaters` lists all three in `changelog_include` in `release-plz.toml`, so
+any UI change also releases `headwaters` (at most a patch bump), and the
+headwaters tag rebuilds the Docker image. Nothing needs bumping by hand. The
+`headwaters-source` export condition makes the workspace resolve the packages
+to their `src/`, so nothing is built before `just ui-dev` or the Docker build.
 
 ## Commit & PR conventions
 
