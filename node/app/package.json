@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@open-lakehouse/lineage-ui": "*",
-    "@open-lakehouse/host": "0.0.1",
+    "@open-lakehouse/host": "https://github.com/open-lakehouse/trestle/releases/download/host-v0.0.2/open-lakehouse-host-0.0.2.tgz",
     "@open-lakehouse/lineage-client": "*",
     "@tanstack/react-query": "^5.100.0",
     "@tanstack/react-router": "^1.170.0",
