@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.12](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.11...headwaters-v0.0.12) - 2026-11-10
+
+### Build
+
+- peer on @open-lakehouse/host 0.0.2 (#94)
+
 ## [0.0.11](https://github.com/open-lakehouse/headwaters/compare/headwaters-v0.0.10...headwaters-v0.0.11) - 2026-11-08
 
 ### Added
