@@ -38,12 +38,12 @@
     "@connectrpc/connect-web": "^2.1.0"
   },
   "peerDependencies": {
-    "@open-lakehouse/host": "0.0.1"
+    "@open-lakehouse/host": "0.0.2"
   },
   "devDependencies": {
     "@bufbuild/buf": "^1.70.0",
     "@bufbuild/protoc-gen-es": "^2.6.0",
-    "@open-lakehouse/host": "0.0.1",
+    "@open-lakehouse/host": "https://github.com/open-lakehouse/trestle/releases/download/host-v0.0.2/open-lakehouse-host-0.0.2.tgz",
     "typescript": "^5.7.0"
   }
 }

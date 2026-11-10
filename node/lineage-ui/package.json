@@ -44,13 +44,13 @@
     "tailwind-merge": "^3.6.0"
   },
   "peerDependencies": {
-    "@open-lakehouse/host": "0.0.1",
+    "@open-lakehouse/host": "0.0.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
     "@connectrpc/connect": "^2.1.0",
-    "@open-lakehouse/host": "0.0.1",
+    "@open-lakehouse/host": "https://github.com/open-lakehouse/trestle/releases/download/host-v0.0.2/open-lakehouse-host-0.0.2.tgz",
     "@storybook/react": "^8.6.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
